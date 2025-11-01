@@ -1,11 +1,6 @@
 import logging
 from .decorators import tool
 
-# Configure a single, shared logger for the engine
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - [HighwayEngine] - %(message)s",
-)
 logger = logging.getLogger("HighwayEngine")
 
 
