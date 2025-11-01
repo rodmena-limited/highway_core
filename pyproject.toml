@@ -54,9 +54,3 @@ testpaths = ["tests"]
 filterwarnings = [
     "ignore::DeprecationWarning",
 ]
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["highway_core*"]
-exclude = ["tests*"]
-zip_safe = false
-
