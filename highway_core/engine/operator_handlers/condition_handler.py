@@ -10,6 +10,7 @@ from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
 import ast
 import operator
+import warnings
 
 
 def execute(
@@ -70,13 +71,15 @@ def _eval_node(node):
     """
     Recursively evaluate an AST node.
     """
-    if isinstance(node, ast.Constant):  # Numbers, strings, booleans
+    # Handle constants (ast.Constant is used in Python 3.8+, older versions used ast.Num, ast.Str, ast.NameConstant)
+    node_type = type(node).__name__
+    if node_type == 'Constant':  # Python 3.8+
         return node.value
-    elif isinstance(node, ast.Num):  # Python < 3.8 compatibility
+    elif node_type == 'Num':  # Python < 3.8 compatibility - deprecated
         return node.n
-    elif isinstance(node, ast.Str):  # Python < 3.8 compatibility
+    elif node_type == 'Str':  # Python < 3.8 compatibility - deprecated
         return node.s
-    elif isinstance(node, ast.NameConstant):  # True, False, None
+    elif node_type == 'NameConstant':  # True, False, None (Python < 3.8) - deprecated
         return node.value
 
     # Handle comparison operations

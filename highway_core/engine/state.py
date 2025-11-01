@@ -148,8 +148,8 @@ class WorkflowState:
             def replacer(m):
                 val = self._get_value(m.group(1))
                 return (
-                    val if val is not None else m.group(0)
-                )  # Keep original template if not found
+                    str(val) if val is not None else m.group(0)
+                )  # Keep original template if not found, otherwise convert to string
 
             return self.TEMPLATE_REGEX.sub(replacer, input_data)
 
