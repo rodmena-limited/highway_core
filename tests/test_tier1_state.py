@@ -6,7 +6,7 @@ def test_resolve_simple_string():
     state = WorkflowState({})
     state.set_result("mem_report", {"key": "test_key", "status": "ok"})
 
-    test_str = "Key={{mem_report.key}}, Status={{mem_report.status}}"
+    test_str = "Key={{results.mem_report.key}}, Status={{results.mem_report.status}}"
     resolved_str = state.resolve_templating(test_str)
 
     assert resolved_str == "Key=test_key, Status=ok"
@@ -16,7 +16,7 @@ def test_resolve_full_string_replacement():
     state = WorkflowState({})
     state.set_result("mem_report", {"key": "test_key"})
 
-    test_str = "{{mem_report.key}}"
+    test_str = "{{results.mem_report.key}}"
     resolved_str = state.resolve_templating(test_str)
 
     assert resolved_str == "test_key"
