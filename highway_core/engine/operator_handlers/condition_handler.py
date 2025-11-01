@@ -73,13 +73,13 @@ def _eval_node(node):
     """
     # Handle constants (ast.Constant is used in Python 3.8+, older versions used ast.Num, ast.Str, ast.NameConstant)
     node_type = type(node).__name__
-    if node_type == 'Constant':  # Python 3.8+
+    if node_type == "Constant":  # Python 3.8+
         return node.value
-    elif node_type == 'Num':  # Python < 3.8 compatibility - deprecated
+    elif node_type == "Num":  # Python < 3.8 compatibility - deprecated
         return node.n
-    elif node_type == 'Str':  # Python < 3.8 compatibility - deprecated
+    elif node_type == "Str":  # Python < 3.8 compatibility - deprecated
         return node.s
-    elif node_type == 'NameConstant':  # True, False, None (Python < 3.8) - deprecated
+    elif node_type == "NameConstant":  # True, False, None (Python < 3.8) - deprecated
         return node.value
 
     # Handle comparison operations

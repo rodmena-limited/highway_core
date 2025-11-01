@@ -126,3 +126,14 @@ class Orchestrator:
             self.bulkhead_manager.shutdown_all()
 
         print(f"Orchestrator: Workflow '{self.workflow.name}' finished.")
+
+    def __del__(self):
+        """
+        Destructor to ensure bulkhead manager is always shut down,
+        even if run() was never called or completed due to exception.
+        """
+        try:
+            self.bulkhead_manager.shutdown_all()
+        except:
+            # Ignore errors during destruction to avoid interfering with shutdown
+            pass
