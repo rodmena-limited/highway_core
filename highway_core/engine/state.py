@@ -24,6 +24,18 @@ class WorkflowState:
         print(f"State: Setting result for key: {result_key}")
         self._data["results"][result_key] = value
 
+    def set_variable(self, key: str, value: Any):
+        """Sets a variable in the workflow state."""
+        self._data["variables"][key] = value
+
+    def get_variable(self, key: str):
+        """Retrieves a variable from the workflow state."""
+        return self._data["variables"].get(key)
+
+    def get_result(self, result_key: str):
+        """Retrieves the output of a task by result key."""
+        return self._data["results"].get(result_key)
+
     def _get_value(self, path: str) -> Any:
         """
         Retrieves a value from the state using explicit paths:
@@ -127,12 +139,17 @@ class WorkflowState:
             # Check if the *entire string* is a variable
             match = self.TEMPLATE_REGEX.fullmatch(input_data)
             if match:
-                return self._get_value(match.group(1))
+                val = self._get_value(match.group(1))
+                return (
+                    val if val is not None else input_data
+                )  # Return original if not found
 
             # Otherwise, replace all occurrences within the string
             def replacer(m):
                 val = self._get_value(m.group(1))
-                return str(val) if val is not None else m.group(0)
+                return (
+                    val if val is not None else m.group(0)
+                )  # Keep original template if not found
 
             return self.TEMPLATE_REGEX.sub(replacer, input_data)
 

@@ -1,8 +1,14 @@
 from collections import deque
+import graphlib
 from highway_core.engine.models import WorkflowModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
-from highway_core.engine.operator_handlers import task_handler, condition_handler
+from highway_core.engine.operator_handlers import (
+    task_handler,
+    condition_handler,
+    parallel_handler,
+    wait_handler,
+)
 from highway_core.tools.bulkhead import BulkheadManager
 
 
@@ -14,8 +20,12 @@ class Orchestrator:
         self.state = state
         self.registry = registry
 
-        # Use a deque for an efficient LILO queue
-        self.task_queue = deque([self.workflow.start_task])
+        # Build the dependency graph for TopologicalSorter
+        graph = {}
+        for task_id, task in workflow.tasks.items():
+            graph[task_id] = set(task.dependencies)
+
+        self.sorter = graphlib.TopologicalSorter(graph)
         self.completed_tasks = set()
 
         # Initialize handler map
@@ -23,6 +33,8 @@ class Orchestrator:
         self.handler_map = {
             "task": self._execute_task,
             "condition": self._execute_condition,
+            "parallel": self._execute_parallel,
+            "wait": self._execute_wait,
             # Additional handlers will be added as implemented
         }
 
@@ -35,19 +47,6 @@ class Orchestrator:
         """Checks if all dependencies for a task are in the completed set."""
         return all(dep_id in self.completed_tasks for dep_id in dependencies)
 
-    def _find_next_runnable_tasks(self) -> list[str]:
-        """
-        Finds all tasks whose dependencies are now met.
-        This is a simple but non-performant O(n^2) check.
-        It is fine for Tier 1.
-        """
-        runnable = []
-        for task_id, task in self.workflow.tasks.items():
-            if task_id not in self.completed_tasks and task_id not in self.task_queue:
-                if self._dependencies_met(task.dependencies):
-                    runnable.append(task_id)
-        return runnable
-
     def _execute_task(self, task, state, registry):
         """Wrapper to execute task handler"""
         task_handler.execute(task, state, registry, self.bulkhead_manager)
@@ -57,52 +56,71 @@ class Orchestrator:
         # The condition handler will process the condition and mark appropriate tasks
         condition_handler.execute(task, state, self, registry)
 
+    def _execute_parallel(self, task, state, registry):
+        """Wrapper to execute parallel handler"""
+        parallel_handler.execute(task, state, registry, self.bulkhead_manager)
+
+    def _execute_wait(self, task, state, registry):
+        """Wrapper to execute wait handler"""
+        wait_handler.execute(task, state, registry, self.bulkhead_manager)
+
     def run(self):
         """
-        Runs the workflow execution loop.
+        Runs the workflow execution loop using TopologicalSorter.
         """
         print(f"Orchestrator: Starting workflow '{self.workflow.name}'")
 
+        # Prepare the sorter
+        self.sorter.prepare()
+
         try:
-            while self.task_queue:
-                task_id = self.task_queue.popleft()
+            while self.sorter.is_active():
+                # Get all tasks that are ready to run (dependencies satisfied)
+                runnable_tasks = self.sorter.get_ready()
 
-                task_model = self.workflow.tasks.get(task_id)
-                if not task_model:
-                    print(
-                        f"Orchestrator: Error - Task ID '{task_id}' not found in workflow tasks."
-                    )
-                    continue
-
-                # 1. Check dependencies
-                if not self._dependencies_met(task_model.dependencies):
-                    # This shouldn't happen with our current logic, but as a safeguard
-                    self.task_queue.append(task_id)  # Put it back
-                    continue
-
-                # 2. Execute the appropriate handler based on operator type
-                try:
-                    handler_func = self.handler_map.get(task_model.operator_type)
-                    if not handler_func:
+                # Execute these tasks in parallel (for now, just sequentially)
+                for task_id in runnable_tasks:
+                    task_model = self.workflow.tasks.get(task_id)
+                    if not task_model:
                         print(
-                            f"Orchestrator: Error - No handler for {task_model.operator_type}"
+                            f"Orchestrator: Error - Task ID '{task_id}' not found in workflow tasks."
                         )
                         continue
 
-                    # Execute the task
-                    handler_func(task_model, self.state, self.registry)
+                    # Execute the appropriate handler based on operator type
+                    try:
+                        handler_func = self.handler_map.get(task_model.operator_type)
+                        if not handler_func:
+                            print(
+                                f"Orchestrator: Error - No handler for {task_model.operator_type}"
+                            )
+                            # Mark task as completed in the sorter to not block downstream tasks
+                            self.sorter.done(task_id)
+                            self.completed_tasks.add(task_id)
+                            print(
+                                f"Orchestrator: Task {task_id} marked as completed (no handler)."
+                            )
+                            continue
 
-                    # Mark task as completed
-                    self.completed_tasks.add(task_id)
-                    print(f"Orchestrator: Task {task_id} completed.")
+                        # Execute the task
+                        print(f"Orchestrator: Executing task {task_id}")
+                        handler_func(task_model, self.state, self.registry)
 
-                    # Also add any tasks that are now unblocked
-                    self.task_queue.extend(self._find_next_runnable_tasks())
+                        # Mark task as completed in the sorter
+                        self.sorter.done(task_id)
+                        self.completed_tasks.add(task_id)
+                        print(f"Orchestrator: Task {task_id} completed.")
 
-                except Exception as e:
-                    print(f"Orchestrator: FATAL ERROR executing task '{task_id}': {e}")
-                    # In a real engine, this would trigger failure handling
-                    break  # Stop the workflow
+                    except Exception as e:
+                        print(
+                            f"Orchestrator: FATAL ERROR executing task '{task_id}': {e}"
+                        )
+                        # In a real engine, this would trigger failure handling
+                        raise e  # Stop the workflow
+
+        except Exception as e:
+            print(f"Orchestrator: FATAL ERROR in workflow execution: {e}")
+            # In a real engine, this would trigger failure handling
         finally:
             # Ensure bulkhead manager is properly shut down
             self.bulkhead_manager.shutdown_all()

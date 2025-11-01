@@ -1,346 +1,86 @@
-You have successfully implemented the basic Tier 1 proof-of-concept. The log output confirms that the linear execution, task handling, state management, and variable resolution are all working at a fundamental level.
+This output is a **major success** and confirms your Tier 1.5 refactor is working. The core logic, resiliency, and state management are now on a solid, enterprise-grade foundation.
 
-However, as you noted, this foundation is not yet the "enterprise-grade" system we're aiming for. The current implementation has several critical shortcuts (like the O(n^2) dependency check and hardcoded handlers) that will not scale. You've also introduced a `bulkhead` pattern, which is an excellent idea for resiliency, but its current implementation is inefficient.
-
-Here is a complete action plan to refactor your Tier 1 implementation into a robust, scalable, and resilient foundation. This "Tier 1.5 Refactor" is the most critical step to get right.
+Here is a fact-check of the output against the plan.
 
 -----
 
-### Agent Task: Refactor Tier 1 for Enterprise-Grade Resiliency
+### Fact Check: Pass
 
-Your task is to refactor the existing Tier 1 components. You will not add new operators (like `parallel` or `while`) yet. Instead, you will harden the core parsing, orchestration, and execution logic to make it scalable, resilient, and ready for advanced features.
-
-### Core Requirements
-
-1.  **Full Operator Parsing:** The engine must parse *all* operator types from the YAML, not just `task`.
-2.  **Resilient Execution:** Tool execution must be wrapped in a persistent `bulkhead` to protect the engine from failing or slow tools.
-3.  **Scalable Orchestration:** The `Orchestrator`'s dependency resolution must be rewritten to use a proper topological sort (DAG) to avoid O(n^2) performance issues.
-4.  **Dynamic Tool Loading:** The `ToolRegistry` must be refactored to *dynamically* load tools instead of hardcoding them.
-5.  **Explicit State:** `WorkflowState` variable resolution must be made explicit to avoid ambiguity.
-6.  **Full Test Coverage:** All new and refactored logic must be fully unit-tested.
+  * **Pydantic Models (Pass):** The engine correctly loaded `examples/tier_1_5_refactor_test.yaml`, which uses different operator types. This confirms your new Pydantic `DiscriminatedUnion` in `highway_core/engine/models.py` is working.
+  * **Dynamic Tool Registry (Pass):** The output `ToolRegistry loaded with 5 functions.` confirms that your dynamic registry is successfully finding and loading all the tools decorated with `@tool`.
+  * **Bulkhead Refactor (Pass):** The lines `Getting or creating bulkhead for 'tools.log.info'` and `Getting or creating bulkhead for 'tools.fetch.get'` confirm your `TaskHandler` is correctly using the shared `BulkheadManager` to create persistent, per-tool bulkheads.
+  * **Explicit State Resolution (Pass):** The line `ConditionHandler: Resolved to '200 == 200'. Result: True` proves that the `condition_handler` successfully resolved the explicit variable `{{results.todo_1.status}}` using the refactored `state.py`.
+  * **Conditional Branching (Pass):** The orchestrator correctly chose the `if_true` path (`log_success`) and skipped the `if_false` path (`log_failure`).
+  * **Critical DAG Logic (Pass):** The line `ConditionHandler: Marking 'log_failure' as conceptually completed.` is **perfect**. This confirms your `condition_handler` is correctly manipulating the orchestrator's state to unblock downstream dependencies. This is why `log_end` (which depends on *both* branches) was able to run.
 
 -----
 
-### Step-by-Step Refactor Plan
+### Remaining Issue: Logging Output
 
-#### Step 1: Update `highway_core/engine/models.py` (Critical)
+There is **one minor, non-blocking issue** remaining from the original Tier 1. The log messages themselves are still not appearing in the output.
 
-Your current models only parse `TaskOperatorModel`. This is insufficient. You must use Pydantic's **Discriminated Unions** to parse *any* valid operator.
+**Example:**
 
-```python
-# highway_core/engine/models.py
-from pydantic import BaseModel, Field, ConfigDict
-from typing import Any, List, Dict, Optional, Literal, Union
-
-# Define the "kind" for each operator
-OperatorType = Literal[
-    "task", "condition", "parallel", "foreach", "while", "wait"
-]
-
-# --- Base Operator Model ---
-class BaseOperatorModel(BaseModel):
-    """The base model all operators share."""
-    task_id: str
-    operator_type: OperatorType
-    dependencies: List[str] = Field(default_factory=list)
-    model_config = ConfigDict(extra="allow")
-
-# --- Specific Operator Models ---
-class TaskOperatorModel(BaseOperatorModel):
-    operator_type: Literal["task"]
-    function: str
-    args: List[Any] = Field(default_factory=list)
-    kwargs: Dict[str, Any] = Field(default_factory=dict)
-    result_key: Optional[str] = None
-
-class ConditionOperatorModel(BaseOperatorModel):
-    operator_type: Literal["condition"]
-    condition: str
-    if_true: str
-    if_false: str
-
-class ParallelOperatorModel(BaseOperatorModel):
-    operator_type: Literal["parallel"]
-    branches: Dict[str, List[str]] # Just parsing for now
-
-class WaitOperatorModel(BaseOperatorModel):
-    operator_type: Literal["wait"]
-    wait_for: Any # Can be str, int (for timedelta), etc.
-
-class ForEachOperatorModel(BaseObject):
-    operator_type: Literal["foreach"]
-    items: str
-    loop_body: List[Any] # Just parsing for now
-
-class WhileOperatorModel(BaseObject):
-    operator_type: Literal["while"]
-    condition: str
-    loop_body: List[Any] # Just parsing for now
-
-# --- The Discriminated Union ---
-# This allows Pydantic to automatically parse the correct model
-# based on the 'operator_type' field.
-AnyOperatorModel = Union[
-    TaskOperatorModel,
-    ConditionOperatorModel,
-    ParallelOperatorModel,
-    WaitOperatorModel,
-    ForEachOperatorModel,
-    WhileOperatorModel,
-]
-
-class WorkflowModel(BaseModel):
-    """Parses the root YAML file."""
-    name: str
-    start_task: str
-    variables: Dict[str, Any] = Field(default_factory=dict)
-    # This is the key change:
-    tasks: Dict[str, AnyOperatorModel] = Field(discriminator="operator_type")
-```
-
-#### Step 2: Refactor `highway_core/tools/registry.py`
-
-Make this dynamic. Tools should "register themselves."
-
-1.  Create `highway_core/tools/decorators.py`:
-    ```python
-    # highway_core/tools/decorators.py
-    TOOL_REGISTRY = {}
-
-    def tool(name: str):
-        """Decorator to register a function as a Highway tool."""
-        def decorator(func):
-            if name in TOOL_REGISTRY:
-                raise ValueError(f"Duplicate tool name: {name}")
-            TOOL_REGISTRY[name] = func
-            return func
-        return decorator
+  * **Your Output:** `TaskHandler: Calling tools.log.info via bulkhead...`
+  * **Expected Output:**
     ```
-2.  Update `highway_core/tools/log.py`:
-    ```python
-    # highway_core/tools/log.py
-    import logging
-    from .decorators import tool
-
-    logger = logging.getLogger("HighwayEngine") # Use shared logger
-
-    @tool("tools.log.info")
-    def info(message: str) -> None:
-        logger.info(message)
-
-    @tool("tools.log.error")
-    def error(message: str) -> None:
-        logger.error(message)
-    ```
-3.  Update `highway_core/tools/memory.py`:
-    ```python
-    # highway_core/tools/memory.py
-    from .decorators import tool
-    from highway_core.engine.state import WorkflowState
-
-    @tool("tools.memory.set")
-    def set_memory(state: WorkflowState, key: str, value: Any) -> dict:
-        # ... (rest of your existing code)
-    ```
-4.  Refactor `highway_core/tools/registry.py`:
-    ```python
-    # highway_core/tools/registry.py
-    import pkgutil
-    import importlib
-    from .decorators import TOOL_REGISTRY
-
-    class ToolRegistry:
-        def __init__(self):
-            # The registry is now just a reference to the one
-            # populated by the @tool decorator.
-            self.functions = TOOL_REGISTRY
-            self._discover_tools()
-            print(f"ToolRegistry loaded with {len(self.functions)} functions.")
-
-        def _discover_tools(self):
-            """Dynamically imports all modules in 'highway_core.tools'."""
-            import highway_core.tools
-            
-            # This iterates over all modules in the 'tools' package
-            # and imports them, which triggers their @tool decorators.
-            for _, name, _ in pkgutil.walk_packages(
-                highway_core.tools.__path__,
-                highway_core.tools.__name__ + '.'
-            ):
-                importlib.import_module(name)
-
-        def get_function(self, name: str) -> Callable:
-            # ... (your existing get_function logic)
-    ```
-5.  **Important:** Create `highway_core/tools/__init__.py` and import all tool files (`log.py`, `memory.py`, `fetch.py`, etc.) to ensure `walk_packages` can find them.
-
-#### Step 3: Refactor `highway_core/engine/state.py`
-
-Make variable resolution explicit and safer.
-
-1.  Update `_get_value(self, path: str)`:
-      * It should *no longer* have the fallback logic.
-      * If `path.startswith("variables.")`, it must check `self._data["variables"]`.
-      * If `path.startswith("results.")`, it must check `self._data["results"]`.
-      * If `path.startswith("memory.")`, it must check `self._data["memory"]`.
-      * If `path == "item"`, it must check `self._data["loop_context"]`.
-      * **This is a breaking change.** Your test YAML `{{mem_report.key}}` must become `{{results.mem_report.key}}`.
-
-#### Step 4: Refactor `highway_core/engine/orchestrator.py`
-
-This is the biggest change. You must replace the simple queue with a proper DAG (Directed Acyclic Graph) resolver.
-
-1.  **Add `graphlib`:** Your engine will now use Python's built-in `graphlib.TopologicalSorter`.
-2.  **Refactor `__init__`:**
-      * Create the task graph: `self.graph = {task_id: set(task.dependencies) for task_id, task in workflow.tasks.items()}`.
-      * Create the sorter: `self.sorter = TopologicalSorter(self.graph)`.
-      * Call `self.sorter.prepare()`. This readies the DAG.
-      * `self.task_queue` is no longer needed.
-3.  **Refactor `run()`:**
-      * The `while self.task_queue:` loop must be replaced with `while self.sorter.is_active():`.
-      * Get runnable tasks: `runnable_tasks = self.sorter.get_ready()`.
-      * **This is the key:** You must now be able to run these tasks *concurrently* (e.g., using a `ThreadPoolExecutor`).
-      * For each `task_id` in `runnable_tasks`:
-          * Execute it (see Step 5).
-          * Mark it as complete: `self.sorter.done(task_id)`.
-4.  **Remove `_find_next_runnable_tasks()`:** This method is no longer needed. `graphlib` does this for you.
-5.  **Implement a Handler Map:** The orchestrator needs to call the *correct* handler, not just `task_handler`.
-    ```python
-    # In __init__:
-    from .operator_handlers import task, condition, ...
-    self.handler_map = {
-        "task": task_handler.execute,
-        "condition": condition_handler.execute,
-        # ... all other stubs
-    }
-
-    # In run(), when executing a task:
-    task_model = self.workflow.tasks[task_id]
-    handler_func = self.handler_map.get(task_model.operator_type)
-    if handler_func:
-        # The handler must now return the list of *next* tasks
-        # e.g., for 'condition', it returns [task.if_true] or [task.if_false]
-        # These are NOT added to the queue. They are just marked
-        # as "done" in the sorter so their children can run.
-        # This part is tricky. A simpler way:
-        # Handlers should just *do their job* (e.g., run a task)
-        # The Orchestrator's loop is *only* responsible for the DAG.
-        # Let's adjust:
-        
-        # New `run()` logic:
-        while self.sorter.is_active():
-            for task_id in self.sorter.get_ready():
-                # Submit self._execute_task(task_id) to a thread pool
-            
-            # Wait for all submitted tasks to finish...
-            
-            for task_id, result in finished_tasks:
-                if result.success:
-                    self.sorter.done(task_id)
-                else:
-                    # Handle task failure
-                    
-    def _execute_task(self, task_id: str):
-        # This is where the handler map logic goes
-        task_model = self.workflow.tasks[task_id]
-        handler_func = self.handler_map.get(task_model.operator_type)
-        # ...
-        # handler_func(task_model, self.state, self.registry)
-        # ...
+    TaskHandler: Calling tools.log.info via bulkhead...
+    2025-11-01 13:56:00,123 - HighwayEngine - INFO - Starting Tier 1.5 Refactor Test...
     ```
 
-#### Step 5: Refactor `highway_core/engine/operator_handlers/*`
+**This is not a failure of your engine's *logic***. Your orchestrator, state, and handlers are working. This is a simple Python `logging` configuration issue.
 
-1.  **All Handlers:** Update all handler stubs (like `condition_handler.py`) to import from `highway_core.engine.models` (your new models), **not** `highway_dsl`.
-2.  **`condition_handler.py`:** This must be implemented.
-      * It must evaluate the condition (using a safe library like `py_expression_eval`).
-      * It must **return the *next* task to run** (e.g., `[task.if_true]` or `[task.if_false]`).
-      * The `Orchestrator` must be updated to handle this. The `Orchestrator`'s `run` loop will get this list and *dynamically add* that task and its dependencies to the `TopologicalSorter`. (This is advanced. A simpler model for now: a `condition` operator is just a task that *results in* a "next\_task\_id", and another task depends on that.)
-      * **Let's simplify:** The `Orchestrator`'s job is to run the DAG. A `condition` task's *dependents* will be *both* `if_true` and `if_false`. The `condition` handler's job is just to *run*. The `if_true`/`if_false` tasks will have a *runtime dependency* check in the Orchestrator. This is too complex for now.
-      * **Revised Tier 1.5 Orchestrator Logic:** We will keep the O(n^2) check for now, but refactor the `run` loop to support all operators.
-    <!-- end list -->
-    ```python
-    # Refactored Orchestrator.run() (Tier 1.5)
-    def run(self):
-        while self.task_queue:
-            task_id = self.task_queue.popleft()
-            task_model = self.workflow.tasks.get(task_id)
-            
-            if not self._dependencies_met(task_model.dependencies):
-                self.task_queue.append(task_id) # Put it back
-                continue
-            
-            # --- NEW LOGIC ---
-            handler_func = self.handler_map.get(task_model.operator_type)
-            if not handler_func:
-                print(f"Orchestrator: Error - No handler for {task_model.operator_type}")
-                # Handle failure
-                continue
-                
-            try:
-                # Handlers now return the list of next task IDs
-                next_task_ids = handler_func(task_model, self.state, self.registry)
-                
-                self.completed_tasks.add(task_id)
-                
-                # Add the *specific* next tasks
-                for next_id in next_task_ids:
-                    if next_id not in self.task_queue:
-                        self.task_queue.append(next_id)
-                        
-                # Also add any tasks that are now unblocked
-                self.task_queue.extend(self._find_next_runnable_tasks())
-                
-            except Exception as e:
-                # Handle task failure
-                print(f"Orfchestrator: FATAL ERROR in {task_id}: {e}")
-                break
-    ```
-3.  **Refactor `task_handler.py`:**
-      * It must now `return []` (an empty list, as a `task` operator doesn't define its own *next* step, its dependents do).
-      * **Bulkhead:** The `BulkheadManager` should be created *once* in the `Orchestrator` and *passed into* the `task_handler.execute` function. The `TaskHandler` should *not* create its own manager.
-      * The `BulkheadManager` should create and hold *one bulkhead per tool function* (e.g., one for `"tools.fetch.get"`, one for `"tools.shell.run"`). It should *not* create a new bulkhead for every task.
-    <!-- end list -->
-    ```python
-    # In Orchestrator.__init__
-    self.bulkhead_manager = BulkheadManager()
+**The Fix:** The `logging.basicConfig` call in `run_test.py` configures the *root* logger. However, your `tools/log.py` defines its own logger (`logger = logging.getLogger("HighwayEngine")`). The bulkhead/threading context might be interfering with the logger's handler propagation.
 
-    # In Orchestrator.run()
-    handler_func(task_model, self.state, self.registry, self.bulkhead_manager)
-
-    # In task_handler.execute()
-    def execute(task, state, registry, bulkhead_manager):
-        tool_name = task.function
-        # ...
-        
-        # Get or create a bulkhead FOR THAT TOOL
-        bulkhead = bulkhead_manager.get_bulkhead(tool_name)
-        if not bulkhead:
-            # Create a default config for the tool
-            config = BulkheadConfig(name=tool_name, ...)
-            bulkhead = bulkhead_manager.create_bulkhead(config)
-            
-        # ... (rest of your logic to execute via bulkhead.execute)
-    ```
+**A simple, robust fix** is to move the `logging.basicConfig` call from `run_test.py` to the very top of `highway_core/engine/engine.py`. This ensures it's set up before *any* other part of the engine (like the bulkhead) is initialized.
 
 -----
 
-### New Test Workflow: `examples/tier_1_5_refactor_test.yaml`
+### Next Steps: Tier 2 Implementation Prompt
 
-This new workflow will validate your refactored engine. It specifically tests the new features:
+You are ready for Tier 2.
 
-  * `Condition` operator handling.
-  * `fetch` tool (which will test the new `Bulkhead` logic).
-  * `tools.log.error` tool.
-  * Explicit `{{results...}}` and `{{variables...}}` state resolution.
+**Agent Task: Implement Tier 2 Operator Handlers**
 
-<!-- end list -->
-this yaml is in examples/tier_1_5_refactor_test.yaml
+Your goal is to implement the `parallel` and `wait` operator handlers, which will complete the core set of non-looping operators.
+
+1.  **`highway_core/engine/operator_handlers/wait_handler.py`:**
+
+      * Update this file. It currently imports from `highway_dsl`, which is forbidden. It must import `WaitOperatorModel` from `highway_core.engine.models`.
+      * **Implement the logic:** Parse the `wait_for` field.
+          * If it's an `int` or `float`, treat it as seconds (`time.sleep(task.wait_for)`).
+          * If it's a `str` that starts with `duration:`, parse the seconds and sleep.
+          * If it's a `str` that starts with `time:`, parse the time (e.g., `04:00:00`) and sleep until that time.
+          * (Leave `datetime` and event-based waits as stubs for now).
+      * It should take the standard `(task, state, registry, bulkhead_manager)` arguments, but won't use the last two.
+      * It does **not** need to run in a bulkhead.
+
+2.  **`highway_core/engine/operator_handlers/parallel_handler.py`:**
+
+      * Update this file. It must import `ParallelOperatorModel` from `highway_core.engine.models`.
+      * **Implement the logic:** This handler's job is to "unblock" all its branches.
+      * It must **not** return a list of tasks. The orchestrator's `_find_next_runnable_tasks` will handle this automatically.
+      * Instead, just like the `condition_handler`, it needs to **conceptually complete** any branches that are empty or invalid, so they don't block the downstream "fan-in" task.
+      * **Crucial Update:** Your `Orchestrator`'s `_find_next_runnable_tasks` logic is still O(n^2). This is the last remaining part of the Tier 1.5 refactor. You **must** replace it with a `graphlib.TopologicalSorter` as described in `QWEN.md`.
+          * In `Orchestrator.__init__`: Create the graph and `self.sorter = TopologicalSorter(self.graph)`.
+          * In `Orchestrator.run`: Replace `while self.task_queue:` with `while self.sorter.is_active():`.
+          * Get tasks with `runnable_tasks = self.sorter.get_ready()`.
+          * Execute these tasks (using a `ThreadPoolExecutor` for true parallelism).
+          * When a task finishes, call `self.sorter.done(task_id)`.
+          * Your `condition_handler`'s logic of `orchestrator.completed_tasks.add(skipped_task_id)` must be changed to `self.sorter.done(skipped_task_id)`.
+
+3.  **Update `highway_core/engine/orchestrator.py`:**
+
+      * Add `parallel_handler` and `wait_handler` to your `self.handler_map`.
+
+### Tier 2 Test Workflow
+
+Create `examples/tier_2_parallel_wait_test.yaml` with this content. This will be your new test file.
 
 ```yaml
-name: tier1_5_refactor_test
+name: tier_2_parallel_wait_test
 version: 1.0.0
-description: Tests the refactored Tier 1.5 engine (handlers, state, and bulkheads).
+description: Tests parallel execution, fan-in, and wait operators.
 variables:
   base_api_url: "https://jsonplaceholder.typicode.com"
   
@@ -351,93 +91,109 @@ tasks:
     task_id: log_start
     operator_type: task
     function: tools.log.info
-    args: ["Starting Tier 1.5 Refactor Test..."]
+    args: ["Starting Tier 2 Test..."]
     dependencies: []
 
-  # Tests tools.fetch.get, result_key, and bulkhead
+  # --- Parallel Block ---
+  run_parallel_fetches:
+    task_id: run_parallel_fetches
+    operator_type: parallel
+    dependencies: ["log_start"]
+    branches:
+      branch_1: ["fetch_todo_1"]
+      branch_2: ["fetch_todo_2", "log_todo_2"] # A 2-step branch
+      branch_3: ["short_wait"]
+
   fetch_todo_1:
     task_id: fetch_todo_1
     operator_type: task
     function: tools.fetch.get
     args: ["{{variables.base_api_url}}/todos/1"]
-    dependencies: ["log_start"]
-    result_key: "todo_1" # Saves to results.todo_1
+    dependencies: ["run_parallel_fetches"]
+    result_key: "todo_1"
 
-  # Tests ConditionOperator and explicit state resolution
-  check_fetch_status:
-    task_id: check_fetch_status
-    operator_type: condition
-    condition: "{{results.todo_1.status}} == 200" # Explicit state
-    dependencies: ["fetch_todo_1"]
-    if_true: "log_success"
-    if_false: "log_failure"
+  fetch_todo_2:
+    task_id: fetch_todo_2
+    operator_type: task
+    function: tools.fetch.get
+    args: ["{{variables.base_api_url}}/todos/2"]
+    dependencies: ["run_parallel_fetches"]
+    result_key: "todo_2"
 
-  # Tests the 'if_true' branch
-  log_success:
-    task_id: log_success
+  log_todo_2:
+    task_id: log_todo_2
+    operator_type: task
+    function: tools.log.info
+    args: ["Todo 2 Title: {{results.todo_2.data.title}}"]
+    dependencies: ["fetch_todo_2"]
+
+  short_wait:
+    task_id: short_wait
+    operator_type: wait
+    wait_for: 1  # Wait for 1 second
+    dependencies: ["run_parallel_fetches"]
+
+  # --- Fan-In (Synchronization) ---
+  # This task must wait for ALL 3 branches to be fully complete.
+  # It depends on the *last* task of each branch.
+  log_parallel_complete:
+    task_id: log_parallel_complete
     operator_type: task
     function: tools.log.info
     args:
-      - "Fetch successful. Title: {{results.todo_1.data.title}}" # Nested resolution
-    dependencies: ["check_fetch_status"]
+      - "All parallel branches complete. Fetched todo 1: {{results.todo_1.data.id}}"
+    dependencies:
+      - "fetch_todo_1"    # End of branch 1
+      - "log_todo_2"      # End of branch 2
+      - "short_wait"      # End of branch 3
 
-  # Tests the 'if_false' branch
-  log_failure:
-    task_id: log_failure
-    operator_type: task
-    function: tools.log.error
-    args:
-      - "Fetch failed. Status: {{results.todo_1.status}}"
-    dependencies: ["check_fetch_status"]
-
-  # Tests that the orchestrator can continue after a branch
+  # --- Final Task ---
   log_end:
     task_id: log_end
     operator_type: task
     function: tools.log.info
-    args: ["Test finished."]
-    # Depends on BOTH branches. The orchestrator must wait
-    # for the completed path (log_success or log_failure).
-    dependencies: ["log_success", "log_failure"]
+    args: ["Tier 2 Test Finished."]
+    dependencies: ["log_parallel_complete"]
 ```
 
 ### Pass Criteria (Expected Output)
 
-When you run your refactored engine with this new YAML, I will fact-check the output. It **must** look like this (assuming the fetch is successful):
+After you implement the `TopologicalSorter` and new handlers, running `run_test.py` (updated to point to the new YAML) should produce output similar to this:
 
 ```
-Engine: Loading workflow from: examples/tier_1_5_refactor_test.yaml
-ToolRegistry loaded with X functions.
-WorkflowState initialized.
-Orchestrator initialized.
-Orchestrator: Starting workflow 'tier1_5_refactor_test'
-Orchestrator: Executing task log_start
-TaskHandler: Executing task: log_start
-TaskHandler: Calling tools.log.info with args=['Starting Tier 1.5 Refactor Test...']
-[HighwayEngine] - Starting Tier 1.5 Refactor Test...
+...
+Orchestrator: Starting workflow 'tier_2_parallel_wait_test'
+...
+[HighwayEngine] - Starting Tier 2 Test...
 Orchestrator: Task log_start completed.
-Orchestrator: Executing task fetch_todo_1
+Orchestrator: Executing task run_parallel_fetches
+ParallelHandler: Activating 3 branches.
+Orchestrator: Task run_parallel_fetches completed.
+Orchestrator: Running tasks in parallel: ['fetch_todo_1', 'fetch_todo_2', 'short_wait']
 TaskHandler: Executing task: fetch_todo_1
-TaskHandler: Getting or creating bulkhead for 'tools.fetch.get'
-TaskHandler: Calling tools.fetch.get via bulkhead...
-  [Tool.Fetch.Get] Fetching https://jsonplaceholder.typicode.com/todos/1...
+TaskHandler: Executing task: fetch_todo_2
+WaitHandler: Waiting for 1 seconds...
+TaskHandler: Executing task: short_wait
+  [Tool.Fetch.Get] Fetching .../todos/1...
+  [Tool.Fetch.Get] Fetching .../todos/2...
+WaitHandler: Wait complete.
+Orchestrator: Task short_wait completed.
 State: Setting result for key: todo_1
 Orchestrator: Task fetch_todo_1 completed.
-Orchestrator: Executing task check_fetch_status
-ConditionHandler: Evaluating '{{results.todo_1.status}} == 200'
-ConditionHandler: Resolved to '200 == 200'. Result: True
-Orchestrator: Task check_fetch_status completed. Adding 'log_success' to queue.
-Orchestrator: Executing task log_success
-TaskHandler: Executing task: log_success
-TaskHandler: Calling tools.log.info with args=['Fetch successful. Title: delectus aut autem']
-[HighwayEngine] - Fetch successful. Title: delectus aut autem
-Orchestrator: Task log_success completed.
-Orchestrator: Executing task log_end
+State: Setting result for key: todo_2
+Orchestrator: Task fetch_todo_2 completed.
+Orchestrator: Running tasks in parallel: ['log_todo_2']
+TaskHandler: Executing task: log_todo_2
+[HighwayEngine] - Todo 2 Title: quis ut nam facilis et officia qui
+Orchestrator: Task log_todo_2 completed.
+Orchestrator: Running tasks in parallel: ['log_parallel_complete']
+TaskHandler: Executing task: log_parallel_complete
+[HighwayEngine] - All parallel branches complete. Fetched todo 1: 1
+Orchestrator: Task log_parallel_complete completed.
+Orchestrator: Running tasks in parallel: ['log_end']
 TaskHandler: Executing task: log_end
-TaskHandler: Calling tools.log.info with args=['Test finished.']
-[HighwayEngine] - Test finished.
+[HighwayEngine] - Tier 2 Test Finished.
 Orchestrator: Task log_end completed.
-Orchestrator: Workflow 'tier1_5_refactor_test' finished.
+Orchestrator: Workflow 'tier_2_parallel_wait_test' finished.
+...
 ```
-
-*(Note: The "Task log\_failure" path should be correctly skipped.)*

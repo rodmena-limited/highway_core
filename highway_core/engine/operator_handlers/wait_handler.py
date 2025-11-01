@@ -1,40 +1,95 @@
 # --- engine/operator_handlers/wait_handler.py ---
 # Purpose: Handles the 'WaitOperator'.
 # Responsibilities:
-# - Pauses execution for a 'timedelta' or until a 'datetime' or event.
+# - Pauses execution for a specified duration or until a specific time.
 
 import time
-from datetime import timedelta, datetime
-from highway_dsl import WaitOperator
-from engine.state import WorkflowState
+from datetime import datetime
+import re
+from highway_core.engine.models import WaitOperatorModel
+from highway_core.engine.state import WorkflowState
+from highway_core.tools.registry import ToolRegistry
+from highway_core.tools.bulkhead import BulkheadManager
 
 
-def execute(task: WaitOperator, state: WorkflowState) -> list[str]:
+def execute(
+    task: WaitOperatorModel,
+    state: WorkflowState,
+    registry: ToolRegistry,
+    bulkhead_manager: BulkheadManager,
+) -> None:
     """
     Executes a WaitOperator.
     """
-    wait_for = task.wait_for  # The model_validator already parsed this
+    wait_for = task.wait_for
 
-    if isinstance(wait_for, timedelta):
-        print(f"  [WaitHandler] Waiting for {wait_for.total_seconds()} seconds...")
-        time.sleep(wait_for.total_seconds())
-        print("  [WaitHandler] Wait complete.")
+    print(f"WaitHandler: Waiting for {wait_for}...")
 
-    elif isinstance(wait_for, datetime):
-        now = datetime.now()
-        wait_seconds = (wait_for - now).total_seconds()
-        if wait_seconds > 0:
-            print(f"  [WaitHandler] Waiting until {wait_for} ({wait_seconds}s)...")
-            time.sleep(wait_seconds)
-            print("  [WaitHandler] Wait complete.")
-        else:
-            print(f"  [WaitHandler] Wait time {wait_for} is in the past. Continuing.")
+    # Handle different wait_for formats
+    if isinstance(wait_for, (int, float)):
+        # If it's a number, treat as seconds
+        time.sleep(wait_for)
+        print("WaitHandler: Wait complete.")
 
     elif isinstance(wait_for, str):
-        # This is a complex event-based wait.
-        # A real engine would subscribe to an event system.
-        print(
-            f"  [WaitHandler] STUB: Waiting for event '{wait_for}'. Proceeding immediately."
-        )
+        if wait_for.startswith("duration:"):
+            # Parse duration format like "duration:5s", "duration:2m", "duration:1h"
+            duration_str = wait_for[9:]  # Remove "duration:" prefix
+            # Extract number and unit (s, m, h)
+            match = re.match(r"(\d+\.?\d*)([smh])", duration_str)
+            if match:
+                value, unit = match.groups()
+                value = float(value)
+                if unit == "s":
+                    seconds = value
+                elif unit == "m":
+                    seconds = value * 60
+                elif unit == "h":
+                    seconds = value * 3600
+                else:
+                    seconds = value  # Default to seconds if unit not recognized
+                time.sleep(seconds)
+                print("WaitHandler: Wait complete.")
+            else:
+                # If format doesn't match, fallback to seconds (handle potential float conversion errors)
+                try:
+                    seconds = float(duration_str)
+                    time.sleep(seconds)
+                    print("WaitHandler: Wait complete.")
+                except ValueError:
+                    print(
+                        f"WaitHandler: Invalid duration format '{duration_str}'. Continuing."
+                    )
 
-    return []
+        elif wait_for.startswith("time:"):
+            # Parse time format like "time:04:00:00" (4 AM)
+            time_str = wait_for[5:]  # Remove "time:" prefix
+            target_time = datetime.strptime(time_str, "%H:%M:%S").time()
+            now = datetime.now()
+            target_datetime = datetime.combine(now.date(), target_time)
+
+            # If the target time is earlier than now, assume it's for tomorrow
+            if target_datetime.time() < now.time():
+                target_datetime = datetime.combine(
+                    now.date().replace(day=now.date().day + 1), target_time
+                )
+
+            wait_seconds = (target_datetime - now).total_seconds()
+            if wait_seconds > 0:
+                print(f"WaitHandler: Waiting until {target_time}...")
+                time.sleep(wait_seconds)
+                print("WaitHandler: Wait complete.")
+            else:
+                print(
+                    f"WaitHandler: Target time {target_time} is in the past for today. Continuing."
+                )
+
+        else:
+            # For other string formats (datetime, event-based), we'll implement later
+            print(
+                f"WaitHandler: STUB: Waiting for event/datetime '{wait_for}'. Proceeding immediately."
+            )
+
+    else:
+        # For other types (datetime objects), we'll implement later
+        print(f"WaitHandler: STUB: Waiting for '{wait_for}'. Proceeding immediately.")

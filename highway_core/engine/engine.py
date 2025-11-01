@@ -13,6 +13,11 @@ from .orchestrator import Orchestrator
 from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager, BulkheadConfig
 
+# Configure root logging before importing other modules
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+
 
 def run_workflow_from_yaml(yaml_path: str) -> None:
     """

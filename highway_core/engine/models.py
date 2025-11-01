@@ -29,7 +29,7 @@ class ConditionOperatorModel(BaseOperatorModel):
     operator_type: Literal["condition"]
     condition: str
     if_true: str
-    if_false: str
+    if_false: Optional[str] = None
 
 
 class ParallelOperatorModel(BaseOperatorModel):

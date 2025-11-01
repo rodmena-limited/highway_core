@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "highway_core"
-version = "0.0.1"
+version = "0.0.2"
 authors = [
   { name = "Farseed Ashouri", email = "farseed.ashouri@gmail.com" },
 ]
@@ -23,6 +23,7 @@ dependencies = [
     "psutil>=7.1.2",
     "pyyaml>=6.0",
     "requests>=2.28.1",
+    "pydantic>=2.0.1",
     ]
 # dev dependencies
 [project.optional-dependencies]

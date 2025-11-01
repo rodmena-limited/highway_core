@@ -25,7 +25,9 @@ def execute(
     print(f"ConditionHandler: Evaluating '{task.condition}'")
 
     # 1. Resolve the condition string
-    resolved_condition_str = state.resolve_templating(task.condition)
+    resolved_condition_value = state.resolve_templating(task.condition)
+    # Ensure it's a string for eval_condition
+    resolved_condition_str = str(resolved_condition_value)
     result = eval_condition(resolved_condition_str)
     print(f"ConditionHandler: Resolved to '{resolved_condition_str}'. Result: {result}")
 
@@ -45,9 +47,9 @@ def execute(
         print(
             f"ConditionHandler: Marking '{skipped_task_id}' as conceptually completed."
         )
-        # Add the skipped task to completed tasks so that tasks
+        # Mark the skipped task as done in the sorter so that tasks
         # depending on BOTH conditional branches can proceed
-        orchestrator.completed_tasks.add(skipped_task_id)
+        orchestrator.sorter.done(skipped_task_id)
 
 
 def eval_condition(condition_str: str):

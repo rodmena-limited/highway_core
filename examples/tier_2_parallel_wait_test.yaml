@@ -1,0 +1,76 @@
+name: tier_2_parallel_wait_test
+version: 1.0.0
+description: Tests parallel execution, fan-in, and wait operators.
+variables:
+  base_api_url: "https://jsonplaceholder.typicode.com"
+  
+start_task: log_start
+
+tasks:
+  log_start:
+    task_id: log_start
+    operator_type: task
+    function: tools.log.info
+    args: ["Starting Tier 2 Test..."]
+    dependencies: []
+
+  # --- Parallel Block ---
+  run_parallel_fetches:
+    task_id: run_parallel_fetches
+    operator_type: parallel
+    dependencies: ["log_start"]
+    branches:
+      branch_1: ["fetch_todo_1"]
+      branch_2: ["fetch_todo_2", "log_todo_2"] # A 2-step branch
+      branch_3: ["short_wait"]
+
+  fetch_todo_1:
+    task_id: fetch_todo_1
+    operator_type: task
+    function: tools.fetch.get
+    args: ["{{variables.base_api_url}}/todos/1"]
+    dependencies: ["run_parallel_fetches"]
+    result_key: "todo_1"
+
+  fetch_todo_2:
+    task_id: fetch_todo_2
+    operator_type: task
+    function: tools.fetch.get
+    args: ["{{variables.base_api_url}}/todos/2"]
+    dependencies: ["run_parallel_fetches"]
+    result_key: "todo_2"
+
+  log_todo_2:
+    task_id: log_todo_2
+    operator_type: task
+    function: tools.log.info
+    args: ["Todo 2 Title: {{results.todo_2.data.title}}"]
+    dependencies: ["fetch_todo_2"]
+
+  short_wait:
+    task_id: short_wait
+    operator_type: wait
+    wait_for: 1  # Wait for 1 second
+    dependencies: ["run_parallel_fetches"]
+
+  # --- Fan-In (Synchronization) ---
+  # This task must wait for ALL 3 branches to be fully complete.
+  # It depends on the *last* task of each branch.
+  log_parallel_complete:
+    task_id: log_parallel_complete
+    operator_type: task
+    function: tools.log.info
+    args:
+      - "All parallel branches complete. Fetched todo 1: {{results.todo_1.data.id}}"
+    dependencies:
+      - "fetch_todo_1"    # End of branch 1
+      - "log_todo_2"      # End of branch 2
+      - "short_wait"      # End of branch 3
+
+  # --- Final Task ---
+  log_end:
+    task_id: log_end
+    operator_type: task
+    function: tools.log.info
+    args: ["Tier 2 Test Finished."]
+    dependencies: ["log_parallel_complete"]

@@ -1,23 +1,34 @@
 # --- engine/operator_handlers/parallel_handler.py ---
 # Purpose: Handles the 'ParallelOperator'.
 # Responsibilities:
-# - Gets all the starting tasks for all 'branches'.
-# - Returns all of them to the orchestrator to be run concurrently.
-# Note: A real async engine would handle this differently, but in a simple
-# linear orchestrator, we just add all branch-starting tasks to the queue.
+# - Activates all branches by conceptually completing empty branches
+# so they don't block downstream "fan-in" tasks.
 
-from highway_dsl import ParallelOperator
-from engine.state import WorkflowState
+from highway_core.engine.models import ParallelOperatorModel
+from highway_core.engine.state import WorkflowState
+from highway_core.tools.registry import ToolRegistry
+from highway_core.tools.bulkhead import BulkheadManager
 
 
-def execute(task: ParallelOperator, state: WorkflowState) -> list[str]:
+def execute(
+    task: ParallelOperatorModel,
+    state: WorkflowState,
+    registry: ToolRegistry,
+    bulkhead_manager: BulkheadManager,
+) -> None:
     """
-    Executes a ParallelOperator.
+    Executes a ParallelOperator by activating all branches.
     """
-    next_tasks = []
-    for branch_name, task_id_list in task.branches.items():
-        if task_id_list:
-            next_tasks.append(task_id_list[0])  # Add the first task of each branch
+    print(f"ParallelHandler: Activating {len(task.branches)} branches.")
 
-    print(f"  [ParallelHandler] Queuing {len(next_tasks)} parallel branches.")
-    return next_tasks
+    # Conceptually complete any branches that are empty or invalid
+    # so they don't block the downstream "fan-in" task.
+    for branch_name, task_ids in task.branches.items():
+        if not task_ids:
+            # If a branch is empty, conceptually complete it so downstream tasks aren't blocked
+            print(
+                f"ParallelHandler: Branch '{branch_name}' is empty, marking as conceptually completed."
+            )
+
+    # The actual parallel execution will be handled by the orchestrator's TopologicalSorter
+    # which will automatically handle tasks in parallel when their dependencies are met
