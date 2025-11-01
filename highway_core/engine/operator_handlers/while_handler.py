@@ -6,11 +6,11 @@
 # - If false, returns an empty list (loop is finished).
 # - The last task in the 'loop_body' must depend on this task to loop.
 
-from highway_dsl import WhileOperator
-from engine.state import WorkflowState
+from highway_core.engine.models import WhileOperatorModel
+from highway_core.engine.state import WorkflowState
 
 
-def execute(task: WhileOperator, state: WorkflowState) -> list[str]:
+def execute(task: WhileOperatorModel, state: WorkflowState) -> list[str]:
     """
     Executes one iteration check of a WhileOperator.
     """

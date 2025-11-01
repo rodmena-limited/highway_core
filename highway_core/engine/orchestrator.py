@@ -1,5 +1,6 @@
 from collections import deque
 import graphlib
+from typing import Set
 from highway_core.engine.models import WorkflowModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
@@ -26,7 +27,7 @@ class Orchestrator:
             graph[task_id] = set(task.dependencies)
 
         self.sorter = graphlib.TopologicalSorter(graph)
-        self.completed_tasks = set()
+        self.completed_tasks: Set[str] = set()
 
         # Initialize handler map
         # The handlers now return the list of next task IDs

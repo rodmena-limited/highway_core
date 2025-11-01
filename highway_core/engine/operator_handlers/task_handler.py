@@ -2,13 +2,14 @@ from highway_core.engine.models import TaskOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager, BulkheadConfig
+from typing import Optional
 
 
 def execute(
     task: TaskOperatorModel,
     state: WorkflowState,
     registry: ToolRegistry,
-    bulkhead_manager: BulkheadManager = None,
+    bulkhead_manager: Optional[BulkheadManager] = None,
 ) -> None:
     """
     Executes a single TaskOperator with bulkhead isolation.

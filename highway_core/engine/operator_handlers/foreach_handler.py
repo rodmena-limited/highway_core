@@ -4,11 +4,11 @@
 # - A real implementation is very complex.
 # - This stub will just log and move on.
 
-from highway_dsl import ForEachOperator
-from engine.state import WorkflowState
+from highway_core.engine.models import ForEachOperatorModel
+from highway_core.engine.state import WorkflowState
 
 
-def execute(task: ForEachOperator, state: WorkflowState) -> list[str]:
+def execute(task: ForEachOperatorModel, state: WorkflowState) -> list[str]:
     """
     Executes a ForEachOperator.
     A real engine would need to instantiate a sub-orchestrator

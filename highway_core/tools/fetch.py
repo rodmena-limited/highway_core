@@ -2,11 +2,12 @@
 # Implements 'tools.fetch.*' functions.
 
 import requests
+from typing import Optional, Dict, Any
 from .decorators import tool
 
 
 @tool("tools.fetch.get")
-def get(url: str, headers: dict = None) -> dict:
+def get(url: str, headers: Optional[Dict[Any, Any]] = None) -> dict:
     """Makes an HTTP GET request and returns a standardized dict."""
     print(f"  [Tool.Fetch.Get] Fetching {url}...")
     try:
@@ -27,7 +28,11 @@ def get(url: str, headers: dict = None) -> dict:
 
 
 @tool("tools.fetch.post")
-def post(url: str, data: dict = None, headers: dict = None) -> dict:
+def post(
+    url: str,
+    data: Optional[Dict[Any, Any]] = None,
+    headers: Optional[Dict[Any, Any]] = None,
+) -> dict:
     """Makes an HTTP POST request and returns a standardized dict."""
     print(f"  [Tool.Fetch.Post] Posting to {url}...")
     try:

@@ -76,7 +76,7 @@ class Bulkhead:
 
         # Execution control
         self._semaphore = threading.Semaphore(config.max_concurrent_calls)
-        self._task_queue = queue.Queue(maxsize=config.max_queue_size)
+        self._task_queue: queue.Queue = queue.Queue(maxsize=config.max_queue_size)
         self._worker_threads: List[threading.Thread] = []
         self._stop_event = threading.Event()
 
@@ -250,7 +250,7 @@ class Bulkhead:
                         self._success_count = 0
 
         # Create future for result
-        future = Future()
+        future: Future = Future()
         start_time = time.time()
 
         # Try to add task to queue

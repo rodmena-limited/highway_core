@@ -4,7 +4,7 @@
 # - Provides a standard interface for saving/loading workflow state.
 
 from abc import ABC, abstractmethod
-from engine.state import WorkflowState
+from highway_core.engine.state import WorkflowState
 
 
 class PersistenceManager(ABC):

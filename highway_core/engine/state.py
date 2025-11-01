@@ -1,6 +1,6 @@
 import re
 from copy import deepcopy
-from typing import Any
+from typing import Any, Optional, Dict, Union
 
 
 class WorkflowState:
@@ -9,9 +9,9 @@ class WorkflowState:
     # Regex to find {{ variable.name }}
     TEMPLATE_REGEX = re.compile(r"\{\{([\s\w.-]+)\}\}")
 
-    def __init__(self, initial_variables: dict):
+    def __init__(self, initial_variables: Dict[str, Any]):
         # Deepcopy to ensure isolation
-        self._data = {
+        self._data: Dict[str, Dict[str, Any]] = {
             "variables": deepcopy(initial_variables),
             "results": {},  # Stores task outputs, e.g., "todo_1": {...}
             "memory": {},  # For tools.memory.set
@@ -28,11 +28,11 @@ class WorkflowState:
         """Sets a variable in the workflow state."""
         self._data["variables"][key] = value
 
-    def get_variable(self, key: str):
+    def get_variable(self, key: str) -> Any:
         """Retrieves a variable from the workflow state."""
         return self._data["variables"].get(key)
 
-    def get_result(self, result_key: str):
+    def get_result(self, result_key: str) -> Any:
         """Retrieves the output of a task by result key."""
         return self._data["results"].get(result_key)
 
@@ -52,7 +52,7 @@ class WorkflowState:
             parts = var_key.split(".")
 
             # Start with the variables dict
-            current_val = self._data["variables"]
+            current_val: Optional[Dict[str, Any]] = self._data["variables"]
 
             # Traverse the nested path
             for part in parts:
@@ -74,10 +74,10 @@ class WorkflowState:
             parts = result_key.split(".")
 
             # Start with the results dict
-            current_val = self._data["results"]
+            results_dict: Dict[str, Any] = self._data["results"]
 
             # Get the first part which should be the result key
-            current_val = current_val.get(parts[0])
+            current_val = results_dict.get(parts[0])
             if current_val is None:
                 print(f"State: Warning - could not find result key: {parts[0]}")
                 return None
@@ -104,9 +104,10 @@ class WorkflowState:
             parts = mem_key.split(".")
 
             # Start with the memory dict
-            current_val = self._data["memory"]
+            memory_dict: Dict[str, Any] = self._data["memory"]
 
             # Traverse the nested path
+            current_val = memory_dict
             for part in parts:
                 if isinstance(current_val, dict):
                     current_val = current_val.get(part)

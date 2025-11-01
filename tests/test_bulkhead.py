@@ -8,7 +8,7 @@ import time
 import random
 import threading
 from concurrent.futures import Future, wait, as_completed
-from typing import List
+from typing import List, Optional
 
 # Import the bulkhead implementation
 from highway_core.tools.bulkhead import (
@@ -25,7 +25,7 @@ class DatabaseService:
     def __init__(self):
         self.call_count = 0
 
-    def query(self, sql: str, user_id: int = None) -> str:
+    def query(self, sql: str, user_id: Optional[int] = None) -> str:
         """Simulate a database query"""
         self.call_count += 1
 
@@ -48,7 +48,7 @@ class ExternalAPIService:
     def __init__(self):
         self.call_count = 0
 
-    def call_api(self, endpoint: str, data: dict = None) -> str:
+    def call_api(self, endpoint: str, data: Optional[dict] = None) -> str:
         """Simulate an API call"""
         self.call_count += 1
 

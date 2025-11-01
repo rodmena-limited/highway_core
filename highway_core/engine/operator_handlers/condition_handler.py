@@ -8,6 +8,7 @@
 from highway_core.engine.models import ConditionOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
+from typing import Optional
 import ast
 import operator
 import warnings
@@ -33,6 +34,8 @@ def execute(
     print(f"ConditionHandler: Resolved to '{resolved_condition_str}'. Result: {result}")
 
     # 2. Determine which path to take and mark the other as conceptually completed
+    next_task_id: Optional[str] = None
+    skipped_task_id: Optional[str] = None
     if result:
         next_task_id = task.if_true
         skipped_task_id = task.if_false
