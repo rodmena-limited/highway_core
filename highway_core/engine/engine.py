@@ -1,38 +1,40 @@
 # --- engine/engine.py ---
-# Purpose: Main entry point for the workflow execution engine.
+# Purpose: Main entry point for the Tier 1 workflow execution engine.
 # Responsibilities:
-# - Loads a workflow definition.
+# - Loads a workflow definition from YAML.
 # - Initializes the orchestrator and state.
 # - Starts the workflow execution.
 
-from highway_dsl import Workflow
-from .orchestrator import Orchestrator
+import yaml
+from .models import WorkflowModel
 from .state import WorkflowState
-from persistence.manager import PersistenceManager
-from persistence.db_storage import DatabasePersistence
+from .orchestrator import Orchestrator
+from highway_core.tools.registry import ToolRegistry
 
 
-def run_workflow(workflow: Workflow, persistence_manager: PersistenceManager = None):
+def run_workflow_from_yaml(yaml_path: str) -> None:
     """
-    Loads and runs a Highway workflow.
+    The main entry point for the Highway Execution Engine.
     """
-    print(f"Engine starting workflow: {workflow.name}")
+    print(f"Engine: Loading workflow from: {yaml_path}")
 
-    if persistence_manager is None:
-        persistence_manager = DatabasePersistence()  # Default persistence
-
-    state = WorkflowState(workflow.variables)
-    orchestrator = Orchestrator(workflow, state, persistence_manager)
-
+    # 1. Load and Parse YAML
     try:
-        orchestrator.run()
-        print(f"Workflow {workflow.name} completed successfully.")
+        with open(yaml_path, "r") as f:
+            workflow_data = yaml.safe_load(f)
+
+        workflow_model = WorkflowModel.model_validate(workflow_data)
     except Exception as e:
-        print(f"Workflow {workflow.name} failed: {e}")
-        # Log error to persistence
-    finally:
-        # Final state snapshot
-        pass
+        print(f"Engine: Failed to load or parse YAML: {e}")
+        return
+
+    # 2. Initialize Core Components
+    registry = ToolRegistry()
+    state = WorkflowState(workflow_model.variables)
+    orchestrator = Orchestrator(workflow_model, state, registry)
+
+    # 3. Run the workflow
+    orchestrator.run()
 
 
 if __name__ == "__main__":

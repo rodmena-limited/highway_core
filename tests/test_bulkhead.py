@@ -11,7 +11,12 @@ from concurrent.futures import Future, wait, as_completed
 from typing import List
 
 # Import the bulkhead implementation
-from bulkhead import BulkheadConfig, BulkheadManager, with_bulkhead, ExecutionResult
+from highway_core.tools.bulkhead import (
+    BulkheadConfig,
+    BulkheadManager,
+    with_bulkhead,
+    ExecutionResult,
+)
 
 
 class DatabaseService:
@@ -423,10 +428,6 @@ def simulate_high_traffic_scenario():
         print("✅ Cleanup completed!")
 
 
-if __name__ == "__main__":
-    print("Bulkhead Pattern Demonstration")
-    print("This shows how different services are isolated from each other")
-    print("to prevent cascading failures in a microservices architecture.\n")
-
+def test_bulkhead_simulation():
+    """Test function to run the bulkhead simulation"""
     simulate_high_traffic_scenario()
-    print("\n🎉 Demonstration completed successfully!")

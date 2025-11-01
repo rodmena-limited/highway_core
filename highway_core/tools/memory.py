@@ -1,19 +1,17 @@
-# --- tools/memory.py ---
-# Implements 'tools.memory.set'.
-# This is a special tool that needs access to the WorkflowState.
-# The TaskHandler will need to handle this specially.
+# This is a special tool that requires the WorkflowState.
+# The task_handler will inject the 'state' argument.
 
-# This module is a bit of a special case.
-# The 'set_memory' function will be called by the TaskHandler,
-# which will pass in the state object.
+from highway_core.engine.state import WorkflowState
+from typing import Any, Dict
 
 
-def set_memory(state, key: str, value: any) -> dict:
+def set_memory(state: WorkflowState, key: str, value: Any) -> Dict[str, Any]:
     """
-    A special tool function that sets a value in the workflow state.
+    Saves a value to the workflow's volatile memory.
+    This tool MUST return a dict for the 'mem_report' result_key.
     """
-    print(f"  [Tool.Memory.Set] Saving to memory key: {key}")
-    state.set_memory(key, value)
+    print(f"Tool.Memory: Setting key '{key}'")
+    state._data["memory"][key] = value  # Accessing internal state directly
 
-    size = len(value) if isinstance(value, (list, str, dict)) else 1
-    return {"key": key, "size": size, "status": "ok"}
+    # Return value as specified by the test workflow
+    return {"key": key, "status": "ok"}

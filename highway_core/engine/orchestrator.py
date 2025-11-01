@@ -1,89 +1,84 @@
-# --- engine/orchestrator.py ---
-# Purpose: The central controller that runs the workflow step-by-step.
-# Responsibilities:
-# - Manages the task execution queue.
-# - Resolves dependencies and determines the next runnable tasks.
-# - Invokes the correct OperatorHandler for each task.
-# - Manages the workflow's overall execution state.
-
-from highway_dsl import Workflow, BaseOperator, OperatorType
-from .state import WorkflowState
-from persistence.manager import PersistenceManager
-from .operator_handlers import (
-    task_handler,
-    condition_handler,
-    parallel_handler,
-    foreach_handler,
-    while_handler,
-    wait_handler,
-)
+from collections import deque
+from highway_core.engine.models import WorkflowModel
+from highway_core.engine.state import WorkflowState
+from highway_core.tools.registry import ToolRegistry
+from highway_core.engine.operator_handlers import task_handler
 
 
 class Orchestrator:
     def __init__(
-        self, workflow: Workflow, state: WorkflowState, persistence: PersistenceManager
+        self, workflow: WorkflowModel, state: WorkflowState, registry: ToolRegistry
     ):
         self.workflow = workflow
         self.state = state
-        self.persistence = persistence
-        self.task_queue = [self.workflow.start_task]
-        self.completed_tasks = set()
+        self.registry = registry
 
-        self.handler_map = {
-            OperatorType.TASK: task_handler,
-            OperatorType.CONDITION: condition_handler,
-            OperatorType.PARALLEL: parallel_handler,
-            OperatorType.FOREACH: foreach_handler,
-            OperatorType.WHILE: while_handler,
-            OperatorType.WAIT: wait_handler,
-            # Add other handlers as they are created
-        }
+        # Use a deque for an efficient LILO queue
+        self.task_queue = deque([self.workflow.start_task])
+        self.completed_tasks = set()
         print("Orchestrator initialized.")
+
+    def _dependencies_met(self, dependencies: list[str]) -> bool:
+        """Checks if all dependencies for a task are in the completed set."""
+        return all(dep_id in self.completed_tasks for dep_id in dependencies)
+
+    def _find_next_runnable_tasks(self) -> list[str]:
+        """
+        Finds all tasks whose dependencies are now met.
+        This is a simple but non-performant O(n^2) check.
+        It is fine for Tier 1.
+        """
+        runnable = []
+        for task_id, task in self.workflow.tasks.items():
+            if task_id not in self.completed_tasks and task_id not in self.task_queue:
+                if self._dependencies_met(task.dependencies):
+                    runnable.append(task_id)
+        return runnable
 
     def run(self):
         """
-        Starts the workflow execution loop.
+        Runs the workflow execution loop.
         """
+        print(f"Orchestrator: Starting workflow '{self.workflow.name}'")
+
         while self.task_queue:
-            current_task_id = self.task_queue.pop(0)
+            task_id = self.task_queue.popleft()
 
-            if current_task_id in self.completed_tasks:
-                continue  # Skip if already done (e.g., multiple deps)
-
-            task = self.workflow.tasks.get(current_task_id)
-            if not task:
-                raise ValueError(f"Task not found: {current_task_id}")
-
-            # Check if dependencies are met
-            if not self._dependencies_met(task.dependencies):
-                # Put it back in the queue and try later
-                self.task_queue.append(current_task_id)
+            task_model = self.workflow.tasks.get(task_id)
+            if not task_model:
+                print(
+                    f"Orchestrator: Error - Task ID '{task_id}' not found in workflow tasks."
+                )
                 continue
 
-            print(
-                f"Orchestrator: Executing task {task.task_id} (Type: {task.operator_type})"
-            )
+            # 1. Check dependencies
+            if not self._dependencies_met(task_model.dependencies):
+                # This shouldn't happen with our current logic, but as a safeguard
+                self.task_queue.append(task_id)  # Put it back
+                continue
 
-            # Find the correct handler
-            handler = self.handler_map.get(task.operator_type)
-            if not handler:
-                raise NotImplementedError(
-                    f"No handler for operator type: {task.operator_type}"
-                )
+            # 2. Execute the task (only TaskHandler for Tier 1)
+            try:
+                if task_model.operator_type == "task":
+                    task_handler.execute(task_model, self.state, self.registry)
+                else:
+                    print(
+                        f"Orchestrator: Warning - Skipping operator type '{task_model.operator_type}'."
+                    )
 
-            # Execute and get next task(s)
-            next_tasks = handler.execute(task, self.state)
+                # 3. Mark as complete
+                self.completed_tasks.add(task_id)
+                print(f"Orchestrator: Task {task_id} completed.")
 
-            self.completed_tasks.add(current_task_id)
+                # 4. Find and queue the next tasks
+                next_tasks = self._find_next_runnable_tasks()
+                for next_task_id in next_tasks:
+                    if next_task_id not in self.task_queue:
+                        self.task_queue.append(next_task_id)
 
-            if next_tasks:
-                self.task_queue.extend(next_tasks)
+            except Exception as e:
+                print(f"Orchestrator: FATAL ERROR executing task '{task_id}': {e}")
+                # In a real engine, this would trigger failure handling
+                break  # Stop the workflow
 
-            # Persist state after each step
-            # self.persistence.save_workflow_state(self.state)
-
-    def _dependencies_met(self, dependencies: list[str]) -> bool:
-        """
-        Checks if all dependencies for a task have been completed.
-        """
-        return all(dep_id in self.completed_tasks for dep_id in dependencies)
+        print(f"Orchestrator: Workflow '{self.workflow.name}' finished.")
