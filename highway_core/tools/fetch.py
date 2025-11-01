@@ -2,8 +2,10 @@
 # Implements 'tools.fetch.*' functions.
 
 import requests
+from .decorators import tool
 
 
+@tool("tools.fetch.get")
 def get(url: str, headers: dict = None) -> dict:
     """Makes an HTTP GET request and returns a standardized dict."""
     print(f"  [Tool.Fetch.Get] Fetching {url}...")
@@ -24,6 +26,7 @@ def get(url: str, headers: dict = None) -> dict:
         }
 
 
+@tool("tools.fetch.post")
 def post(url: str, data: dict = None, headers: dict = None) -> dict:
     """Makes an HTTP POST request and returns a standardized dict."""
     print(f"  [Tool.Fetch.Post] Posting to {url}...")

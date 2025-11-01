@@ -3,8 +3,10 @@
 
 from highway_core.engine.state import WorkflowState
 from typing import Any, Dict
+from .decorators import tool
 
 
+@tool("tools.memory.set")
 def set_memory(state: WorkflowState, key: str, value: Any) -> Dict[str, Any]:
     """
     Saves a value to the workflow's volatile memory.

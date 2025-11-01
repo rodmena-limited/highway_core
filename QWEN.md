@@ -1,493 +1,443 @@
-Here is the full, descriptive prompt for your agent to implement the Tier 1 features.
-The bellow are just basic sample recommendations for structuring your work, you should feel free to adapt as needed and make sure it will have utmost quality.
+You have successfully implemented the basic Tier 1 proof-of-concept. The log output confirms that the linear execution, task handling, state management, and variable resolution are all working at a fundamental level.
+
+However, as you noted, this foundation is not yet the "enterprise-grade" system we're aiming for. The current implementation has several critical shortcuts (like the O(n^2) dependency check and hardcoded handlers) that will not scale. You've also introduced a `bulkhead` pattern, which is an excellent idea for resiliency, but its current implementation is inefficient.
+
+Here is a complete action plan to refactor your Tier 1 implementation into a robust, scalable, and resilient foundation. This "Tier 1.5 Refactor" is the most critical step to get right.
 
 -----
 
-**Agent Task: Implement Tier 1 of the Highway Execution Engine**
+### Agent Task: Refactor Tier 1 for Enterprise-Grade Resiliency
 
-Your mission is to implement the Tier 1 (Minimum Viable Product) of the Highway workflow execution engine. This foundational tier must be capable of parsing a workflow from a YAML file, executing a simple linear chain of tasks, managing state, and resolving variables.
-
-This is the foundation for an enterprise-grade engine. Robustness, clear error handling, and testability are the highest priorities.
+Your task is to refactor the existing Tier 1 components. You will not add new operators (like `parallel` or `while`) yet. Instead, you will harden the core parsing, orchestration, and execution logic to make it scalable, resilient, and ready for advanced features.
 
 ### Core Requirements
 
-1.  **YAML First (Critical):** The engine MUST operate directly on the YAML workflow definition. It **CANNOT** import or depend on the `highway_dsl` Python library.
-2.  **Internal Pydantic Models:** Because you cannot use `highway_dsl`, you must create a new file, `highway_core/engine/models.py`, to define your own Pydantic models for parsing and validating the workflow YAML.
-3.  **Test-Driven Development (TDD):** All new logic must be accompanied by `pytest` unit tests. You must create a new `tests/` directory at the root of the project. Aim for 100% test coverage on the new logic.
-4.  **No `eval()`:** Do not use `eval()` for any part of this. All logic must be handled explicitly.
-
-### Target Workflow to Execute
-
-Your implementation will be considered successful when it can correctly parse and execute the following YAML content (which is located at `examples/base_tier_one_workflow.yaml`):
-
-```yaml
----
-name: tier1_core_test
-version: 1.0.0
-description: A simple linear workflow to test the core Tier 1 engine.
-variables:
-  # The engine should be able to load and use these,
-  # but this first test doesn't require it.
-  initial_var: "test_value"
-start_task: log_start
-tasks:
-  log_start:
-    task_id: log_start
-    operator_type: task
-    function: tools.log.info
-    args:
-      - "Starting Tier 1 test..."
-    dependencies: []
-
-  set_memory_value:
-    task_id: set_memory_value
-    operator_type: task
-    function: tools.memory.set
-    args:
-      - "test_key"
-      - "hello_world"
-    dependencies:
-      - log_start
-    result_key: "mem_report" # The engine must save the return value
-
-  log_result:
-    task_id: log_result
-    operator_type: task
-    function: tools.log.info
-    args:
-      # The engine must resolve these variables
-      - "Memory set report: Key={{mem_report.key}}, Status={{mem_report.status}}"
-    dependencies:
-      - set_memory_value
-
-  log_finish:
-    task_id: log_finish
-    operator_type: task
-    function: tools.log.info
-    args:
-      - "Tier 1 test complete."
-    dependencies:
-      - log_result
-```
+1.  **Full Operator Parsing:** The engine must parse *all* operator types from the YAML, not just `task`.
+2.  **Resilient Execution:** Tool execution must be wrapped in a persistent `bulkhead` to protect the engine from failing or slow tools.
+3.  **Scalable Orchestration:** The `Orchestrator`'s dependency resolution must be rewritten to use a proper topological sort (DAG) to avoid O(n^2) performance issues.
+4.  **Dynamic Tool Loading:** The `ToolRegistry` must be refactored to *dynamically* load tools instead of hardcoding them.
+5.  **Explicit State:** `WorkflowState` variable resolution must be made explicit to avoid ambiguity.
+6.  **Full Test Coverage:** All new and refactored logic must be fully unit-tested.
 
 -----
 
-### Implementation Plan (Step-by-Step)
+### Step-by-Step Refactor Plan
 
-You will modify and create files within the `highway_core` directory.
+#### Step 1: Update `highway_core/engine/models.py` (Critical)
 
-#### Step 1: `highway_core/engine/models.py` (New File)
-
-Create this file to define the Pydantic models for parsing the YAML.
+Your current models only parse `TaskOperatorModel`. This is insufficient. You must use Pydantic's **Discriminated Unions** to parse *any* valid operator.
 
 ```python
 # highway_core/engine/models.py
-from pydantic import BaseModel, Field
-from typing import Any, List, Dict, Optional
+from pydantic import BaseModel, Field, ConfigDict
+from typing import Any, List, Dict, Optional, Literal, Union
 
-class TaskOperatorModel(BaseModel):
-    """Parses a single task from the YAML 'tasks' dict."""
+# Define the "kind" for each operator
+OperatorType = Literal[
+    "task", "condition", "parallel", "foreach", "while", "wait"
+]
+
+# --- Base Operator Model ---
+class BaseOperatorModel(BaseModel):
+    """The base model all operators share."""
     task_id: str
-    operator_type: str  # For Tier 1, this will always be 'task'
+    operator_type: OperatorType
+    dependencies: List[str] = Field(default_factory=list)
+    model_config = ConfigDict(extra="allow")
+
+# --- Specific Operator Models ---
+class TaskOperatorModel(BaseOperatorModel):
+    operator_type: Literal["task"]
     function: str
     args: List[Any] = Field(default_factory=list)
     kwargs: Dict[str, Any] = Field(default_factory=dict)
-    dependencies: List[str] = Field(default_factory=list)
     result_key: Optional[str] = None
-    # Add other fields as needed (e.g., retry_policy)
-    
-    class Config:
-        extra = 'allow' # Allow other operator keys for now
+
+class ConditionOperatorModel(BaseOperatorModel):
+    operator_type: Literal["condition"]
+    condition: str
+    if_true: str
+    if_false: str
+
+class ParallelOperatorModel(BaseOperatorModel):
+    operator_type: Literal["parallel"]
+    branches: Dict[str, List[str]] # Just parsing for now
+
+class WaitOperatorModel(BaseOperatorModel):
+    operator_type: Literal["wait"]
+    wait_for: Any # Can be str, int (for timedelta), etc.
+
+class ForEachOperatorModel(BaseObject):
+    operator_type: Literal["foreach"]
+    items: str
+    loop_body: List[Any] # Just parsing for now
+
+class WhileOperatorModel(BaseObject):
+    operator_type: Literal["while"]
+    condition: str
+    loop_body: List[Any] # Just parsing for now
+
+# --- The Discriminated Union ---
+# This allows Pydantic to automatically parse the correct model
+# based on the 'operator_type' field.
+AnyOperatorModel = Union[
+    TaskOperatorModel,
+    ConditionOperatorModel,
+    ParallelOperatorModel,
+    WaitOperatorModel,
+    ForEachOperatorModel,
+    WhileOperatorModel,
+]
 
 class WorkflowModel(BaseModel):
     """Parses the root YAML file."""
     name: str
     start_task: str
     variables: Dict[str, Any] = Field(default_factory=dict)
-    tasks: Dict[str, TaskOperatorModel]
+    # This is the key change:
+    tasks: Dict[str, AnyOperatorModel] = Field(discriminator="operator_type")
 ```
 
-#### Step 2: `highway_core/tools/log.py`
+#### Step 2: Refactor `highway_core/tools/registry.py`
 
-Implement the logging tools.
+Make this dynamic. Tools should "register themselves."
 
-```python
-# highway_core/tools/log.py
-import logging
-
-# Configure a single, shared logger for the engine
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - [HighwayEngine] - %(message)s",
-)
-logger = logging.getLogger("HighwayEngine")
-
-def info(message: str) -> None:
-    """Logs a message at the INFO level."""
-    logger.info(message)
-
-def error(message: str) -> None:
-    """Logs a message at the ERROR level."""
-    logger.error(message)
-```
-
-#### Step 3: `highway_core/engine/state.py`
-
-Implement the `WorkflowState` class. This is the "memory" of the workflow run.
-
-```python
-# highway_core/engine/state.py
-import re
-from copy import deepcopy
-
-class WorkflowState:
-    """Manages all data for a single workflow run."""
-    
-    # Regex to find {{ variable.name }}
-    TEMPLATE_REGEX = re.compile(r"\{\{([\s\w.-]+)\}\}")
-
-    def __init__(self, initial_variables: dict):
-        # Deepcopy to ensure isolation
-        self._data = {
-            "variables": deepcopy(initial_variables),
-            "results": {},    # Stores task outputs, e.g., "mem_report": {...}
-            "memory": {},     # For tools.memory.set
-        }
-        print("WorkflowState initialized.")
-
-    def set_result(self, result_key: str, value: Any):
-        """Saves the output of a task (from 'result_key')."""
-        print(f"State: Setting result for key: {result_key}")
-        self._data["results"][result_key] = value
-
-    def _get_value(self, path: str) -> Any:
-        """
-        Retrieves a value from the state using dot-delimited path.
-        e.g., "mem_report.key" -> self._data['results']['mem_report']['key']
-        """
-        path = path.strip()
-        parts = path.split('.')
-        
-        # Determine the root context (e.g., 'variables' or 'results')
-        root_key = parts[0]
-        if root_key in self._data:
-            current_val = self._data[root_key]
-        else:
-            # Fallback for keys that are not explicitly namespaced
-            # e.g., 'mem_report' instead of 'results.mem_report'
-            current_val = self._data["results"].get(root_key)
-            if current_val is None:
-                 print(f"State: Warning - could not find root key: {root_key}")
-                 return None
-        
-        # Traverse the nested path
-        for part in parts[1:]:
-            if isinstance(current_val, dict):
-                current_val = current_val.get(part)
-            else:
-                print(f"State: Error - Cannot access property '{part}' on non-dict.")
-                return None
-        return current_val
-
-    def resolve_templating(self, input_data: Any) -> Any:
-        """
-        Recursively resolves templated strings like '{{mem_report.key}}'.
-        """
-        if isinstance(input_data, str):
-            # Check if the *entire string* is a variable
-            match = self.TEMPLATE_REGEX.fullmatch(input_data)
-            if match:
-                return self._get_value(match.group(1))
-
-            # Otherwise, replace all occurrences within the string
-            def replacer(m):
-                val = self._get_value(m.group(1))
-                return str(val) if val is not None else m.group(0)
-                
-            return self.TEMPLATE_REGEX.sub(replacer, input_data)
-
-        if isinstance(input_data, list):
-            return [self.resolve_templating(item) for item in input_data]
-
-        if isinstance(input_data, dict):
-            return {k: self.resolve_templating(v) for k, v in input_data.items()}
-            
-        # Return non-templatable types as-is (e.g., int, bool)
-        return input_data
-```
-
-#### Step 4: `highway_core/tools/memory.py`
-
-Implement the special `set_memory` tool.
-
-```python
-# highway_core/tools/memory.py
-# This is a special tool that requires the WorkflowState.
-# The task_handler will inject the 'state' argument.
-
-from highway_core.engine.state import WorkflowState
-
-def set_memory(state: WorkflowState, key: str, value: Any) -> dict:
-    """
-    Saves a value to the workflow's volatile memory.
-    This tool MUST return a dict for the 'mem_report' result_key.
-    """
-    print(f"Tool.Memory: Setting key '{key}'")
-    state._data["memory"][key] = value # Accessing internal state directly
-    
-    # Return value as specified by the test workflow
-    return {
-        "key": key,
-        "status": "ok"
-    }
-```
-
-#### Step 5: `highway_core/tools/registry.py`
-
-Implement the `ToolRegistry`.
-
-```python
-# highway_core/tools/registry.py
-from typing import Callable, Dict
-from . import log
-from . import memory
-
-class ToolRegistry:
-    def __init__(self):
-        self.functions: Dict[str, Callable] = {}
-        self._register_tools()
-        print(f"ToolRegistry loaded with {len(self.functions)} functions.")
-
-    def _register_tools(self):
-        """Internal method to load all Tier 1 tools."""
-        self.register_tool("tools.log.info", log.info)
-        self.register_tool("tools.log.error", log.error)
-        self.register_tool("tools.memory.set", memory.set_memory)
-
-    def register_tool(self, name: str, func: Callable):
-        self.functions[name] = func
-
-    def get_function(self, name: str) -> Callable:
-        func = self.functions.get(name)
-        if func is None:
-            print(f"Error: Tool '{name}' not found in registry.")
-            raise KeyError(f"Tool '{name}' not found.")
-        return func
-```
-
-#### Step 6: `highway_core/engine/operator_handlers/task_handler.py`
-
-Implement the `TaskOperator` handler.
-
-```python
-# highway_core/engine/operator_handlers/task_handler.py
-from highway_core.engine.models import TaskOperatorModel
-from highway_core.engine.state import WorkflowState
-from highway_core.tools.registry import ToolRegistry
-
-def execute(task: TaskOperatorModel, state: WorkflowState, registry: ToolRegistry) -> None:
-    """
-    Executes a single TaskOperator.
-    """
-    print(f"TaskHandler: Executing task: {task.task_id}")
-    
-    # 1. Get the tool from the registry
-    tool_name = task.function
-    try:
-        tool_func = registry.get_function(tool_name)
-    except KeyError:
-        print(f"TaskHandler: Error - {tool_name} not found.")
-        raise
-        
-    # 2. Resolve arguments
-    resolved_args = state.resolve_templating(task.args)
-    resolved_kwargs = state.resolve_templating(task.kwargs)
-    
-    # 3. Special check for tools that need state
-    if tool_name == "tools.memory.set":
-        # Inject the state object as the first argument
-        resolved_args.insert(0, state)
-        
-    # 4. Execute the tool
-    try:
-        print(f"TaskHandler: Calling {tool_name} with args={resolved_args}")
-        result = tool_func(*resolved_args, **resolved_kwargs)
-    except Exception as e:
-        print(f"TaskHandler: Error executing {tool_name}: {e}")
-        raise
-        
-    # 5. Save the result
-    if task.result_key:
-        state.set_result(task.result_key, result)
-```
-
-#### Step 7: `highway_core/engine/orchestrator.py`
-
-Implement the `Orchestrator`.
-
-```python
-# highway_core/engine/orchestrator.py
-from collections import deque
-from highway_core.engine.models import WorkflowModel
-from highway_core.engine.state import WorkflowState
-from highway_core.tools.registry import ToolRegistry
-from highway_core.engine.operator_handlers import task_handler
-
-class Orchestrator:
-    def __init__(self, workflow: WorkflowModel, state: WorkflowState, registry: ToolRegistry):
-        self.workflow = workflow
-        self.state = state
-        self.registry = registry
-        
-        # Use a deque for an efficient LILO queue
-        self.task_queue = deque([self.workflow.start_task])
-        self.completed_tasks = set()
-        print("Orchestrator initialized.")
-
-    def _dependencies_met(self, dependencies: list[str]) -> bool:
-        """Checks if all dependencies for a task are in the completed set."""
-        return all(dep_id in self.completed_tasks for dep_id in dependencies)
-
-    def _find_next_runnable_tasks(self) -> list[str]:
-        """
-        Finds all tasks whose dependencies are now met.
-        This is a simple but non-performant O(n^2) check.
-        It is fine for Tier 1.
-        """
-        runnable = []
-        for task_id, task in self.workflow.tasks.items():
-            if task_id not in self.completed_tasks and task_id not in self.task_queue:
-                if self._dependencies_met(task.dependencies):
-                    runnable.append(task_id)
-        return runnable
-
-    def run(self):
-        """
-        Runs the workflow execution loop.
-        """
-        print(f"Orchestrator: Starting workflow '{self.workflow.name}'")
-        
-        while self.task_queue:
-            task_id = self.task_queue.popleft()
-            
-            task_model = self.workflow.tasks.get(task_id)
-            if not task_model:
-                print(f"Orchestrator: Error - Task ID '{task_id}' not found in workflow tasks.")
-                continue
-
-            # 1. Check dependencies
-            if not self._dependencies_met(task_model.dependencies):
-                # This shouldn't happen with our current logic, but as a safeguard
-                self.task_queue.append(task_id) # Put it back
-                continue
-                
-            # 2. Execute the task (only TaskHandler for Tier 1)
-            try:
-                if task_model.operator_type == "task":
-                    task_handler.execute(task_model, self.state, self.registry)
-                else:
-                    print(f"Orchestrator: Warning - Skipping operator type '{task_model.operator_type}'.")
-            
-                # 3. Mark as complete
-                self.completed_tasks.add(task_id)
-                print(f"Orchestrator: Task {task_id} completed.")
-                
-                # 4. Find and queue the next tasks
-                next_tasks = self._find_next_runnable_tasks()
-                for next_task_id in next_tasks:
-                    if next_task_id not in self.task_queue:
-                        self.task_queue.append(next_task_id)
-                        
-            except Exception as e:
-                print(f"Orchestrator: FATAL ERROR executing task '{task_id}': {e}")
-                # In a real engine, this would trigger failure handling
-                break # Stop the workflow
-
-        print(f"Orchestrator: Workflow '{self.workflow.name}' finished.")
-```
-
-#### Step 8: `highway_core/engine/engine.py`
-
-Implement the main entry point.
-
-```python
-# highway_core/engine/engine.py
-import yaml
-from .models import WorkflowModel
-from .state import WorkflowState
-from .orchestrator import Orchestrator
-from highway_core.tools.registry import ToolRegistry
-
-def run_workflow_from_yaml(yaml_path: str) -> None:
-    """
-    The main entry point for the Highway Execution Engine.
-    """
-    print(f"Engine: Loading workflow from: {yaml_path}")
-    
-    # 1. Load and Parse YAML
-    try:
-        with open(yaml_path, 'r') as f:
-            workflow_data = yaml.safe_load(f)
-        
-        workflow_model = WorkflowModel.model_validate(workflow_data)
-    except Exception as e:
-        print(f"Engine: Failed to load or parse YAML: {e}")
-        return
-
-    # 2. Initialize Core Components
-    registry = ToolRegistry()
-    state = WorkflowState(workflow_model.variables)
-    orchestrator = Orchestrator(workflow_model, state, registry)
-    
-    # 3. Run the workflow
-    orchestrator.run()
-```
-
-### Testing and Validation
-
-1.  Create a new root-level directory `tests/`.
-2.  Create `tests/test_tier1_state.py` to unit test the `WorkflowState` class.
+1.  Create `highway_core/tools/decorators.py`:
     ```python
-    # tests/test_tier1_state.py
+    # highway_core/tools/decorators.py
+    TOOL_REGISTRY = {}
+
+    def tool(name: str):
+        """Decorator to register a function as a Highway tool."""
+        def decorator(func):
+            if name in TOOL_REGISTRY:
+                raise ValueError(f"Duplicate tool name: {name}")
+            TOOL_REGISTRY[name] = func
+            return func
+        return decorator
+    ```
+2.  Update `highway_core/tools/log.py`:
+    ```python
+    # highway_core/tools/log.py
+    import logging
+    from .decorators import tool
+
+    logger = logging.getLogger("HighwayEngine") # Use shared logger
+
+    @tool("tools.log.info")
+    def info(message: str) -> None:
+        logger.info(message)
+
+    @tool("tools.log.error")
+    def error(message: str) -> None:
+        logger.error(message)
+    ```
+3.  Update `highway_core/tools/memory.py`:
+    ```python
+    # highway_core/tools/memory.py
+    from .decorators import tool
     from highway_core.engine.state import WorkflowState
 
-    def test_resolve_simple_string():
-        state = WorkflowState({})
-        state.set_result("mem_report", {"key": "test_key", "status": "ok"})
-        
-        test_str = "Key={{mem_report.key}}, Status={{mem_report.status}}"
-        resolved_str = state.resolve_templating(test_str)
-        
-        assert resolved_str == "Key=test_key, Status=ok"
-
-    def test_resolve_full_string_replacement():
-        state = WorkflowState({})
-        state.set_result("mem_report", {"key": "test_key"})
-        
-        test_str = "{{mem_report.key}}"
-        resolved_str = state.resolve_templating(test_str)
-        
-        assert resolved_str == "test_key"
-
-    def test_resolve_list():
-        state = WorkflowState({"initial_var": "hello"})
-        test_list = ["Static", "{{variables.initial_var}}"]
-        resolved_list = state.resolve_templating(test_list)
-        
-        assert resolved_list == ["Static", "hello"]
+    @tool("tools.memory.set")
+    def set_memory(state: WorkflowState, key: str, value: Any) -> dict:
+        # ... (rest of your existing code)
     ```
-3.  Create a new root-level file `run_test.py` to run the integration test.
+4.  Refactor `highway_core/tools/registry.py`:
     ```python
-    # run_test.py
-    from highway_core.engine.engine import run_workflow_from_yaml
+    # highway_core/tools/registry.py
+    import pkgutil
+    import importlib
+    from .decorators import TOOL_REGISTRY
 
-    if __name__ == "__main__":
-        print("--- Starting Tier 1 Integration Test ---")
-        run_workflow_from_yaml("examples/base_tier_one_workflow.yaml")
-        print("--- Tier 1 Integration Test Finished ---")
+    class ToolRegistry:
+        def __init__(self):
+            # The registry is now just a reference to the one
+            # populated by the @tool decorator.
+            self.functions = TOOL_REGISTRY
+            self._discover_tools()
+            print(f"ToolRegistry loaded with {len(self.functions)} functions.")
+
+        def _discover_tools(self):
+            """Dynamically imports all modules in 'highway_core.tools'."""
+            import highway_core.tools
+            
+            # This iterates over all modules in the 'tools' package
+            # and imports them, which triggers their @tool decorators.
+            for _, name, _ in pkgutil.walk_packages(
+                highway_core.tools.__path__,
+                highway_core.tools.__name__ + '.'
+            ):
+                importlib.import_module(name)
+
+        def get_function(self, name: str) -> Callable:
+            # ... (your existing get_function logic)
     ```
-4.  Run `python run_test.py`.
-5.  **Success Criteria:** The console output should log the following messages **in order**:
-    1.  `[HighwayEngine] - Starting Tier 1 test...`
-    2.  `[HighwayEngine] - Memory set report: Key=test_key, Status=ok`
-    3.  `[HighwayEngine] - Tier 1 test complete.`
+5.  **Important:** Create `highway_core/tools/__init__.py` and import all tool files (`log.py`, `memory.py`, `fetch.py`, etc.) to ensure `walk_packages` can find them.
+
+#### Step 3: Refactor `highway_core/engine/state.py`
+
+Make variable resolution explicit and safer.
+
+1.  Update `_get_value(self, path: str)`:
+      * It should *no longer* have the fallback logic.
+      * If `path.startswith("variables.")`, it must check `self._data["variables"]`.
+      * If `path.startswith("results.")`, it must check `self._data["results"]`.
+      * If `path.startswith("memory.")`, it must check `self._data["memory"]`.
+      * If `path == "item"`, it must check `self._data["loop_context"]`.
+      * **This is a breaking change.** Your test YAML `{{mem_report.key}}` must become `{{results.mem_report.key}}`.
+
+#### Step 4: Refactor `highway_core/engine/orchestrator.py`
+
+This is the biggest change. You must replace the simple queue with a proper DAG (Directed Acyclic Graph) resolver.
+
+1.  **Add `graphlib`:** Your engine will now use Python's built-in `graphlib.TopologicalSorter`.
+2.  **Refactor `__init__`:**
+      * Create the task graph: `self.graph = {task_id: set(task.dependencies) for task_id, task in workflow.tasks.items()}`.
+      * Create the sorter: `self.sorter = TopologicalSorter(self.graph)`.
+      * Call `self.sorter.prepare()`. This readies the DAG.
+      * `self.task_queue` is no longer needed.
+3.  **Refactor `run()`:**
+      * The `while self.task_queue:` loop must be replaced with `while self.sorter.is_active():`.
+      * Get runnable tasks: `runnable_tasks = self.sorter.get_ready()`.
+      * **This is the key:** You must now be able to run these tasks *concurrently* (e.g., using a `ThreadPoolExecutor`).
+      * For each `task_id` in `runnable_tasks`:
+          * Execute it (see Step 5).
+          * Mark it as complete: `self.sorter.done(task_id)`.
+4.  **Remove `_find_next_runnable_tasks()`:** This method is no longer needed. `graphlib` does this for you.
+5.  **Implement a Handler Map:** The orchestrator needs to call the *correct* handler, not just `task_handler`.
+    ```python
+    # In __init__:
+    from .operator_handlers import task, condition, ...
+    self.handler_map = {
+        "task": task_handler.execute,
+        "condition": condition_handler.execute,
+        # ... all other stubs
+    }
+
+    # In run(), when executing a task:
+    task_model = self.workflow.tasks[task_id]
+    handler_func = self.handler_map.get(task_model.operator_type)
+    if handler_func:
+        # The handler must now return the list of *next* tasks
+        # e.g., for 'condition', it returns [task.if_true] or [task.if_false]
+        # These are NOT added to the queue. They are just marked
+        # as "done" in the sorter so their children can run.
+        # This part is tricky. A simpler way:
+        # Handlers should just *do their job* (e.g., run a task)
+        # The Orchestrator's loop is *only* responsible for the DAG.
+        # Let's adjust:
+        
+        # New `run()` logic:
+        while self.sorter.is_active():
+            for task_id in self.sorter.get_ready():
+                # Submit self._execute_task(task_id) to a thread pool
+            
+            # Wait for all submitted tasks to finish...
+            
+            for task_id, result in finished_tasks:
+                if result.success:
+                    self.sorter.done(task_id)
+                else:
+                    # Handle task failure
+                    
+    def _execute_task(self, task_id: str):
+        # This is where the handler map logic goes
+        task_model = self.workflow.tasks[task_id]
+        handler_func = self.handler_map.get(task_model.operator_type)
+        # ...
+        # handler_func(task_model, self.state, self.registry)
+        # ...
+    ```
+
+#### Step 5: Refactor `highway_core/engine/operator_handlers/*`
+
+1.  **All Handlers:** Update all handler stubs (like `condition_handler.py`) to import from `highway_core.engine.models` (your new models), **not** `highway_dsl`.
+2.  **`condition_handler.py`:** This must be implemented.
+      * It must evaluate the condition (using a safe library like `py_expression_eval`).
+      * It must **return the *next* task to run** (e.g., `[task.if_true]` or `[task.if_false]`).
+      * The `Orchestrator` must be updated to handle this. The `Orchestrator`'s `run` loop will get this list and *dynamically add* that task and its dependencies to the `TopologicalSorter`. (This is advanced. A simpler model for now: a `condition` operator is just a task that *results in* a "next\_task\_id", and another task depends on that.)
+      * **Let's simplify:** The `Orchestrator`'s job is to run the DAG. A `condition` task's *dependents* will be *both* `if_true` and `if_false`. The `condition` handler's job is just to *run*. The `if_true`/`if_false` tasks will have a *runtime dependency* check in the Orchestrator. This is too complex for now.
+      * **Revised Tier 1.5 Orchestrator Logic:** We will keep the O(n^2) check for now, but refactor the `run` loop to support all operators.
+    <!-- end list -->
+    ```python
+    # Refactored Orchestrator.run() (Tier 1.5)
+    def run(self):
+        while self.task_queue:
+            task_id = self.task_queue.popleft()
+            task_model = self.workflow.tasks.get(task_id)
+            
+            if not self._dependencies_met(task_model.dependencies):
+                self.task_queue.append(task_id) # Put it back
+                continue
+            
+            # --- NEW LOGIC ---
+            handler_func = self.handler_map.get(task_model.operator_type)
+            if not handler_func:
+                print(f"Orchestrator: Error - No handler for {task_model.operator_type}")
+                # Handle failure
+                continue
+                
+            try:
+                # Handlers now return the list of next task IDs
+                next_task_ids = handler_func(task_model, self.state, self.registry)
+                
+                self.completed_tasks.add(task_id)
+                
+                # Add the *specific* next tasks
+                for next_id in next_task_ids:
+                    if next_id not in self.task_queue:
+                        self.task_queue.append(next_id)
+                        
+                # Also add any tasks that are now unblocked
+                self.task_queue.extend(self._find_next_runnable_tasks())
+                
+            except Exception as e:
+                # Handle task failure
+                print(f"Orfchestrator: FATAL ERROR in {task_id}: {e}")
+                break
+    ```
+3.  **Refactor `task_handler.py`:**
+      * It must now `return []` (an empty list, as a `task` operator doesn't define its own *next* step, its dependents do).
+      * **Bulkhead:** The `BulkheadManager` should be created *once* in the `Orchestrator` and *passed into* the `task_handler.execute` function. The `TaskHandler` should *not* create its own manager.
+      * The `BulkheadManager` should create and hold *one bulkhead per tool function* (e.g., one for `"tools.fetch.get"`, one for `"tools.shell.run"`). It should *not* create a new bulkhead for every task.
+    <!-- end list -->
+    ```python
+    # In Orchestrator.__init__
+    self.bulkhead_manager = BulkheadManager()
+
+    # In Orchestrator.run()
+    handler_func(task_model, self.state, self.registry, self.bulkhead_manager)
+
+    # In task_handler.execute()
+    def execute(task, state, registry, bulkhead_manager):
+        tool_name = task.function
+        # ...
+        
+        # Get or create a bulkhead FOR THAT TOOL
+        bulkhead = bulkhead_manager.get_bulkhead(tool_name)
+        if not bulkhead:
+            # Create a default config for the tool
+            config = BulkheadConfig(name=tool_name, ...)
+            bulkhead = bulkhead_manager.create_bulkhead(config)
+            
+        # ... (rest of your logic to execute via bulkhead.execute)
+    ```
+
+-----
+
+### New Test Workflow: `examples/tier_1_5_refactor_test.yaml`
+
+This new workflow will validate your refactored engine. It specifically tests the new features:
+
+  * `Condition` operator handling.
+  * `fetch` tool (which will test the new `Bulkhead` logic).
+  * `tools.log.error` tool.
+  * Explicit `{{results...}}` and `{{variables...}}` state resolution.
+
+<!-- end list -->
+this yaml is in examples/tier_1_5_refactor_test.yaml
+
+```yaml
+name: tier1_5_refactor_test
+version: 1.0.0
+description: Tests the refactored Tier 1.5 engine (handlers, state, and bulkheads).
+variables:
+  base_api_url: "https://jsonplaceholder.typicode.com"
+  
+start_task: log_start
+
+tasks:
+  log_start:
+    task_id: log_start
+    operator_type: task
+    function: tools.log.info
+    args: ["Starting Tier 1.5 Refactor Test..."]
+    dependencies: []
+
+  # Tests tools.fetch.get, result_key, and bulkhead
+  fetch_todo_1:
+    task_id: fetch_todo_1
+    operator_type: task
+    function: tools.fetch.get
+    args: ["{{variables.base_api_url}}/todos/1"]
+    dependencies: ["log_start"]
+    result_key: "todo_1" # Saves to results.todo_1
+
+  # Tests ConditionOperator and explicit state resolution
+  check_fetch_status:
+    task_id: check_fetch_status
+    operator_type: condition
+    condition: "{{results.todo_1.status}} == 200" # Explicit state
+    dependencies: ["fetch_todo_1"]
+    if_true: "log_success"
+    if_false: "log_failure"
+
+  # Tests the 'if_true' branch
+  log_success:
+    task_id: log_success
+    operator_type: task
+    function: tools.log.info
+    args:
+      - "Fetch successful. Title: {{results.todo_1.data.title}}" # Nested resolution
+    dependencies: ["check_fetch_status"]
+
+  # Tests the 'if_false' branch
+  log_failure:
+    task_id: log_failure
+    operator_type: task
+    function: tools.log.error
+    args:
+      - "Fetch failed. Status: {{results.todo_1.status}}"
+    dependencies: ["check_fetch_status"]
+
+  # Tests that the orchestrator can continue after a branch
+  log_end:
+    task_id: log_end
+    operator_type: task
+    function: tools.log.info
+    args: ["Test finished."]
+    # Depends on BOTH branches. The orchestrator must wait
+    # for the completed path (log_success or log_failure).
+    dependencies: ["log_success", "log_failure"]
+```
+
+### Pass Criteria (Expected Output)
+
+When you run your refactored engine with this new YAML, I will fact-check the output. It **must** look like this (assuming the fetch is successful):
+
+```
+Engine: Loading workflow from: examples/tier_1_5_refactor_test.yaml
+ToolRegistry loaded with X functions.
+WorkflowState initialized.
+Orchestrator initialized.
+Orchestrator: Starting workflow 'tier1_5_refactor_test'
+Orchestrator: Executing task log_start
+TaskHandler: Executing task: log_start
+TaskHandler: Calling tools.log.info with args=['Starting Tier 1.5 Refactor Test...']
+[HighwayEngine] - Starting Tier 1.5 Refactor Test...
+Orchestrator: Task log_start completed.
+Orchestrator: Executing task fetch_todo_1
+TaskHandler: Executing task: fetch_todo_1
+TaskHandler: Getting or creating bulkhead for 'tools.fetch.get'
+TaskHandler: Calling tools.fetch.get via bulkhead...
+  [Tool.Fetch.Get] Fetching https://jsonplaceholder.typicode.com/todos/1...
+State: Setting result for key: todo_1
+Orchestrator: Task fetch_todo_1 completed.
+Orchestrator: Executing task check_fetch_status
+ConditionHandler: Evaluating '{{results.todo_1.status}} == 200'
+ConditionHandler: Resolved to '200 == 200'. Result: True
+Orchestrator: Task check_fetch_status completed. Adding 'log_success' to queue.
+Orchestrator: Executing task log_success
+TaskHandler: Executing task: log_success
+TaskHandler: Calling tools.log.info with args=['Fetch successful. Title: delectus aut autem']
+[HighwayEngine] - Fetch successful. Title: delectus aut autem
+Orchestrator: Task log_success completed.
+Orchestrator: Executing task log_end
+TaskHandler: Executing task: log_end
+TaskHandler: Calling tools.log.info with args=['Test finished.']
+[HighwayEngine] - Test finished.
+Orchestrator: Task log_end completed.
+Orchestrator: Workflow 'tier1_5_refactor_test' finished.
+```
+
+*(Note: The "Task log\_failure" path should be correctly skipped.)*

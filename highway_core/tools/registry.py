@@ -1,22 +1,27 @@
+import pkgutil
+import importlib
 from typing import Callable, Dict
-from . import log
-from . import memory
+from .decorators import TOOL_REGISTRY
 
 
 class ToolRegistry:
     def __init__(self):
-        self.functions: Dict[str, Callable] = {}
-        self._register_tools()
+        # The registry is now just a reference to the one
+        # populated by the @tool decorator.
+        self.functions = TOOL_REGISTRY
+        self._discover_tools()
         print(f"ToolRegistry loaded with {len(self.functions)} functions.")
 
-    def _register_tools(self):
-        """Internal method to load all Tier 1 tools."""
-        self.register_tool("tools.log.info", log.info)
-        self.register_tool("tools.log.error", log.error)
-        self.register_tool("tools.memory.set", memory.set_memory)
+    def _discover_tools(self):
+        """Dynamically imports all modules in 'highway_core.tools'."""
+        import highway_core.tools
 
-    def register_tool(self, name: str, func: Callable):
-        self.functions[name] = func
+        # This iterates over all modules in the 'tools' package
+        # and imports them, which triggers their @tool decorators.
+        for _, name, _ in pkgutil.walk_packages(
+            highway_core.tools.__path__, highway_core.tools.__name__ + "."
+        ):
+            importlib.import_module(name)
 
     def get_function(self, name: str) -> Callable:
         func = self.functions.get(name)

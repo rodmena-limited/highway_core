@@ -5,7 +5,10 @@ from highway_core.tools.bulkhead import BulkheadManager, BulkheadConfig
 
 
 def execute(
-    task: TaskOperatorModel, state: WorkflowState, registry: ToolRegistry
+    task: TaskOperatorModel,
+    state: WorkflowState,
+    registry: ToolRegistry,
+    bulkhead_manager: BulkheadManager = None,
 ) -> None:
     """
     Executes a single TaskOperator with bulkhead isolation.
@@ -29,52 +32,38 @@ def execute(
         # Inject the state object as the first argument
         resolved_args.insert(0, state)
 
-    # 4. Execute the tool with bulkhead isolation
-    # Only apply bulkhead for specific potentially risky operations
-    if tool_name.startswith("tools.external.") or tool_name.startswith("tools.http."):
-        # Create bulkhead manager specifically for external risky operations
-        bulkhead_manager = BulkheadManager()
+    # 4. Execute the tool with bulkhead isolation if bulkhead manager is provided
+    if bulkhead_manager:
+        # Get or create a bulkhead FOR THAT TOOL
+        bulkhead = bulkhead_manager.get_bulkhead(tool_name)
+        if not bulkhead:
+            # Create a default config for the tool
+            config = BulkheadConfig(
+                name=tool_name,
+                max_concurrent_calls=5,  # Reasonable default
+                max_queue_size=20,  # Reasonable default queue size
+                timeout_seconds=30.0,  # Reasonable timeout
+                failure_threshold=3,  # 3 consecutive failures trigger isolation
+                success_threshold=2,  # 2 consecutive successes return to healthy
+                isolation_duration=60.0,  # 1 minute isolation period
+            )
+            bulkhead = bulkhead_manager.create_bulkhead(config)
 
-        # Create a bulkhead for this specific task
-        task_bulkhead_config = BulkheadConfig(
-            name=f"task-{task.task_id}",
-            max_concurrent_calls=1,  # Each task runs in its own isolated space
-            max_queue_size=5,  # Small queue for this task
-            timeout_seconds=10.0,  # Reasonable timeout for individual tasks
-            failure_threshold=2,  # Sensitive to failures for individual tasks
-            success_threshold=1,  # Single success returns to healthy
-            isolation_duration=5.0,  # Shorter isolation period for tasks
-        )
+        print(f"TaskHandler: Getting or creating bulkhead for '{tool_name}'")
+
+        # Execute the tool function in the bulkhead
+        print(f"TaskHandler: Calling {tool_name} via bulkhead...")
+        future = bulkhead.execute(tool_func, *resolved_args, **resolved_kwargs)
 
         try:
-            task_bulkhead = bulkhead_manager.create_bulkhead(task_bulkhead_config)
-        except ValueError as e:
-            print(
-                f"TaskHandler: Failed to create bulkhead for task {task.task_id}: {e}"
-            )
-            # Fallback: run directly without bulkhead
-            try:
-                print(f"TaskHandler: Calling {tool_name} with args={resolved_args}")
-                result = tool_func(*resolved_args, **resolved_kwargs)
-            except Exception as e:
-                print(f"TaskHandler: Error executing {tool_name}: {e}")
-                raise
-            finally:
-                bulkhead_manager.shutdown_all()
-        else:
-            # Execute the tool function in the bulkhead
-            future = task_bulkhead.execute(tool_func, *resolved_args, **resolved_kwargs)
-
-            try:
-                result = future.result()
-            except Exception as e:
-                print(f"TaskHandler: Error executing {tool_name} in bulkhead: {e}")
-                raise
-            finally:
-                bulkhead_manager.shutdown_all()
+            result = (
+                future.result().result
+            )  # Get the actual result from ExecutionResult
+        except Exception as e:
+            print(f"TaskHandler: Error executing {tool_name} in bulkhead: {e}")
+            raise
     else:
-        # For internal operations like logging and memory, execute directly
-        # to avoid potential state access issues and reduce overhead
+        # For backward compatibility, execute without bulkhead if not provided
         print(f"TaskHandler: Calling {tool_name} with args={resolved_args}")
         result = tool_func(*resolved_args, **resolved_kwargs)
 

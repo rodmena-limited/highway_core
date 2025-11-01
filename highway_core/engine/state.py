@@ -13,8 +13,9 @@ class WorkflowState:
         # Deepcopy to ensure isolation
         self._data = {
             "variables": deepcopy(initial_variables),
-            "results": {},  # Stores task outputs, e.g., "mem_report": {...}
+            "results": {},  # Stores task outputs, e.g., "todo_1": {...}
             "memory": {},  # For tools.memory.set
+            "loop_context": {},  # For foreach/while loop items
         }
         print("WorkflowState initialized.")
 
@@ -25,36 +26,102 @@ class WorkflowState:
 
     def _get_value(self, path: str) -> Any:
         """
-        Retrieves a value from the state using dot-delimited path.
-        e.g., "mem_report.key" -> self._data['results']['mem_report']['key']
+        Retrieves a value from the state using explicit paths:
+        - variables.key -> self._data['variables']['key']
+        - results.key -> self._data['results']['key']
+        - memory.key -> self._data['memory']['key']
+        - item -> self._data['loop_context']['item']
         """
         path = path.strip()
-        parts = path.split(".")
 
-        # Determine the root context (e.g., 'variables' or 'results')
-        root_key = parts[0]
-        if root_key in self._data:
-            current_val = self._data[root_key]
-        else:
-            # Fallback for keys that are not explicitly namespaced
-            # e.g., 'mem_report' instead of 'results.mem_report'
-            current_val = self._data["results"].get(root_key)
+        if path.startswith("variables."):
+            # Extract the variable key after "variables."
+            var_key = path[len("variables.") :]
+            parts = var_key.split(".")
+
+            # Start with the variables dict
+            current_val = self._data["variables"]
+
+            # Traverse the nested path
+            for part in parts:
+                if isinstance(current_val, dict):
+                    current_val = current_val.get(part)
+                    if current_val is None:
+                        print(f"State: Warning - could not find variable path: {path}")
+                        return None
+                else:
+                    print(
+                        f"State: Error - Cannot access property '{part}' on non-dict variable."
+                    )
+                    return None
+            return current_val
+
+        elif path.startswith("results."):
+            # Extract the result key after "results."
+            result_key = path[len("results.") :]
+            parts = result_key.split(".")
+
+            # Start with the results dict
+            current_val = self._data["results"]
+
+            # Get the first part which should be the result key
+            current_val = current_val.get(parts[0])
             if current_val is None:
-                print(f"State: Warning - could not find root key: {root_key}")
+                print(f"State: Warning - could not find result key: {parts[0]}")
                 return None
 
-        # Traverse the nested path
-        for part in parts[1:]:
-            if isinstance(current_val, dict):
-                current_val = current_val.get(part)
-            else:
-                print(f"State: Error - Cannot access property '{part}' on non-dict.")
-                return None
-        return current_val
+            # Traverse remaining nested path
+            for part in parts[1:]:
+                if isinstance(current_val, dict):
+                    current_val = current_val.get(part)
+                    if current_val is None:
+                        print(
+                            f"State: Warning - could not find nested result path: {path}"
+                        )
+                        return None
+                else:
+                    print(
+                        f"State: Error - Cannot access property '{part}' on non-dict result."
+                    )
+                    return None
+            return current_val
+
+        elif path.startswith("memory."):
+            # Extract the memory key after "memory."
+            mem_key = path[len("memory.") :]
+            parts = mem_key.split(".")
+
+            # Start with the memory dict
+            current_val = self._data["memory"]
+
+            # Traverse the nested path
+            for part in parts:
+                if isinstance(current_val, dict):
+                    current_val = current_val.get(part)
+                    if current_val is None:
+                        print(f"State: Warning - could not find memory path: {path}")
+                        return None
+                else:
+                    print(
+                        f"State: Error - Cannot access property '{part}' on non-dict memory."
+                    )
+                    return None
+            return current_val
+
+        elif path == "item":
+            # Special case for loop context item
+            return self._data["loop_context"].get("item")
+
+        else:
+            # For backward compatibility or other cases
+            print(
+                f"State: Warning - path must start with 'variables.', 'results.', 'memory.', or be 'item': {path}"
+            )
+            return None
 
     def resolve_templating(self, input_data: Any) -> Any:
         """
-        Recursively resolves templated strings like '{{mem_report.key}}'.
+        Recursively resolves templated strings like '{{results.todo_1.status}}'.
         """
         if isinstance(input_data, str):
             # Check if the *entire string* is a variable

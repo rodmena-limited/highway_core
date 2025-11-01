@@ -1,0 +1,61 @@
+name: tier1_5_refactor_test
+version: 1.0.0
+description: Tests the refactored Tier 1.5 engine (handlers, state, and bulkheads).
+variables:
+  base_api_url: "https://jsonplaceholder.typicode.com"
+  
+start_task: log_start
+
+tasks:
+  log_start:
+    task_id: log_start
+    operator_type: task
+    function: tools.log.info
+    args: ["Starting Tier 1.5 Refactor Test..."]
+    dependencies: []
+
+  # Tests tools.fetch.get, result_key, and bulkhead
+  fetch_todo_1:
+    task_id: fetch_todo_1
+    operator_type: task
+    function: tools.fetch.get
+    args: ["{{variables.base_api_url}}/todos/1"]
+    dependencies: ["log_start"]
+    result_key: "todo_1" # Saves to results.todo_1
+
+  # Tests ConditionOperator and explicit state resolution
+  check_fetch_status:
+    task_id: check_fetch_status
+    operator_type: condition
+    condition: "{{results.todo_1.status}} == 200" # Explicit state
+    dependencies: ["fetch_todo_1"]
+    if_true: "log_success"
+    if_false: "log_failure"
+
+  # Tests the 'if_true' branch
+  log_success:
+    task_id: log_success
+    operator_type: task
+    function: tools.log.info
+    args:
+      - "Fetch successful. Title: {{results.todo_1.data.title}}" # Nested resolution
+    dependencies: ["check_fetch_status"]
+
+  # Tests the 'if_false' branch
+  log_failure:
+    task_id: log_failure
+    operator_type: task
+    function: tools.log.error
+    args:
+      - "Fetch failed. Status: {{results.todo_1.status}}"
+    dependencies: ["check_fetch_status"]
+
+  # Tests that the orchestrator can continue after a branch
+  log_end:
+    task_id: log_end
+    operator_type: task
+    function: tools.log.info
+    args: ["Test finished."]
+    # Depends on BOTH branches. The orchestrator must wait
+    # for the completed path (log_success or log_failure).
+    dependencies: ["log_success", "log_failure"]

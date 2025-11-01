@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from concurrent.futures import Future
 import functools
 
+from .decorators import tool
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
