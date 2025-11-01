@@ -1,5 +1,5 @@
 from collections import deque
-from highway_core.engine.models import WorkflowModel, ConditionOperatorModel
+from highway_core.engine.models import WorkflowModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
 from highway_core.engine.operator_handlers import task_handler, condition_handler
@@ -49,15 +49,13 @@ class Orchestrator:
         return runnable
 
     def _execute_task(self, task, state, registry):
-        """Wrapper to execute task handler and return empty list of next tasks"""
+        """Wrapper to execute task handler"""
         task_handler.execute(task, state, registry, self.bulkhead_manager)
-        return []
 
     def _execute_condition(self, task, state, registry):
-        """Wrapper to execute condition handler and return next task based on condition result"""
-        # The condition handler will return the appropriate task based on condition
-        # and also mark the non-taken path as conceptually completed
-        return condition_handler.execute(task, state, self, registry)
+        """Wrapper to execute condition handler and update workflow state"""
+        # The condition handler will process the condition and mark appropriate tasks
+        condition_handler.execute(task, state, self, registry)
 
     def run(self):
         """
@@ -91,17 +89,12 @@ class Orchestrator:
                         )
                         continue
 
-                    # Handlers now return the list of next task IDs
-                    next_task_ids = handler_func(task_model, self.state, self.registry)
+                    # Execute the task
+                    handler_func(task_model, self.state, self.registry)
 
                     # Mark task as completed
                     self.completed_tasks.add(task_id)
                     print(f"Orchestrator: Task {task_id} completed.")
-
-                    # Add the specific next tasks from condition evaluation
-                    for next_id in next_task_ids:
-                        if next_id not in self.task_queue:
-                            self.task_queue.append(next_id)
 
                     # Also add any tasks that are now unblocked
                     self.task_queue.extend(self._find_next_runnable_tasks())

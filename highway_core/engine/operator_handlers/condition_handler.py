@@ -3,7 +3,7 @@
 # Responsibilities:
 # - Resolves the 'condition' string.
 # - Evaluates the condition.
-# - Returns the 'if_true' or 'if_false' task ID to the orchestrator.
+# - Updates orchestrator state to handle conditional flow.
 
 from highway_core.engine.models import ConditionOperatorModel
 from highway_core.engine.state import WorkflowState
@@ -17,11 +17,10 @@ def execute(
     state: WorkflowState,
     orchestrator,
     registry: ToolRegistry,
-) -> list[str]:
+) -> None:
     """
     Evaluates a ConditionOperator.
-    Returns the next task ID based on the condition result.
-    Also marks the non-taken branch as conceptually completed to satisfy dependencies.
+    Updates the orchestrator's completed tasks to handle conditional branches.
     """
     print(f"ConditionHandler: Evaluating '{task.condition}'")
 
@@ -34,26 +33,21 @@ def execute(
     if result:
         next_task_id = task.if_true
         skipped_task_id = task.if_false
-        print(
-            f"Orchestrator: Task {task.task_id} completed. Adding '{next_task_id}' to queue."
-        )
+        print(f"ConditionHandler: Taking 'if_true' path to '{next_task_id}'")
     else:
         next_task_id = task.if_false
         skipped_task_id = task.if_true
-        print(
-            f"Orchestrator: Task {task.task_id} completed. Adding '{next_task_id}' to queue."
-        )
+        print(f"ConditionHandler: Taking 'if_false' path to '{next_task_id}'")
 
-    # Mark the skipped branch as conceptually completed to satisfy dependencies
-    # This is needed for tasks that depend on both conditional branches
+    # 3. Mark the skipped branch as conceptually completed to satisfy dependencies
+    # This is needed for tasks that depend on both conditional branches (like log_end in the test)
     if skipped_task_id:
         print(
             f"ConditionHandler: Marking '{skipped_task_id}' as conceptually completed."
         )
+        # Add the skipped task to completed tasks so that tasks
+        # depending on BOTH conditional branches can proceed
         orchestrator.completed_tasks.add(skipped_task_id)
-
-    # Return the single next task to execute
-    return [next_task_id] if next_task_id else []
 
 
 def eval_condition(condition_str: str):

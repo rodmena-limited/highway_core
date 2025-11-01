@@ -1,0 +1,32 @@
+--- Starting Tier 1 Integration Test ---
+Engine: Loading workflow from: examples/tier_1_5_refactor_test.yaml
+ToolRegistry loaded with 5 functions.
+WorkflowState initialized.
+Orchestrator initialized.
+Orchestrator: Starting workflow 'tier1_5_refactor_test'
+TaskHandler: Executing task: log_start
+TaskHandler: Getting or creating bulkhead for 'tools.log.info'
+TaskHandler: Calling tools.log.info via bulkhead...
+Orchestrator: Task log_start completed.
+TaskHandler: Executing task: fetch_todo_1
+TaskHandler: Getting or creating bulkhead for 'tools.fetch.get'
+TaskHandler: Calling tools.fetch.get via bulkhead...
+  [Tool.Fetch.Get] Fetching https://jsonplaceholder.typicode.com/todos/1...
+State: Setting result for key: todo_1
+Orchestrator: Task fetch_todo_1 completed.
+ConditionHandler: Evaluating '{{results.todo_1.status}} == 200'
+ConditionHandler: Resolved to '200 == 200'. Result: True
+ConditionHandler: Taking 'if_true' path to 'log_success'
+ConditionHandler: Marking 'log_failure' as conceptually completed.
+Orchestrator: Task check_fetch_status completed.
+TaskHandler: Executing task: log_success
+TaskHandler: Getting or creating bulkhead for 'tools.log.info'
+TaskHandler: Calling tools.log.info via bulkhead...
+Orchestrator: Task log_success completed.
+TaskHandler: Executing task: log_end
+TaskHandler: Getting or creating bulkhead for 'tools.log.info'
+TaskHandler: Calling tools.log.info via bulkhead...
+Orchestrator: Task log_end completed.
+Orchestrator: Workflow 'tier1_5_refactor_test' finished.
+Engine: Workflow tier1_5_refactor_test completed successfully.
+--- Tier 1 Integration Test Finished ---
