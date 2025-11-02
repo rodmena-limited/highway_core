@@ -38,7 +38,17 @@ class LocalPythonExecutor(BaseExecutor):
 
         logger.info("LocalPythonExecutor: Executing task: %s", task.task_id)
 
-        # 1. Get the tool from the registry
+        # 1. Verify the tool exists in the registry before attempting execution
+        if task.function not in registry.functions:
+            available_functions = list(registry.functions.keys())
+            error_message = (
+                f"Task {task.task_id} failed: Function '{task.function}' not found in registry. "
+                f"Available functions: {available_functions}"
+            )
+            logger.error("LocalPythonExecutor: %s", error_message)
+            raise KeyError(error_message)
+
+        # 2. Get the tool from the registry
         tool_name = task.function
         try:
             tool_func = registry.get_function(tool_name)
