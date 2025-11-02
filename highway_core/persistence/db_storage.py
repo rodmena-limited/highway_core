@@ -43,7 +43,9 @@ class DatabasePersistence(PersistenceManager):
         except Exception as e:
             logger.error("  [Persistence] FAILED to save state: %s", e)
 
-    def load_workflow_state(self, workflow_run_id: str) -> (WorkflowState, set):
+    def load_workflow_state(
+        self, workflow_run_id: str
+    ) -> tuple[WorkflowState | None, set]:
         """Loads a workflow state from a JSON file."""
         state_file = self._get_state_file_path(workflow_run_id)
         if not os.path.exists(state_file):

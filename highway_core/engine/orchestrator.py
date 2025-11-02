@@ -58,19 +58,6 @@ class Orchestrator:
             "Orchestrator: Sorter prepared, is_active: %s", self.sorter.is_active()
         )
 
-        # Process the initial tasks and mark completed ones as done
-        initial_runnable_tasks = self.sorter.get_ready()
-        logger.info("Orchestrator: Initial runnable tasks: %s", initial_runnable_tasks)
-
-        # For any completed tasks in the initial runnable list, mark them as done
-        for task_id in initial_runnable_tasks:
-            if task_id in self.completed_tasks:
-                logger.info(
-                    "Orchestrator: Task %s was already completed, marking as done",
-                    task_id,
-                )
-                self.sorter.done(task_id)
-
         # 2. Update handler map
         self.handler_map: Dict[str, Callable] = {
             "task": task_handler.execute,

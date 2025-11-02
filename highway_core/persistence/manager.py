@@ -19,6 +19,6 @@ class PersistenceManager(ABC):
     @abstractmethod
     def load_workflow_state(
         self, workflow_run_id: str
-    ) -> Tuple[WorkflowState, Set[str]]:
+    ) -> Tuple[WorkflowState | None, Set[str]]:
         """Loads a workflow state from persistence."""
         pass

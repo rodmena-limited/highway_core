@@ -23,7 +23,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def run_workflow_from_yaml(yaml_path: str, workflow_run_id: str = None) -> None:
+def run_workflow_from_yaml(yaml_path: str, workflow_run_id: str | None = None) -> None:
     """
     The main entry point for the Highway Execution Engine with bulkhead isolation.
     """

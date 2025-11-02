@@ -32,11 +32,11 @@ def test_get_value_variables():
     )
 
     # Get a simple variable
-    result = state._get_value("variables.var1")
+    result = state.get_value_from_path("variables.var1")
     assert result == "value1"
 
     # Get a nested variable
-    result = state._get_value("variables.nested.key1")
+    result = state.get_value_from_path("variables.nested.key1")
     assert result == "val1"
 
 
@@ -48,11 +48,11 @@ def test_get_value_results():
     state.set_result("test_result", {"status": "success", "data": {"id": 123}})
 
     # Get the result
-    result = state._get_value("results.test_result")
+    result = state.get_value_from_path("results.test_result")
     assert result == {"status": "success", "data": {"id": 123}}
 
     # Get a nested result
-    result = state._get_value("results.test_result.data.id")
+    result = state.get_value_from_path("results.test_result.data.id")
     assert result == 123
 
 
@@ -64,12 +64,12 @@ def test_get_value_memory():
     state.memory["memory_key"] = "memory_value"
 
     # Get the memory value
-    result = state._get_value("memory.memory_key")
+    result = state.get_value_from_path("memory.memory_key")
     assert result == "memory_value"
 
     # Get a nested memory value
     state.memory["nested"] = {"key1": "val1", "key2": "val2"}
-    result = state._get_value("memory.nested.key2")
+    result = state.get_value_from_path("memory.nested.key2")
     assert result == "val2"
 
 
@@ -81,7 +81,7 @@ def test_get_value_loop_context_item():
     state.loop_context["item"] = "loop_item_value"
 
     # Get the item
-    result = state._get_value("item")
+    result = state.get_value_from_path("item")
     assert result == "loop_item_value"
 
 
@@ -90,7 +90,7 @@ def test_get_value_invalid_path():
     state = WorkflowState({"var1": "value1"})
 
     # Try to get a value with an invalid path
-    result = state._get_value("invalid.path")
+    result = state.get_value_from_path("invalid.path")
     assert result is None
 
 
@@ -99,7 +99,7 @@ def test_get_value_nonexistent_variable():
     state = WorkflowState({"var1": "value1"})
 
     # Try to get a variable that doesn't exist
-    result = state._get_value("variables.nonexistent")
+    result = state.get_value_from_path("variables.nonexistent")
     assert result is None
 
 

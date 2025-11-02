@@ -21,16 +21,16 @@ class WorkflowState(BaseModel):
     TEMPLATE_REGEX: ClassVar[re.Pattern] = re.compile(r"\{\{([\s\w.-]+)\}\}")
 
     @classmethod
-    def create_initial(cls, initial_variables: Dict[str, Any]):
+    def create_initial(cls, initial_variables: Optional[Dict[str, Any]] = None):
         """Factory method to create an initial workflow state."""
         return cls(
-            variables=deepcopy(initial_variables),
+            variables=deepcopy(initial_variables or {}),
             results={},
             memory={},
             loop_context={},
         )
 
-    def __init__(self, initial_variables: Dict[str, Any] = None, **data):
+    def __init__(self, initial_variables: Optional[Dict[str, Any]] = None, **data):
         if initial_variables is not None:
             # Called directly with initial_variables, initialize properly
             super().__init__(
@@ -66,7 +66,7 @@ class WorkflowState(BaseModel):
         """Retrieves the output of a task by result key."""
         return self.results.get(result_key)
 
-    def _get_value(self, path: str) -> Any:
+    def get_value_from_path(self, path: str) -> Any:
         """
         Retrieves a value from the state using explicit paths:
         - variables.key -> self.variables['key']
@@ -180,14 +180,14 @@ class WorkflowState(BaseModel):
             # Check if the *entire string* is a variable
             match = self.TEMPLATE_REGEX.fullmatch(input_data)
             if match:
-                val = self._get_value(match.group(1))
+                val = self.get_value_from_path(match.group(1))
                 return (
                     val if val is not None else input_data
                 )  # Return original if not found
 
             # Otherwise, replace all occurrences within the string
             def replacer(m):
-                val = self._get_value(m.group(1))
+                val = self.get_value_from_path(m.group(1))
                 return (
                     str(val) if val is not None else m.group(0)
                 )  # Keep original template if not found, otherwise convert to string
