@@ -33,6 +33,7 @@ dependencies = [
     "requests>=2.28.1",
     "pydantic>=2.0.1",
     "docker>=7.1.0",
+    "sqlalchemy>=2.0.15",
     ]
 # dev dependencies
 [project.optional-dependencies]

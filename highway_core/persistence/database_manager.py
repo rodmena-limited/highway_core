@@ -1,4 +1,3 @@
-import sqlite3
 import threading
 import json
 import os
@@ -7,133 +6,132 @@ from contextlib import contextmanager
 from typing import Optional, Dict, Any, List
 import logging
 from datetime import datetime
+from sqlalchemy import create_engine, text, Column, DateTime
+from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.pool import StaticPool
+from .models import Base, Workflow, Task, TaskExecution, WorkflowResult, WorkflowMemory, TaskDependency
+
 
 logger = logging.getLogger(__name__)
 
 
 class DatabaseManager:
     """
-    Thread-safe database manager for Highway Core workflow persistence.
+    Thread-safe database manager for Highway Core workflow persistence using SQLAlchemy.
     Manages connections, transactions, and provides a clean interface
-    for all database operations.
+    for all database operations with abstracted database engine.
     """
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: Optional[str] = None, engine_url: Optional[str] = None):
         """
         Initialize the database manager.
 
         Args:
             db_path: Path to the SQLite database file. If None, uses ~/.highway.sqlite3
+            engine_url: Database engine URL. If None, defaults to SQLite with db_path
         """
-        if db_path is None:
-            # Default to user's home directory
-            home = Path.home()
-            self.db_path = home / ".highway.sqlite3"
+        if engine_url is None:
+            if db_path is None:
+                # Default to user's home directory
+                home = Path.home()
+                db_path = home / ".highway.sqlite3"
+            
+            # Ensure the directory exists
+            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+            
+            self.engine_url = f"sqlite:///{db_path}"
         else:
-            self.db_path = Path(db_path)
+            self.engine_url = engine_url
 
-        # Ensure the directory exists
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        # Create SQLAlchemy engine with proper configuration for thread safety
+        if self.engine_url.startswith("sqlite://"):
+            self.engine = create_engine(
+                self.engine_url,
+                poolclass=StaticPool,  # Use StaticPool for SQLite to avoid issues with multiple threads
+                connect_args={
+                    "check_same_thread": False,
+                    "timeout": 30.0  # Increase timeout for busy operations
+                },
+                echo=False  # Set to True for SQL debugging
+            )
+        else:
+            # For other database engines
+            self.engine = create_engine(
+                self.engine_url,
+                echo=False  # Set to True for SQL debugging
+            )
 
-        # Thread-local storage for connections
+        # Create session factory
+        self.SessionLocal = sessionmaker(bind=self.engine, expire_on_commit=False)
+
+        # Thread-local storage for sessions
         self._local = threading.local()
 
         # Create schema
         self._initialize_schema()
 
-    def _get_connection(self) -> sqlite3.Connection:
-        """Get a thread-local database connection."""
-        if not hasattr(self._local, "connection"):
-            self._local.connection = sqlite3.connect(
-                self.db_path,
-                check_same_thread=False,
-                detect_types=sqlite3.PARSE_DECLTYPES,
-            )
-            # Enable foreign key constraints
-            self._local.connection.execute("PRAGMA foreign_keys = ON")
-            # Enable WAL mode for better concurrency
-            self._local.connection.execute("PRAGMA journal_mode = WAL")
-            # Set row factory for dict-like access
-            self._local.connection.row_factory = sqlite3.Row
-
-        return self._local.connection
+    def _get_session(self) -> Session:
+        """Get a thread-local database session."""
+        if not hasattr(self._local, "session"):
+            self._local.session = self.SessionLocal()
+        return self._local.session
 
     def _initialize_schema(self) -> None:
-        """Initialize the database schema."""
-        schema_file = Path(__file__).parent / "sql_schema.sql"
+        """Initialize the database schema using SQLAlchemy metadata."""
+        Base.metadata.create_all(bind=self.engine)
 
-        if not schema_file.exists():
-            raise FileNotFoundError(f"Schema file not found: {schema_file}")
+        # Add missing columns if needed for backward compatibility (as much as possible with SQLAlchemy)
+        # For SQLite, we need to use raw SQL for column additions since SQLAlchemy doesn't handle this well
+        if self.engine_url.startswith("sqlite://"):
+            with self.engine.connect() as conn:
+                # Check if tasks table has updated_at column
+                result = conn.execute(text("PRAGMA table_info(tasks)"))
+                columns = [row[1] for row in result.fetchall()]
 
-        with open(schema_file, "r") as f:
-            schema_sql = f.read()
+                if "updated_at" not in columns:
+                    try:
+                        # Add updated_at column to tasks table
+                        conn.execute(text(
+                            "ALTER TABLE tasks ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                        ))
+                        conn.commit()
+                    except Exception:
+                        # Column might already exist
+                        pass
 
-        conn = self._get_connection()
-
-        # Execute the main schema (this will not replace existing tables)
-        conn.executescript(schema_sql)
-
-        # Add missing columns if needed (for backward compatibility)
-        cursor = conn.cursor()
-
-        # Check if tasks table has updated_at column
-        cursor.execute("PRAGMA table_info(tasks)")
-        columns = [row[1] for row in cursor.fetchall()]
-
-        if "updated_at" not in columns:
-            try:
-                cursor.execute(
-                    "ALTER TABLE tasks ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
-                )
-            except sqlite3.OperationalError:
-                # Column might already exist in newer schema
-                pass
-
-        conn.commit()
+    @contextmanager
+    def transaction(self):
+        """Context manager for database transactions."""
+        session = self._get_session()
+        try:
+            yield session
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
 
     @contextmanager
     def database_transaction(self):
-        """Context manager for database transactions."""
-        conn = self._get_connection()
-        original_isolation = conn.isolation_level
-        conn.isolation_level = None  # Start transaction
+        """Context manager for database transactions (for backward compatibility)."""
+        # For SQLAlchemy, both methods do the same thing
+        with self.transaction() as session:
+            yield session
 
-        try:
-            yield conn
+    def execute_raw_sql(self, sql: str, params: Dict[str, Any] = None) -> Any:
+        """Execute raw SQL for cases where SQLAlchemy ORM is not suitable."""
+        with self.engine.connect() as conn:
+            if params:
+                result = conn.execute(text(sql), params)
+            else:
+                result = conn.execute(text(sql))
             conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.isolation_level = original_isolation
-
-    def execute(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
-        """Execute a SQL statement and return the cursor."""
-        conn = self._get_connection()
-        cursor = conn.execute(sql, params)
-        return cursor
-
-    def execute_many(self, sql: str, params_list: List[tuple]) -> sqlite3.Cursor:
-        """Execute a SQL statement multiple times with different parameters."""
-        conn = self._get_connection()
-        cursor = conn.executemany(sql, params_list)
-        return cursor
-
-    def fetch_one(self, sql: str, params: tuple = ()) -> Optional[sqlite3.Row]:
-        """Execute a query and return one result."""
-        cursor = self.execute(sql, params)
-        return cursor.fetchone()
-
-    def fetch_all(self, sql: str, params: tuple = ()) -> List[sqlite3.Row]:
-        """Execute a query and return all results."""
-        cursor = self.execute(sql, params)
-        return cursor.fetchall()
+            return result
 
     def workflow_exists(self, workflow_id: str) -> bool:
         """Check if a workflow exists."""
-        result = self.fetch_one(
-            "SELECT 1 FROM workflows WHERE workflow_id = ?", (workflow_id,)
-        )
+        session = self._get_session()
+        result = session.query(Workflow).filter(Workflow.workflow_id == workflow_id).first()
         return result is not None
 
     def create_workflow(
@@ -141,22 +139,18 @@ class DatabaseManager:
     ) -> bool:
         """Create a new workflow record."""
         try:
-            with self.transaction() as conn:
-                conn.execute(
-                    """
-                    INSERT INTO workflows 
-                    (workflow_id, name, start_task, variables_json) 
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    (
-                        workflow_id,
-                        name,
-                        start_task,
-                        json.dumps(variables) if variables else None,
-                    ),
+            with self.transaction() as session:
+                workflow = Workflow(
+                    workflow_id=workflow_id,
+                    workflow_name=name,  # Use workflow_name field that matches the schema
+                    start_task=start_task,
+                    variables=variables,
+                    start_time=datetime.utcnow(),
+                    updated_at=datetime.utcnow()
                 )
+                session.add(workflow)
             return True
-        except sqlite3.IntegrityError:
+        except IntegrityError:
             logger.error(f"Workflow with ID {workflow_id} already exists")
             return False
         except Exception as e:
@@ -166,43 +160,31 @@ class DatabaseManager:
     def update_workflow_status(self, workflow_id: str, status: str) -> bool:
         """Update workflow status."""
         try:
-            with self.transaction() as conn:
-                conn.execute(
-                    """
-                    UPDATE workflows 
-                    SET status = ?, updated_at = CURRENT_TIMESTAMP 
-                    WHERE workflow_id = ?
-                    """,
-                    (status, workflow_id),
-                )
-            return True
+            with self.transaction() as session:
+                workflow = session.query(Workflow).filter(Workflow.workflow_id == workflow_id).first()
+                if workflow:
+                    workflow.status = status
+                    workflow.updated_at = datetime.utcnow()
+                    return True
+                return False
         except Exception as e:
             logger.error(f"Error updating workflow {workflow_id} status: {e}")
             return False
 
     def load_workflow(self, workflow_id: str) -> Optional[Dict[str, Any]]:
         """Load a workflow by ID."""
-        result = self.fetch_one(
-            """
-            SELECT workflow_id, name, start_task, variables_json, 
-                   created_at, updated_at, status
-            FROM workflows 
-            WHERE workflow_id = ?
-            """,
-            (workflow_id,),
-        )
+        session = self._get_session()
+        workflow = session.query(Workflow).filter(Workflow.workflow_id == workflow_id).first()
 
-        if result:
+        if workflow:
             return {
-                "workflow_id": result["workflow_id"],
-                "name": result["name"],
-                "start_task": result["start_task"],
-                "variables": json.loads(result["variables_json"])
-                if result["variables_json"]
-                else {},
-                "created_at": result["created_at"],
-                "updated_at": result["updated_at"],
-                "status": result["status"],
+                "workflow_id": workflow.workflow_id,
+                "name": workflow.name,  # Using the property alias
+                "start_task": workflow.start_task or '',  # Use the field we added
+                "variables": workflow.variables,
+                "created_at": workflow.start_time,  # Use start_time which matches original schema
+                "updated_at": workflow.updated_at,  # Now this field exists
+                "status": workflow.status,
             }
         return None
 
@@ -220,6 +202,9 @@ class DatabaseManager:
         result_key: Optional[str] = None,
         dependencies: Optional[List[str]] = None,
         status: str = "pending",  # Add status parameter with default value
+        error_message: Optional[str] = None,
+        started_at: Optional[datetime] = None,
+        completed_at: Optional[datetime] = None,
     ) -> bool:
         """Create a new task record."""
         try:
@@ -234,31 +219,28 @@ class DatabaseManager:
                     variables={},  # Empty variables
                 )
 
-            with self.transaction() as conn:
-                conn.execute(
-                    """
-                    INSERT INTO tasks 
-                    (task_id, workflow_id, operator_type, runtime, function, image, 
-                     command_json, args_json, kwargs_json, result_key, dependencies_json, status) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        task_id,
-                        workflow_id,
-                        operator_type,
-                        runtime,
-                        function,
-                        image,
-                        json.dumps(command) if command else None,
-                        json.dumps(args) if args else None,
-                        json.dumps(kwargs) if kwargs else None,
-                        result_key,
-                        json.dumps(dependencies) if dependencies else None,
-                        status,  # Add status parameter
-                    ),
+            with self.transaction() as session:
+                task = Task(
+                    task_id=task_id,
+                    workflow_id=workflow_id,
+                    operator_type=operator_type,
+                    runtime=runtime,
+                    function=function,
+                    image=image,
+                    command=command,
+                    args=args,
+                    kwargs=kwargs,
+                    result_key=result_key,
+                    dependencies_list=dependencies,
+                    status=status,
+                    error_message=error_message,
+                    started_at=started_at,
+                    completed_at=completed_at,
+                    updated_at=datetime.utcnow()
                 )
+                session.add(task)
             return True
-        except sqlite3.IntegrityError as e:
+        except IntegrityError as e:
             logger.error(
                 f"Error creating task {task_id} in workflow {workflow_id}: {e}"
             )
@@ -272,19 +254,15 @@ class DatabaseManager:
     ) -> bool:
         """Update task status."""
         try:
-            sql = "UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP"
-            params = [status]
-
-            if started_at:
-                sql += ", started_at = ?"
-                params.append(started_at.isoformat())
-
-            sql += " WHERE task_id = ?"
-            params.append(task_id)
-
-            with self.transaction() as conn:
-                conn.execute(sql, tuple(params))
-            return True
+            with self.transaction() as session:
+                task = session.query(Task).filter(Task.task_id == task_id).first()
+                if task:
+                    task.status = status
+                    task.updated_at = datetime.utcnow()
+                    if started_at:
+                        task.started_at = started_at
+                    return True
+                return False
         except Exception as e:
             logger.error(f"Error updating task {task_id} status: {e}")
             return False
@@ -292,14 +270,33 @@ class DatabaseManager:
     def update_task_completion(self, task_id: str, completed_at: datetime) -> bool:
         """Update task completion timestamp."""
         try:
-            with self.transaction() as conn:
-                conn.execute(
-                    "UPDATE tasks SET completed_at = ?, status = 'completed' WHERE task_id = ?",
-                    (completed_at.isoformat(), task_id),
-                )
-            return True
+            with self.transaction() as session:
+                task = session.query(Task).filter(Task.task_id == task_id).first()
+                if task:
+                    task.completed_at = completed_at
+                    task.status = 'completed'
+                    return True
+                return False
         except Exception as e:
             logger.error(f"Error updating task {task_id} completion: {e}")
+            return False
+
+    def update_task_with_result(self, task_id: str, result: Any, completed_at: datetime = None) -> bool:
+        """Update task with result and completion status."""
+        try:
+            with self.transaction() as session:
+                task = session.query(Task).filter(Task.task_id == task_id).first()
+                if task:
+                    task.result_value = result
+                    task.status = 'completed'
+                    if completed_at:
+                        task.completed_at = completed_at
+                    else:
+                        task.completed_at = datetime.utcnow()
+                    return True
+                return False
+        except Exception as e:
+            logger.error(f"Error updating task {task_id} with result: {e}")
             return False
 
     def create_task_execution(
@@ -318,30 +315,22 @@ class DatabaseManager:
     ) -> bool:
         """Create a task execution record."""
         try:
-            with self.transaction() as conn:
-                conn.execute(
-                    """
-                    INSERT INTO task_executions 
-                    (execution_id, task_id, workflow_id, executor_runtime, 
-                     execution_args_json, execution_kwargs_json, result_json, 
-                     error_message, started_at, completed_at, duration_ms, status) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        f"{task_id}_exec_{int(datetime.now().timestamp())}",  # Generate unique ID
-                        task_id,
-                        workflow_id,
-                        executor_runtime,
-                        json.dumps(execution_args) if execution_args else None,
-                        json.dumps(execution_kwargs) if execution_kwargs else None,
-                        json.dumps(result) if result is not None else None,
-                        error_message,
-                        started_at.isoformat() if started_at else None,
-                        completed_at.isoformat() if completed_at else None,
-                        duration_ms,
-                        status,
-                    ),
+            with self.transaction() as session:
+                execution = TaskExecution(
+                    execution_id=f"{task_id}_exec_{int(datetime.utcnow().timestamp())}",  # Generate unique ID
+                    task_id=task_id,
+                    workflow_id=workflow_id,
+                    executor_runtime=executor_runtime,
+                    execution_args=execution_args,
+                    execution_kwargs=execution_kwargs,
+                    result=result,
+                    error_message=error_message,
+                    started_at=started_at,
+                    completed_at=completed_at,
+                    duration_ms=duration_ms,
+                    status=status
                 )
+                session.add(execution)
             return True
         except Exception as e:
             logger.error(f"Error creating task execution for {task_id}: {e}")
@@ -349,135 +338,108 @@ class DatabaseManager:
 
     def get_tasks_by_workflow(self, workflow_id: str) -> List[Dict[str, Any]]:
         """Get all tasks for a workflow."""
-        results = self.fetch_all(
-            """
-            SELECT task_id, workflow_id, operator_type, runtime, function, image,
-                   command_json, args_json, kwargs_json, result_key, dependencies_json,
-                   created_at, started_at, completed_at, status
-            FROM tasks 
-            WHERE workflow_id = ?
-            ORDER BY created_at
-            """,
-            (workflow_id,),
-        )
+        session = self._get_session()
+        tasks = session.query(Task).filter(Task.workflow_id == workflow_id).order_by(Task.created_at).all()
 
-        tasks = []
-        for result in results:
-            task = {
-                "task_id": result["task_id"],
-                "workflow_id": result["workflow_id"],
-                "operator_type": result["operator_type"],
-                "runtime": result["runtime"],
-                "function": result["function"],
-                "image": result["image"],
-                "command": json.loads(result["command_json"])
-                if result["command_json"]
-                else None,
-                "args": json.loads(result["args_json"])
-                if result["args_json"]
-                else None,
-                "kwargs": json.loads(result["kwargs_json"])
-                if result["kwargs_json"]
-                else None,
-                "result_key": result["result_key"],
-                "dependencies": json.loads(result["dependencies_json"])
-                if result["dependencies_json"]
-                else None,
-                "created_at": result["created_at"],
-                "started_at": result["started_at"],
-                "completed_at": result["completed_at"],
-                "status": result["status"],
+        task_list = []
+        for task in tasks:
+            task_dict = {
+                "task_id": task.task_id,
+                "workflow_id": task.workflow_id,
+                "operator_type": task.operator_type,
+                "runtime": task.runtime,
+                "function": task.function,
+                "image": task.image,
+                "command": task.command,
+                "args": task.args,
+                "kwargs": task.kwargs,
+                "result_key": task.result_key,
+                "dependencies": task.dependencies_list,
+                "created_at": task.created_at,
+                "started_at": task.started_at,
+                "completed_at": task.completed_at,
+                "status": task.status,
             }
-            tasks.append(task)
+            task_list.append(task_dict)
 
-        return tasks
+        return task_list
 
     def get_task_executions(self, task_id: str) -> List[Dict[str, Any]]:
         """Get all executions for a task."""
-        results = self.fetch_all(
-            """
-            SELECT execution_id, task_id, workflow_id, executor_runtime,
-                   execution_args_json, execution_kwargs_json, result_json,
-                   error_message, started_at, completed_at, duration_ms, status
-            FROM task_executions 
-            WHERE task_id = ?
-            ORDER BY started_at DESC
-            """,
-            (task_id,),
-        )
+        session = self._get_session()
+        executions = session.query(TaskExecution).filter(
+            TaskExecution.task_id == task_id
+        ).order_by(TaskExecution.created_at.desc()).all()
 
-        executions = []
-        for result in results:
-            execution = {
-                "execution_id": result["execution_id"],
-                "task_id": result["task_id"],
-                "workflow_id": result["workflow_id"],
-                "executor_runtime": result["executor_runtime"],
-                "execution_args": json.loads(result["execution_args_json"])
-                if result["execution_args_json"]
-                else None,
-                "execution_kwargs": json.loads(result["execution_kwargs_json"])
-                if result["execution_kwargs_json"]
-                else None,
-                "result": json.loads(result["result_json"])
-                if result["result_json"]
-                else None,
-                "error_message": result["error_message"],
-                "started_at": result["started_at"],
-                "completed_at": result["completed_at"],
-                "duration_ms": result["duration_ms"],
-                "status": result["status"],
+        execution_list = []
+        for execution in executions:
+            execution_dict = {
+                "execution_id": execution.execution_id,
+                "task_id": execution.task_id,
+                "workflow_id": execution.workflow_id,
+                "executor_runtime": execution.executor_runtime,
+                "execution_args": execution.execution_args,
+                "execution_kwargs": execution.execution_kwargs,
+                "result": execution.result,
+                "error_message": execution.error_message,
+                "started_at": execution.started_at,
+                "completed_at": execution.completed_at,
+                "duration_ms": execution.duration_ms,
+                "status": execution.status,
             }
-            executions.append(execution)
+            execution_list.append(execution_dict)
 
-        return executions
+        return execution_list
 
     def get_completed_tasks(self, workflow_id: str) -> set:
         """Get set of completed task IDs for a workflow."""
-        results = self.fetch_all(
-            """
-            SELECT task_id 
-            FROM tasks 
-            WHERE workflow_id = ? AND status = 'completed'
-            """,
-            (workflow_id,),
-        )
-        return {row["task_id"] for row in results}
+        session = self._get_session()
+        completed_tasks = session.query(Task.task_id).filter(
+            Task.workflow_id == workflow_id,
+            Task.status == 'completed'
+        ).all()
+        
+        return {task.task_id for task in completed_tasks}
 
     def store_result(
-        self, workflow_id: str, result_key: str, result_value: Any
+        self, workflow_id: str, task_id: str, result_key: str, result_value: Any
     ) -> bool:
-        """Store a result value for a workflow."""
+        """Store a result value for a task in a workflow (matches original schema with FK to tasks)."""
         try:
-            with self.transaction() as conn:
-                conn.execute(
-                    """
-                    INSERT OR REPLACE INTO workflow_results 
-                    (workflow_id, result_key, result_value_json)
-                    VALUES (?, ?, ?)
-                    """,
-                    (workflow_id, result_key, json.dumps(result_value)),
-                )
+            with self.transaction() as session:
+                # Check if result already exists, if so, update it, otherwise create new
+                result_obj = session.query(WorkflowResult).filter(
+                    WorkflowResult.workflow_id == workflow_id,
+                    WorkflowResult.task_id == task_id,
+                    WorkflowResult.result_key == result_key
+                ).first()
+                
+                if result_obj:
+                    result_obj.result_value = result_value
+                else:
+                    result_obj = WorkflowResult(
+                        workflow_id=workflow_id,
+                        task_id=task_id,
+                        result_key=result_key,
+                        result_value=result_value
+                    )
+                    session.add(result_obj)
             return True
         except Exception as e:
             logger.error(
-                f"Error storing result {result_key} for workflow {workflow_id}: {e}"
+                f"Error storing result {result_key} for task {task_id} in workflow {workflow_id}: {e}"
             )
             return False
 
     def load_results(self, workflow_id: str) -> Dict[str, Any]:
         """Load all results for a workflow."""
-        results = self.fetch_all(
-            """
-            SELECT result_key, result_value_json 
-            FROM workflow_results 
-            WHERE workflow_id = ?
-            """,
-            (workflow_id,),
-        )
+        session = self._get_session()
+        results = session.query(WorkflowResult).filter(
+            WorkflowResult.workflow_id == workflow_id
+        ).all()
 
         return {
-            row["result_key"]: json.loads(row["result_value_json"]) for row in results
+            result.result_key: result.result_value for result in results
         }
 
     def store_memory(
@@ -485,15 +447,23 @@ class DatabaseManager:
     ) -> bool:
         """Store a memory value for a workflow."""
         try:
-            with self.transaction() as conn:
-                conn.execute(
-                    """
-                    INSERT OR REPLACE INTO workflow_memory 
-                    (workflow_id, memory_key, memory_value_json, updated_at)
-                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-                    """,
-                    (workflow_id, memory_key, json.dumps(memory_value)),
-                )
+            with self.transaction() as session:
+                # Check if memory already exists, if so, update it, otherwise create new
+                memory_obj = session.query(WorkflowMemory).filter(
+                    WorkflowMemory.workflow_id == workflow_id,
+                    WorkflowMemory.memory_key == memory_key
+                ).first()
+                
+                if memory_obj:
+                    memory_obj.memory_value = memory_value
+                    memory_obj.updated_at = datetime.utcnow()
+                else:
+                    memory_obj = WorkflowMemory(
+                        workflow_id=workflow_id,
+                        memory_key=memory_key,
+                        memory_value=memory_value
+                    )
+                    session.add(memory_obj)
             return True
         except Exception as e:
             logger.error(
@@ -503,17 +473,13 @@ class DatabaseManager:
 
     def load_memory(self, workflow_id: str) -> Dict[str, Any]:
         """Load all memory for a workflow."""
-        results = self.fetch_all(
-            """
-            SELECT memory_key, memory_value_json 
-            FROM workflow_memory 
-            WHERE workflow_id = ?
-            """,
-            (workflow_id,),
-        )
+        session = self._get_session()
+        memory_entries = session.query(WorkflowMemory).filter(
+            WorkflowMemory.workflow_id == workflow_id
+        ).all()
 
         return {
-            row["memory_key"]: json.loads(row["memory_value_json"]) for row in results
+            memory.memory_key: memory.memory_value for memory in memory_entries
         }
 
     def store_dependencies(
@@ -521,23 +487,21 @@ class DatabaseManager:
     ) -> bool:
         """Store task dependencies."""
         try:
-            with self.transaction() as conn:
+            with self.transaction() as session:
                 # First, remove existing dependencies for this task
-                conn.execute(
-                    "DELETE FROM task_dependencies WHERE task_id = ? AND workflow_id = ?",
-                    (task_id, workflow_id),
-                )
-
+                session.query(TaskDependency).filter(
+                    TaskDependency.task_id == task_id,
+                    TaskDependency.workflow_id == workflow_id
+                ).delete()
+                
                 # Add new dependencies
                 for dep_task_id in dependencies:
-                    conn.execute(
-                        """
-                        INSERT OR IGNORE INTO task_dependencies 
-                        (task_id, depends_on_task_id, workflow_id)
-                        VALUES (?, ?, ?)
-                        """,
-                        (task_id, dep_task_id, workflow_id),
+                    dependency = TaskDependency(
+                        task_id=task_id,
+                        depends_on_task_id=dep_task_id,
+                        workflow_id=workflow_id
                     )
+                    session.add(dependency)
             return True
         except Exception as e:
             logger.error(f"Error storing dependencies for task {task_id}: {e}")
@@ -545,34 +509,28 @@ class DatabaseManager:
 
     def get_dependencies(self, task_id: str) -> List[str]:
         """Get dependencies for a task."""
-        results = self.fetch_all(
-            """
-            SELECT depends_on_task_id 
-            FROM task_dependencies 
-            WHERE task_id = ?
-            """,
-            (task_id,),
-        )
-        return [row["depends_on_task_id"] for row in results]
+        session = self._get_session()
+        dependencies = session.query(TaskDependency.depends_on_task_id).filter(
+            TaskDependency.task_id == task_id
+        ).all()
+        
+        return [dep.depends_on_task_id for dep in dependencies]
 
     def get_dependents(self, task_id: str) -> List[str]:
         """Get tasks that depend on this task."""
-        results = self.fetch_all(
-            """
-            SELECT task_id 
-            FROM task_dependencies 
-            WHERE depends_on_task_id = ?
-            """,
-            (task_id,),
-        )
-        return [row["task_id"] for row in results]
+        session = self._get_session()
+        dependents = session.query(TaskDependency.task_id).filter(
+            TaskDependency.depends_on_task_id == task_id
+        ).all()
+        
+        return [dep.task_id for dep in dependents]
 
     def close(self) -> None:
-        """Close the database connection for the current thread."""
-        if hasattr(self._local, "connection"):
-            self._local.connection.close()
-            delattr(self._local, "connection")
+        """Close the database session for the current thread."""
+        if hasattr(self._local, "session"):
+            self._local.session.close()
+            delattr(self._local, "session")
 
     def close_all_connections(self) -> None:
         """Close all connections (call this on application shutdown)."""
-        self.close()
+        self.engine.dispose()
