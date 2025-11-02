@@ -33,8 +33,11 @@ def test_execute_parallel_with_empty_branch():
     # Create a mock orchestrator
     orchestrator = MagicMock()
 
+    # Create a mock executor
+    executor = MagicMock()
+
     # Execute the parallel handler
-    execute(task, state, orchestrator, registry, bulkhead_manager)
+    execute(task, state, orchestrator, registry, bulkhead_manager, executor)
 
 
 def test_execute_parallel_without_empty_branches():
@@ -63,8 +66,11 @@ def test_execute_parallel_without_empty_branches():
     # Create a mock orchestrator
     orchestrator = MagicMock()
 
+    # Create a mock executor
+    executor = MagicMock()
+
     # Execute the parallel handler
-    execute(task, state, orchestrator, registry, bulkhead_manager)
+    execute(task, state, orchestrator, registry, bulkhead_manager, executor)
 
 
 def test_execute_parallel_with_all_empty_branches():
@@ -89,8 +95,11 @@ def test_execute_parallel_with_all_empty_branches():
     # Create a mock orchestrator
     orchestrator = MagicMock()
 
+    # Create a mock executor
+    executor = MagicMock()
+
     # Execute the parallel handler
-    execute(task, state, orchestrator, registry, bulkhead_manager)
+    execute(task, state, orchestrator, registry, bulkhead_manager, executor)
 
 
 def test_execute_parallel_with_none_branches():

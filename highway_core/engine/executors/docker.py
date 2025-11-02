@@ -51,7 +51,10 @@ class DockerExecutor(BaseExecutor):
         container_name = generate_safe_container_name(task.task_id, workflow_run_id)
 
         logger.info(
-            "DockerExecutor: Running task %s in container %s (%s)", task.task_id, container_name, image_name
+            "DockerExecutor: Running task %s in container %s (%s)",
+            task.task_id,
+            container_name,
+            image_name,
         )
 
         try:

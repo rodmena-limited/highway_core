@@ -52,6 +52,7 @@ def execute(
                 state,  # Pass the main state
                 registry,
                 bulkhead_manager,
+                executor,  # Pass the executor
             )
         )
 
@@ -74,6 +75,7 @@ def _run_foreach_item(
     main_state: WorkflowState,
     registry: ToolRegistry,
     bulkhead_manager: BulkheadManager,
+    executor: Optional["BaseExecutor"] = None,
 ) -> None:
     """
     Runs a single iteration of a foreach loop in a separate thread.
@@ -93,6 +95,7 @@ def _run_foreach_item(
         state=item_state,  # Use the isolated state
         registry=registry,
         bulkhead_manager=bulkhead_manager,
+        executor=executor,
     )
 
     logger.info("ForEachHandler: [Item: %s] Sub-workflow completed.", item)

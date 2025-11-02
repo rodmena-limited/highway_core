@@ -65,6 +65,8 @@ def mock_bulkhead_manager():
 def test_foreach_handler_execute_with_items(
     mock_orchestrator, mock_state, mock_registry, mock_bulkhead_manager
 ):
+    # Create a mock executor
+    mock_executor = MagicMock()
     mock_state.set_variable("items", [1, 2, 3])
 
     loop_task = TaskOperatorModel(
@@ -86,12 +88,21 @@ def test_foreach_handler_execute_with_items(
     )
 
     # Execute the foreach handler.
-    execute(task, mock_state, mock_orchestrator, mock_registry, mock_bulkhead_manager)
+    execute(
+        task,
+        mock_state,
+        mock_orchestrator,
+        mock_registry,
+        mock_bulkhead_manager,
+        mock_executor,
+    )
 
 
 def test_foreach_handler_execute_with_empty_list(
     mock_orchestrator, mock_state, mock_registry, mock_bulkhead_manager
 ):
+    # Create a mock executor
+    mock_executor = MagicMock()
     mock_state.set_variable("items", [])
 
     loop_task = TaskOperatorModel(
@@ -113,7 +124,14 @@ def test_foreach_handler_execute_with_empty_list(
     )
 
     # Execute the foreach handler
-    execute(task, mock_state, mock_orchestrator, mock_registry, mock_bulkhead_manager)
+    execute(
+        task,
+        mock_state,
+        mock_orchestrator,
+        mock_registry,
+        mock_bulkhead_manager,
+        mock_executor,
+    )
 
 
 def test_foreach_handler_execute_with_string_items(
@@ -122,6 +140,9 @@ def test_foreach_handler_execute_with_string_items(
     """Test foreach handler with string representation of list"""
     # Testing with string list
     mock_state.set_variable("items", ["a", "b", "c"])
+
+    # Create a mock executor
+    mock_executor = MagicMock()
 
     loop_task = TaskOperatorModel(
         task_id="loop_task",
@@ -142,4 +163,11 @@ def test_foreach_handler_execute_with_string_items(
     )
 
     # Execute the foreach handler.
-    execute(task, mock_state, mock_orchestrator, mock_registry, mock_bulkhead_manager)
+    execute(
+        task,
+        mock_state,
+        mock_orchestrator,
+        mock_registry,
+        mock_bulkhead_manager,
+        mock_executor,
+    )

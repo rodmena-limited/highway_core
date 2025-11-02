@@ -1,11 +1,16 @@
 import logging
 import graphlib
-from typing import Dict, Set
+from typing import Dict, Set, Optional
 from highway_core.engine.models import AnyOperatorModel, TaskOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager
 from highway_core.engine.operator_handlers import task_handler
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from highway_core.engine.executors.base import BaseExecutor  # <-- NEW
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +21,7 @@ def _run_sub_workflow(
     state: WorkflowState,
     registry: ToolRegistry,
     bulkhead_manager: BulkheadManager,
+    executor: Optional["BaseExecutor"] = None,
 ) -> None:
     """
     Runs a sub-workflow (like a loop body) to completion.
@@ -46,7 +52,7 @@ def _run_sub_workflow(
                 if handler_func:
                     # Note: sub-workflows don't get the orchestrator
                     handler_func(
-                        task_clone, state, None, registry, bulkhead_manager
+                        task_clone, state, None, registry, bulkhead_manager, executor
                     )  # Pass None for orchestrator
             else:
                 logger.warning(

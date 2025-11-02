@@ -18,7 +18,7 @@ def run(*args) -> str:
     """
     # Import shlex here to ensure it's available in the function scope
     import shlex
-    
+
     # Join the arguments into a single command string
     if len(args) == 1:
         # If there's only one argument, use it directly
@@ -40,9 +40,16 @@ def run(*args) -> str:
         # Return just the stdout, stripped of trailing whitespace, which is what the workflow expects
         return result.stdout.rstrip()
     except subprocess.CalledProcessError as e:
-        logger.error("  [Tool.Shell.Run] FAILED with code %s, stdout: %s, stderr: %s", e.returncode, e.stdout, e.stderr)
+        logger.error(
+            "  [Tool.Shell.Run] FAILED with code %s, stdout: %s, stderr: %s",
+            e.returncode,
+            e.stdout,
+            e.stderr,
+        )
         # Raise the exception to halt the workflow task execution
-        raise RuntimeError(f"Command failed with exit code {e.returncode}: {e.stderr}") from e
+        raise RuntimeError(
+            f"Command failed with exit code {e.returncode}: {e.stderr}"
+        ) from e
     except Exception as e:
         logger.error("  [Tool.Shell.Run] FAILED: %s", e)
         raise RuntimeError(f"Command execution failed: {e}") from e

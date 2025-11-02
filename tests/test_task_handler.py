@@ -33,8 +33,11 @@ def test_execute_task_with_bulkhead():
         # Create a mock orchestrator
         orchestrator = MagicMock()
 
+        # Create a mock executor
+        executor = MagicMock()
+
         # Execute the task handler
-        execute(task, state, orchestrator, registry, bulkhead_manager)
+        execute(task, state, orchestrator, registry, bulkhead_manager, executor)
 
         # Verify that the result was set in the state
         assert state.get_result("test_result") is not None
@@ -65,8 +68,11 @@ def test_execute_task_without_bulkhead():
     # Create a mock orchestrator
     orchestrator = MagicMock()
 
+    # Create a mock executor
+    executor = MagicMock()
+
     # Execute the task handler without bulkhead manager
-    execute(task, state, orchestrator, registry, None)
+    execute(task, state, orchestrator, registry, None, executor)
 
     # Verify that the result was set in the state
     assert state.get_result("test_result") is not None
@@ -93,9 +99,20 @@ def test_execute_task_with_missing_function():
     # Create a mock orchestrator
     orchestrator = MagicMock()
 
+    # Create a mock executor that calls the registry.get_function (which will raise KeyError)
+    executor = MagicMock()
+
+    # Set up the execute method to call registry.get_function, which will fail for missing function
+    def executor_execute(task, state, registry, **kwargs):
+        # This will trigger the KeyError from the registry
+        func = registry.get_function(task.function)
+        return func(*task.args, **task.kwargs)
+
+    executor.execute = executor_execute
+
     # Execute the task handler and expect a KeyError
     with pytest.raises(KeyError):
-        execute(task, state, orchestrator, registry, None)
+        execute(task, state, orchestrator, registry, None, executor)
 
 
 def test_execute_task_with_templating_resolution():
@@ -124,8 +141,11 @@ def test_execute_task_with_templating_resolution():
     orchestrator = MagicMock()
 
     try:
+        # Create a mock executor
+        executor = MagicMock()
+
         # Execute the task handler
-        execute(task, state, orchestrator, registry, bulkhead_manager)
+        execute(task, state, orchestrator, registry, bulkhead_manager, executor)
 
         # Verify that the result was set in the state
         result = state.get_result("test_result")
@@ -167,8 +187,19 @@ def test_execute_task_memory_set():
         # Create a mock orchestrator
         orchestrator = MagicMock()
 
+        # Create a mock executor that actually executes the function
+        executor = MagicMock()
+
+        # Set up the execute method to actually run the function
+        def executor_execute(task, state, registry, **kwargs):
+            # Get the function from the registry and call it
+            func = registry.get_function(task.function)
+            return func(state, *task.args, **task.kwargs)
+
+        executor.execute = executor_execute
+
         # Execute the task handler
-        execute(task, state, orchestrator, registry, bulkhead_manager)
+        execute(task, state, orchestrator, registry, bulkhead_manager, executor)
 
         # Verify that the memory was set in the state
         assert state.get_variable("key1") == "value1"
@@ -206,8 +237,11 @@ def test_execute_task_with_kwargs():
         # Create a mock orchestrator
         orchestrator = MagicMock()
 
+        # Create a mock executor
+        executor = MagicMock()
+
         # Execute the task handler
-        execute(task, state, orchestrator, registry, bulkhead_manager)
+        execute(task, state, orchestrator, registry, bulkhead_manager, executor)
 
         # Verify that the result was set in the state
         result = state.get_result("test_result")
@@ -245,9 +279,20 @@ def test_execute_task_exception_in_bulkhead():
         # Create a mock orchestrator
         orchestrator = MagicMock()
 
+        # Create a mock executor that actually executes the function
+        executor = MagicMock()
+
+        # Set up the execute method to actually run the function
+        def executor_execute(task, state, registry, **kwargs):
+            # Get the function from the registry and call it
+            func = registry.get_function(task.function)
+            return func(*task.args, **task.kwargs)
+
+        executor.execute = executor_execute
+
         # Execute the task handler and expect an exception
         with pytest.raises(Exception) as excinfo:
-            execute(task, state, orchestrator, registry, bulkhead_manager)
+            execute(task, state, orchestrator, registry, bulkhead_manager, executor)
         assert "Test exception" in str(excinfo.value)
     finally:
         # Ensure bulkhead manager is properly shut down

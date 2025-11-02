@@ -36,7 +36,9 @@ class SQLPersistence:
             # Use default production database
             self.db_manager = DatabaseManager()
 
-    def start_workflow(self, workflow_id: str, workflow_name: str, variables: Dict) -> None:
+    def start_workflow(
+        self, workflow_id: str, workflow_name: str, variables: Dict
+    ) -> None:
         """Record workflow start in database"""
         with self.db_manager.database_transaction() as conn:
             conn.execute(
@@ -79,14 +81,14 @@ class SQLPersistence:
                     workflow_id,
                     task.task_id,
                     task.operator_type,
-                    getattr(task, 'runtime', 'python'),
-                    getattr(task, 'function', None),
-                    getattr(task, 'image', None),
-                    json.dumps(getattr(task, 'command', None)),
-                    json.dumps(getattr(task, 'args', [])),
-                    json.dumps(getattr(task, 'kwargs', {})),
-                    getattr(task, 'result_key', None),
-                    json.dumps(getattr(task, 'dependencies', [])),
+                    getattr(task, "runtime", "python"),
+                    getattr(task, "function", None),
+                    getattr(task, "image", None),
+                    json.dumps(getattr(task, "command", None)),
+                    json.dumps(getattr(task, "args", [])),
+                    json.dumps(getattr(task, "kwargs", {})),
+                    getattr(task, "result_key", None),
+                    json.dumps(getattr(task, "dependencies", [])),
                 ),
             )
 
@@ -167,13 +169,16 @@ class SQLPersistence:
             logger.error(f"Error loading workflow state for {workflow_run_id}: {e}")
             return None, set()
 
-    def get_workflow_state(self, workflow_id: str) -> Tuple[Optional[WorkflowState], Set[str]]:
+    def get_workflow_state(
+        self, workflow_id: str
+    ) -> Tuple[Optional[WorkflowState], Set[str]]:
         """Load workflow state and completed tasks"""
         state = None
         completed_tasks = set()
         with self.db_manager.database_transaction() as conn:
             workflow_row = conn.execute(
-                "SELECT variables_json FROM workflows WHERE workflow_id = ?", (workflow_id,)
+                "SELECT variables_json FROM workflows WHERE workflow_id = ?",
+                (workflow_id,),
             ).fetchone()
             if workflow_row:
                 variables = json.loads(workflow_row[0])
@@ -184,7 +189,7 @@ class SQLPersistence:
                 ).fetchall()
                 for row in results_rows:
                     state.results[row[0]] = json.loads(row[1])
-                
+
                 completed_tasks_rows = conn.execute(
                     "SELECT task_id FROM tasks WHERE workflow_id = ? AND status = 'completed'",
                     (workflow_id,),
@@ -247,7 +252,9 @@ class SQLPersistence:
         """
         try:
             if status == "failed":
-                self.fail_task(workflow_run_id, task_id, error_message or "Unknown error")
+                self.fail_task(
+                    workflow_run_id, task_id, error_message or "Unknown error"
+                )
             return True
         except Exception as e:
             logger.error(f"Error saving task execution for task {task_id}: {e}")

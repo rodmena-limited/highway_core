@@ -8,6 +8,8 @@ from highway_core.engine.operator_handlers.condition_handler import (
 from highway_core.engine.models import ConditionOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
+from highway_core.tools.bulkhead import BulkheadManager
+from highway_core.engine.executors.base import BaseExecutor
 
 
 def test_execute_condition_true():
@@ -32,8 +34,14 @@ def test_execute_condition_true():
     # Create a mock registry
     registry = ToolRegistry()
 
+    # Create a mock bulkhead manager
+    bulkhead_manager = MagicMock()
+
+    # Create a mock executor
+    executor = MagicMock()
+
     # Execute the condition handler
-    execute(task, state, orchestrator, registry)
+    execute(task, state, orchestrator, registry, bulkhead_manager, executor)
 
     # Check that the orchestrator's sorter.done() was called with the correct task id
     orchestrator.sorter.done.assert_called_once_with("task_b")
@@ -60,8 +68,14 @@ def test_execute_condition_false():
     # Create a mock registry
     registry = ToolRegistry()
 
+    # Create a mock bulkhead manager
+    bulkhead_manager = MagicMock()
+
+    # Create a mock executor
+    executor = MagicMock()
+
     # Execute the condition handler
-    execute(task, state, orchestrator, registry)
+    execute(task, state, orchestrator, registry, bulkhead_manager, executor)
 
     # Check that the orchestrator's sorter.done() was called with the correct task id
     orchestrator.sorter.done.assert_called_once_with("task_a")
@@ -89,8 +103,14 @@ def test_execute_condition_no_false_branch():
     # Create a mock registry
     registry = ToolRegistry()
 
+    # Create a mock bulkhead manager
+    bulkhead_manager = MagicMock()
+
+    # Create a mock executor
+    executor = MagicMock()
+
     # Execute the condition handler
-    execute(task, state, orchestrator, registry)
+    execute(task, state, orchestrator, registry, bulkhead_manager, executor)
 
     # Check that the orchestrator's sorter.done() was not called since there's no false branch to skip
     orchestrator.sorter.done.assert_not_called()

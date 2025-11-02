@@ -15,15 +15,13 @@ class TestCommandTool:
         with patch("subprocess.run") as mock_run:
             mock_result = MagicMock()
             mock_result.returncode = 0
-            mock_result.stdout = "Success output"
+            mock_result.stdout = "Success output\n"
             mock_result.stderr = ""
             mock_run.return_value = mock_result
 
             result = command_run("echo hello")
 
-            assert result["status_code"] == 0
-            assert result["stdout"] == "Success output"
-            assert result["stderr"] == ""
+            assert result == "Success output"
 
     def test_command_failure(self):
         """Test running a command that fails."""
@@ -32,20 +30,20 @@ class TestCommandTool:
                 returncode=1, cmd="false", output="stdout", stderr="stderr"
             )
 
-            result = command_run("false")
+            with pytest.raises(RuntimeError) as excinfo:
+                command_run("false")
 
-            assert result["status_code"] == 1
-            assert result["stderr"] == "stderr"
+            assert "Command failed with exit code 1: stderr" in str(excinfo.value)
 
     def test_command_exception(self):
         """Test handling an exception during command execution."""
         with patch("subprocess.run") as mock_run:
             mock_run.side_effect = Exception("Unexpected error")
 
-            result = command_run("invalid command")
+            with pytest.raises(RuntimeError) as excinfo:
+                command_run("invalid command")
 
-            assert result["status_code"] == -1
-            assert result["stderr"] == "Unexpected error"
+            assert "Command execution failed: Unexpected error" in str(excinfo.value)
 
 
 class TestFetchTool:

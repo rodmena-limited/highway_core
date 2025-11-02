@@ -60,7 +60,9 @@ class Orchestrator:
         else:
             self.state = WorkflowState(workflow.variables)
             self.completed_tasks = set()
-            self.persistence.start_workflow(self.run_id, self.workflow.name, self.workflow.variables)
+            self.persistence.start_workflow(
+                self.run_id, self.workflow.name, self.workflow.variables
+            )
 
         # 1. Build the dependency graph for ONLY top-level tasks
         self.graph: Dict[str, Set[str]] = {
