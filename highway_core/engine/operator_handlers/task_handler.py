@@ -1,4 +1,4 @@
-from highway_core.engine.models import TaskOperatorModel
+from highway_core.engine.common import TaskOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager, BulkheadConfig
@@ -29,7 +29,7 @@ def execute(
     resolved_kwargs = state.resolve_templating(task.kwargs)
 
     # 3. Special check for tools that need state
-    if tool_name == "tools.memory.set":
+    if tool_name in ["tools.memory.set", "tools.memory.increment"]:
         # Inject the state object as the first argument
         resolved_args.insert(0, state)
 

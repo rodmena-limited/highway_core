@@ -5,7 +5,7 @@
 # - Evaluates the condition.
 # - Updates orchestrator state to handle conditional flow.
 
-from highway_core.engine.models import ConditionOperatorModel
+from highway_core.engine.common import ConditionOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
 from typing import Optional

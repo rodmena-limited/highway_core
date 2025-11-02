@@ -6,7 +6,7 @@
 import time
 from datetime import datetime
 import re
-from highway_core.engine.models import WaitOperatorModel
+from highway_core.engine.common import WaitOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager

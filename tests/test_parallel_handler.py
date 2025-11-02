@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock
 from highway_core.engine.operator_handlers.parallel_handler import execute
-from highway_core.engine.models import ParallelOperatorModel
+from highway_core.engine.common import ParallelOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager
