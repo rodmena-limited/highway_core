@@ -5,7 +5,7 @@
 
 from abc import ABC, abstractmethod
 from highway_core.engine.state import WorkflowState
-from highway_core.engine.models import TaskOperatorModel
+from highway_core.engine.models import TaskOperatorModel, AnyOperatorModel
 from typing import Tuple, Set, Dict, Any, Optional
 from datetime import datetime
 
@@ -43,7 +43,7 @@ class PersistenceManager(ABC):
         pass
 
     @abstractmethod
-    def start_task(self, workflow_id: str, task: TaskOperatorModel) -> None:
+    def start_task(self, workflow_id: str, task: AnyOperatorModel) -> None:
         """Start tracking a task execution."""
         pass
 

@@ -3,7 +3,7 @@ import json
 from typing import Optional, Tuple, Dict, Any, Set
 from pathlib import Path
 
-from highway_core.engine.models import TaskOperatorModel
+from highway_core.engine.models import TaskOperatorModel, AnyOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.persistence.database_manager import DatabaseManager
 from highway_core.persistence.manager import PersistenceManager
@@ -61,9 +61,10 @@ class SQLPersistence(PersistenceManager):
         # Store the error message using the memory system or another approach
         # For now, we'll use update_workflow_status as is and potentially enhance later
 
-    def start_task(self, workflow_id: str, task: TaskOperatorModel) -> None:
+    def start_task(self, workflow_id: str, task: AnyOperatorModel) -> None:
         """Record task start"""
         # Create or update the task with executing status
+        # Use getattr to safely access properties that may not exist on all operator types
         self.db_manager.create_task(
             workflow_id=workflow_id,
             task_id=task.task_id,

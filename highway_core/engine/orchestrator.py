@@ -216,9 +216,7 @@ class Orchestrator:
             task_id,
             task_model.operator_type,
         )
-        # Only call start_task for task operators, not for other operator types that may not support it
-        if task_model.operator_type == "task":
-            self.persistence.start_task(self.run_id, task_model)
+        self.persistence.start_task(self.run_id, task_model)
 
         handler_func = self.handler_map.get(task_model.operator_type)
         if not handler_func:
