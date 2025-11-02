@@ -89,17 +89,19 @@ def _eval_node(node: ast.AST) -> Any:
     """
     Recursively evaluate an AST node.
     """
-    # Handle constants (ast.Constant is used in Python 3.8+, older versions used ast.Num, ast.Str, ast.NameConstant)
+    # Handle constants (ast.Constant is used in Python 3.8+,
+    # older versions used ast.Num, ast.Str, ast.NameConstant which are removed in Python 3.14+)
     if isinstance(node, ast.Constant):  # Python 3.8+
         return node.value
-    elif isinstance(node, ast.Num):  # Python < 3.8 compatibility - deprecated
-        return node.n
-    elif isinstance(node, ast.Str):  # Python < 3.8 compatibility - deprecated
-        return node.s
-    elif isinstance(
-        node, ast.NameConstant
-    ):  # True, False, None (Python < 3.8) - deprecated
-        return node.value
+    # The following are removed in Python 3.14+ and covered by ast.Constant
+    # elif isinstance(node, ast.Num):  # Python < 3.8 compatibility - deprecated & removed
+    #     return node.n
+    # elif isinstance(node, ast.Str):  # Python < 3.8 compatibility - deprecated & removed
+    #     return node.s
+    # elif isinstance(
+    #     node, ast.NameConstant
+    # ):  # True, False, None (Python < 3.8) - deprecated & removed
+    #     return node.value
 
     # Handle comparison operations
     elif isinstance(node, ast.Compare):
