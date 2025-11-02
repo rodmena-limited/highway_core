@@ -1,10 +1,13 @@
+import logging
 import graphlib
 from typing import Dict, Set
-from highway_core.engine.models import AnyOperatorModel
+from highway_core.engine.models import AnyOperatorModel, TaskOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager
 from highway_core.engine.operator_handlers import task_handler
+
+logger = logging.getLogger(__name__)
 
 
 def _run_sub_workflow(
@@ -33,16 +36,23 @@ def _run_sub_workflow(
         for task_id in runnable_sub_tasks:
             task_model = sub_graph_tasks[task_id]
 
-            # We must clone the task to resolve templating
-            # This is the fix for the `log_user` problem
-            task_clone = task_model.model_copy(deep=True)
-            task_clone.args = state.resolve_templating(task_clone.args)
+            if task_model.operator_type == "task":
+                # We must clone the task to resolve templating
+                # This is the fix for the `log_user` problem
+                task_clone: TaskOperatorModel = task_model.model_copy(deep=True)  # type: ignore
+                task_clone.args = state.resolve_templating(task_clone.args)
 
-            handler_func = sub_handler_map.get(task_clone.operator_type)
-            if handler_func:
-                # Note: sub-workflows don't get the orchestrator
-                handler_func(
-                    task_clone, state, None, registry, bulkhead_manager
-                )  # Pass None for orchestrator
+                handler_func = sub_handler_map.get(task_clone.operator_type)
+                if handler_func:
+                    # Note: sub-workflows don't get the orchestrator
+                    handler_func(
+                        task_clone, state, None, registry, bulkhead_manager
+                    )  # Pass None for orchestrator
+            else:
+                logger.warning(
+                    "_run_sub_workflow: Skipping unsupported operator type '%s' for task '%s'",
+                    task_model.operator_type,
+                    task_id,
+                )
 
             sub_sorter.done(task_id)

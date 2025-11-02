@@ -108,7 +108,9 @@ class Orchestrator:
             logger.error(
                 "Orchestrator: Error - No handler for %s", task_model.operator_type
             )
-            return []
+            raise ValueError(
+                f"No handler for operator type: {task_model.operator_type}"
+            )
 
         # All handlers now share this signature
         handler_func(
