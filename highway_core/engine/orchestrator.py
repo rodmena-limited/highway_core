@@ -108,55 +108,6 @@ class Orchestrator:
         )
         return task_id
 
-    def __del__(self):
-        """Destructor to ensure cleanup."""
-        try:
-            self.executor.shutdown(wait=False)
-            self.bulkhead_manager.shutdown_all()
-        except:
-            pass
-
-
-# --- ADD THIS FUNCTION OUTSIDE THE CLASS ---
-# This is a shared, static helper function for loops
-
-def _run_sub_workflow(
-    sub_graph_tasks: Dict[str, AnyOperatorModel],
-    sub_graph: Dict[str, set],
-    state: WorkflowState,
-    registry: ToolRegistry,
-    bulkhead_manager: BulkheadManager
-):
-    """
-    Runs a sub-workflow (like a loop body) to completion.
-    This is a blocking, sequential, "mini-orchestrator".
-    """
-    sub_sorter = graphlib.TopologicalSorter(sub_graph)
-    sub_sorter.prepare()
-    
-    # We only support 'task' for now in sub-workflows.
-    # This can be expanded later.
-    sub_handler_map = {
-        "task": task_handler.execute
-    }
-
-    while sub_sorter.is_active():
-        runnable_sub_tasks = sub_sorter.get_ready()
-        if not runnable_sub_tasks:
-            break
-            
-        for task_id in runnable_sub_tasks:
-            task_model = sub_graph_tasks[task_id]
-            
-            # We must clone the task to resolve templating
-            # This is the fix for the `log_user` problem
-            task_clone = task_model.model_copy(deep=True)
-            task_clone.args = state.resolve_templating(task_clone.args)
-            
-            handler_func = sub_handler_map.get(task_clone.operator_type)
-            if handler_func:
-                # Note: sub-workflows don't get the orchestrator
-                handler_func(task_clone, state, None, registry, bulkhead_manager) # Pass None for orchestrator
-            
-            sub_sorter.done(task_id)
+    # Avoid using __del__ for cleanup because it can be called multiple times
+    # and it can cause issues. Cleanup is handled in the run method's finally block.
 

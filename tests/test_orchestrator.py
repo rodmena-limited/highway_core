@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 from highway_core.engine.orchestrator import Orchestrator
 from highway_core.engine.models import WorkflowModel
-from highway_core.engine.common import TaskOperatorModel
+from highway_core.engine.models import TaskOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
 

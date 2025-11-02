@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 from highway_core.engine.operator_handlers.task_handler import execute
-from highway_core.engine.common import TaskOperatorModel
+from highway_core.engine.models import TaskOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager
@@ -30,8 +30,11 @@ def test_execute_task_with_bulkhead():
     bulkhead_manager = BulkheadManager()
 
     try:
+        # Create a mock orchestrator
+        orchestrator = MagicMock()
+
         # Execute the task handler
-        execute(task, state, registry, bulkhead_manager)
+        execute(task, state, orchestrator, registry, bulkhead_manager)
 
         # Verify that the result was set in the state
         assert state.get_result("test_result") is not None
@@ -59,8 +62,11 @@ def test_execute_task_without_bulkhead():
     registry = ToolRegistry()
     registry.functions["tools.log.info"] = lambda msg: {"result": msg}
 
+    # Create a mock orchestrator
+    orchestrator = MagicMock()
+
     # Execute the task handler without bulkhead manager
-    execute(task, state, registry)
+    execute(task, state, orchestrator, registry, None)
 
     # Verify that the result was set in the state
     assert state.get_result("test_result") is not None
@@ -84,9 +90,12 @@ def test_execute_task_with_missing_function():
     # Create a mock registry
     registry = ToolRegistry()
 
+    # Create a mock orchestrator
+    orchestrator = MagicMock()
+
     # Execute the task handler and expect a KeyError
     with pytest.raises(KeyError):
-        execute(task, state, registry)
+        execute(task, state, orchestrator, registry, None)
 
 
 def test_execute_task_with_templating_resolution():
@@ -111,9 +120,12 @@ def test_execute_task_with_templating_resolution():
     # Create a mock bulkhead manager
     bulkhead_manager = BulkheadManager()
 
+    # Create a mock orchestrator
+    orchestrator = MagicMock()
+
     try:
         # Execute the task handler
-        execute(task, state, registry, bulkhead_manager)
+        execute(task, state, orchestrator, registry, bulkhead_manager)
 
         # Verify that the result was set in the state
         result = state.get_result("test_result")
@@ -152,8 +164,11 @@ def test_execute_task_memory_set():
     bulkhead_manager = BulkheadManager()
 
     try:
+        # Create a mock orchestrator
+        orchestrator = MagicMock()
+
         # Execute the task handler
-        execute(task, state, registry, bulkhead_manager)
+        execute(task, state, orchestrator, registry, bulkhead_manager)
 
         # Verify that the memory was set in the state
         assert state.get_variable("key1") == "value1"
@@ -188,8 +203,11 @@ def test_execute_task_with_kwargs():
     bulkhead_manager = BulkheadManager()
 
     try:
+        # Create a mock orchestrator
+        orchestrator = MagicMock()
+
         # Execute the task handler
-        execute(task, state, registry, bulkhead_manager)
+        execute(task, state, orchestrator, registry, bulkhead_manager)
 
         # Verify that the result was set in the state
         result = state.get_result("test_result")
@@ -224,10 +242,12 @@ def test_execute_task_exception_in_bulkhead():
     bulkhead_manager = BulkheadManager()
 
     try:
+        # Create a mock orchestrator
+        orchestrator = MagicMock()
+
         # Execute the task handler and expect an exception
         with pytest.raises(Exception) as excinfo:
-            execute(task, state, registry, bulkhead_manager)
-
+            execute(task, state, orchestrator, registry, bulkhead_manager)
         assert "Test exception" in str(excinfo.value)
     finally:
         # Ensure bulkhead manager is properly shut down

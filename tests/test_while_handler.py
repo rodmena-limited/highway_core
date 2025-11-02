@@ -1,6 +1,6 @@
 import pytest
 from highway_core.engine.operator_handlers.while_handler import execute
-from highway_core.engine.common import WhileOperatorModel, TaskOperatorModel
+from highway_core.engine.models import WhileOperatorModel, TaskOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager
@@ -122,6 +122,7 @@ def test_while_handler_execute_with_templating(
     task = WhileOperatorModel(
         task_id="while_test",
         operator_type="while",
+        condition="{{variables.counter < variables.max_val}}",
         loop_body=[loop_task.model_dump()],
     )
 

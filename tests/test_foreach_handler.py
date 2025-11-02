@@ -1,6 +1,6 @@
 import pytest
 from highway_core.engine.operator_handlers.foreach_handler import execute
-from highway_core.engine.common import ForEachOperatorModel, TaskOperatorModel
+from highway_core.engine.models import ForEachOperatorModel, TaskOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager

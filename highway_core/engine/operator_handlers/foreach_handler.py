@@ -3,7 +3,7 @@ import graphlib
 from concurrent.futures import ThreadPoolExecutor
 from highway_core.engine.models import ForEachOperatorModel, AnyOperatorModel
 from highway_core.engine.state import WorkflowState
-from highway_core.engine.orchestrator import _run_sub_workflow
+from highway_core.engine.sub_workflow_runner import _run_sub_workflow
 from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager
 from typing import List, Dict, Any

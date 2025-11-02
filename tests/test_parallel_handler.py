@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock
 from highway_core.engine.operator_handlers.parallel_handler import execute
-from highway_core.engine.common import ParallelOperatorModel
+from highway_core.engine.models import ParallelOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager
@@ -60,8 +60,11 @@ def test_execute_parallel_without_empty_branches():
     # Create a mock bulkhead manager
     bulkhead_manager = MagicMock()
 
+    # Create a mock orchestrator
+    orchestrator = MagicMock()
+
     # Execute the parallel handler
-    execute(task, state, registry, bulkhead_manager)
+    execute(task, state, orchestrator, registry, bulkhead_manager)
 
 
 def test_execute_parallel_with_all_empty_branches():
@@ -83,8 +86,11 @@ def test_execute_parallel_with_all_empty_branches():
     # Create a mock bulkhead manager
     bulkhead_manager = MagicMock()
 
+    # Create a mock orchestrator
+    orchestrator = MagicMock()
+
     # Execute the parallel handler
-    execute(task, state, registry, bulkhead_manager)
+    execute(task, state, orchestrator, registry, bulkhead_manager)
 
 
 def test_execute_parallel_with_none_branches():
@@ -103,8 +109,11 @@ def test_execute_parallel_with_none_branches():
     # Create a mock bulkhead manager
     bulkhead_manager = MagicMock()
 
+    # Create a mock orchestrator
+    orchestrator = MagicMock()
+
     # Execute the parallel handler (should not raise any exception)
-    execute(task, state, registry, bulkhead_manager)
+    execute(task, state, orchestrator, registry, bulkhead_manager)
 
 
 if __name__ == "__main__":

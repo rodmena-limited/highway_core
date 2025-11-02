@@ -2,7 +2,7 @@
 # Purpose: Defines the abstract base class for all operator handlers.
 
 from abc import ABC, abstractmethod
-from highway_core.engine.common import BaseOperatorModel
+from highway_core.engine.models import BaseOperatorModel
 from highway_core.engine.state import WorkflowState
 
 

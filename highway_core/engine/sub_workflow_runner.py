@@ -1,10 +1,11 @@
 import graphlib
+from typing import Dict, Set
 from highway_core.engine.models import AnyOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager
 from highway_core.engine.operator_handlers import task_handler
-from typing import Dict, Set
+
 
 def _run_sub_workflow(
     sub_graph_tasks: Dict[str, AnyOperatorModel],

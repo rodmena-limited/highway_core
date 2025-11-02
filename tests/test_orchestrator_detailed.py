@@ -1,7 +1,7 @@
 import pytest
 from highway_core.engine.orchestrator import Orchestrator
-from highway_core.engine.models import WorkflowModel
-from highway_core.engine.common import (
+from highway_core.engine.models import (
+    WorkflowModel,
     TaskOperatorModel,
     ConditionOperatorModel,
     ParallelOperatorModel,

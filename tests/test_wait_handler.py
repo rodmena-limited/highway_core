@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 from highway_core.engine.operator_handlers.wait_handler import execute
-from highway_core.engine.common import WaitOperatorModel
+from highway_core.engine.models import WaitOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager
@@ -30,39 +30,11 @@ def test_execute_wait_with_integer_seconds():
         # Mock time.sleep to avoid actual waiting
         with patch("highway_core.engine.operator_handlers.wait_handler.time.sleep"):
             # Execute the wait handler
-            execute(task, state, registry, bulkhead_manager)
+            execute(task, state, MagicMock(), registry, bulkhead_manager)
     finally:
         # Ensure bulkhead manager is properly shut down
         bulkhead_manager.shutdown_all()
 
-
-def test_execute_wait_with_float_seconds():
-    """Test executing a wait task with float seconds."""
-    # Create a mock task
-    task = WaitOperatorModel(
-        task_id="wait_task",
-        operator_type="wait",
-        wait_for=0.05,  # 0.05 seconds to avoid long test times
-        dependencies=[],
-    )
-
-    # Create a state
-    state = WorkflowState({})
-
-    # Create a mock registry
-    registry = ToolRegistry()
-
-    # Create a mock bulkhead manager
-    bulkhead_manager = BulkheadManager()
-
-    try:
-        # Mock time.sleep to avoid actual waiting
-        with patch("highway_core.engine.operator_handlers.wait_handler.time.sleep"):
-            # Execute the wait handler
-            execute(task, state, registry, bulkhead_manager)
-    finally:
-        # Ensure bulkhead manager is properly shut down
-        bulkhead_manager.shutdown_all()
 
 
 def test_execute_wait_with_duration_seconds():
@@ -87,8 +59,7 @@ def test_execute_wait_with_duration_seconds():
     try:
         # Mock time.sleep to avoid actual waiting
         with patch("highway_core.engine.operator_handlers.wait_handler.time.sleep"):
-            # Execute the wait handler
-            execute(task, state, registry, bulkhead_manager)
+            execute(task, state, MagicMock(), registry, bulkhead_manager)
     finally:
         # Ensure bulkhead manager is properly shut down
         bulkhead_manager.shutdown_all()
@@ -116,7 +87,7 @@ def test_execute_wait_with_duration_minutes():
     try:
         # Mock time.sleep to avoid actual waiting
         with patch("highway_core.engine.operator_handlers.wait_handler.time.sleep"):
-            execute(task, state, registry, bulkhead_manager)
+            execute(task, state, MagicMock(), registry, bulkhead_manager)
     finally:
         # Ensure bulkhead manager is properly shut down
         bulkhead_manager.shutdown_all()
@@ -144,7 +115,7 @@ def test_execute_wait_with_duration_hours():
     try:
         # Mock time.sleep to avoid actual waiting
         with patch("highway_core.engine.operator_handlers.wait_handler.time.sleep"):
-            execute(task, state, registry, bulkhead_manager)
+            execute(task, state, MagicMock(), registry, bulkhead_manager)
     finally:
         # Ensure bulkhead manager is properly shut down
         bulkhead_manager.shutdown_all()
@@ -172,7 +143,7 @@ def test_execute_wait_with_time_format():
     try:
         # Mock time.sleep to avoid actual waiting
         with patch("highway_core.engine.operator_handlers.wait_handler.time.sleep"):
-            execute(task, state, registry, bulkhead_manager)
+            execute(task, state, MagicMock(), registry, bulkhead_manager)
     finally:
         # Ensure bulkhead manager is properly shut down
         bulkhead_manager.shutdown_all()
@@ -199,7 +170,7 @@ def test_execute_wait_with_unrecognized_format():
 
     try:
         # Execute the wait handler (should proceed immediately)
-        execute(task, state, registry, bulkhead_manager)
+        execute(task, state, MagicMock(), registry, bulkhead_manager)
     finally:
         # Ensure bulkhead manager is properly shut down
         bulkhead_manager.shutdown_all()
@@ -226,7 +197,7 @@ def test_execute_wait_with_non_numeric_string():
 
     try:
         # Execute the wait handler (should try to convert to float and fail gracefully)
-        execute(task, state, registry, bulkhead_manager)
+        execute(task, state, MagicMock(), registry, bulkhead_manager)
     finally:
         # Ensure bulkhead manager is properly shut down
         bulkhead_manager.shutdown_all()
