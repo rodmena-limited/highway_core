@@ -45,18 +45,31 @@ class Orchestrator:
         self.graph: Dict[str, Set[str]] = {
             task_id: set(task.dependencies) for task_id, task in workflow.tasks.items()
         }
+        logger.info("Orchestrator: Built dependency graph: %s", self.graph)
+        logger.info(
+            "Orchestrator: Completed tasks from persistence: %s", self.completed_tasks
+        )
+
         self.sorter = graphlib.TopologicalSorter(self.graph)
 
-        # Prepare the sorter before marking tasks as done
+        # Prepare the sorter
         self.sorter.prepare()
+        logger.info(
+            "Orchestrator: Sorter prepared, is_active: %s", self.sorter.is_active()
+        )
 
-        # This is the key: Mark all loaded tasks as "done"
-        for task_id in self.completed_tasks:
-            try:
+        # Process the initial tasks and mark completed ones as done
+        initial_runnable_tasks = self.sorter.get_ready()
+        logger.info("Orchestrator: Initial runnable tasks: %s", initial_runnable_tasks)
+
+        # For any completed tasks in the initial runnable list, mark them as done
+        for task_id in initial_runnable_tasks:
+            if task_id in self.completed_tasks:
+                logger.info(
+                    "Orchestrator: Task %s was already completed, marking as done",
+                    task_id,
+                )
                 self.sorter.done(task_id)
-            except ValueError:
-                # Task was already processed - this shouldn't happen if our logic is correct
-                pass
 
         # 2. Update handler map
         self.handler_map: Dict[str, Callable] = {
@@ -83,6 +96,12 @@ class Orchestrator:
             # Get the initial set of runnable tasks
             runnable_tasks = self.sorter.get_ready()
 
+            logger.info(
+                "Orchestrator: Initial runnable tasks: %s, is_active: %s",
+                list(runnable_tasks),
+                self.sorter.is_active(),
+            )
+
             # Check if all tasks have been completed from the loaded state
             # If no tasks are ready and the sorter is not active, workflow is complete
             if not runnable_tasks and not self.sorter.is_active():
@@ -95,29 +114,55 @@ class Orchestrator:
                 if (
                     not runnable_tasks
                 ):  # If no tasks are ready, break to avoid infinite loop
+                    logger.info(
+                        "Orchestrator: No runnable tasks but sorter is still active. Breaking to avoid infinite loop."
+                    )
                     break
-                logger.info(
-                    "Orchestrator: Submitting %s tasks to executor: %s",
-                    len(runnable_tasks),
-                    list(runnable_tasks),
-                )
-                futures: Dict[Future, str] = {
-                    self.executor.submit(self._execute_task, task_id): task_id
-                    for task_id in runnable_tasks
-                }
-                for future in futures:
-                    task_id = futures[future]
-                    try:
-                        # This function now just returns the task_id
-                        result_task_id = future.result()
-                        logger.info("Orchestrator: Task %s completed.", result_task_id)
-                    except Exception as e:
-                        logger.error(
-                            "Orchestrator: FATAL ERROR executing task '%s': %s",
+
+                # Separate tasks that need to be executed from ones that are already completed
+                tasks_to_execute = []
+                for task_id in runnable_tasks:
+                    if task_id in self.completed_tasks:
+                        # This task was already completed, so just mark it as done in the sorter
+                        logger.info(
+                            "Orchestrator: Task %s already completed, marking as done.",
                             task_id,
-                            e,
                         )
-                        raise e
+                        self.sorter.done(task_id)
+                    else:
+                        # This task needs to be executed
+                        tasks_to_execute.append(task_id)
+
+                # Execute only the tasks that haven't been completed yet
+                if tasks_to_execute:
+                    logger.info(
+                        "Orchestrator: Submitting %s tasks to executor: %s",
+                        len(tasks_to_execute),
+                        list(tasks_to_execute),
+                    )
+                    futures: Dict[Future, str] = {
+                        self.executor.submit(self._execute_task, task_id): task_id
+                        for task_id in tasks_to_execute
+                    }
+                    for future in futures:
+                        task_id = futures[future]
+                        try:
+                            # This function now just returns the task_id
+                            result_task_id = future.result()
+                            logger.info(
+                                "Orchestrator: Task %s completed.", result_task_id
+                            )
+                        except Exception as e:
+                            logger.error(
+                                "Orchestrator: FATAL ERROR executing task '%s': %s",
+                                task_id,
+                                e,
+                            )
+                            raise e
+                else:
+                    logger.info(
+                        "Orchestrator: No new tasks to execute, continuing to next batch."
+                    )
 
                 # After processing current batch, get next set of ready tasks
                 runnable_tasks = self.sorter.get_ready()

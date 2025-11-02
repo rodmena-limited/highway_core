@@ -1,50 +1,55 @@
---- Starting Tier 2 Parallel/Wait Test ---
-Engine: Loading workflow from: examples/tier_2_parallel_wait_test.yaml
-ToolRegistry loaded with 5 functions.
-WorkflowState initialized.
-Orchestrator initialized.
-Orchestrator: Starting workflow 'tier_2_parallel_wait_test'
-Orchestrator: Executing task log_start
-TaskHandler: Executing task: log_start
-TaskHandler: Getting or creating bulkhead for 'tools.log.info'
-TaskHandler: Calling tools.log.info via bulkhead...
-Orchestrator: Task log_start completed.
-Orchestrator: Executing task run_parallel_fetches
-ParallelHandler: Activating 3 branches.
-Orchestrator: Task run_parallel_fetches completed.
-Orchestrator: Executing task fetch_todo_1
-TaskHandler: Executing task: fetch_todo_1
-TaskHandler: Getting or creating bulkhead for 'tools.fetch.get'
-TaskHandler: Calling tools.fetch.get via bulkhead...
-  [Tool.Fetch.Get] Fetching https://jsonplaceholder.typicode.com/todos/1...
-State: Setting result for key: todo_1
-Orchestrator: Task fetch_todo_1 completed.
-Orchestrator: Executing task fetch_todo_2
-TaskHandler: Executing task: fetch_todo_2
-TaskHandler: Getting or creating bulkhead for 'tools.fetch.get'
-TaskHandler: Calling tools.fetch.get via bulkhead...
-  [Tool.Fetch.Get] Fetching https://jsonplaceholder.typicode.com/todos/2...
-State: Setting result for key: todo_2
-Orchestrator: Task fetch_todo_2 completed.
-Orchestrator: Executing task short_wait
-WaitHandler: Waiting for 1...
-WaitHandler: Wait complete.
-Orchestrator: Task short_wait completed.
-Orchestrator: Executing task log_todo_2
-TaskHandler: Executing task: log_todo_2
-TaskHandler: Getting or creating bulkhead for 'tools.log.info'
-TaskHandler: Calling tools.log.info via bulkhead...
-Orchestrator: Task log_todo_2 completed.
-Orchestrator: Executing task log_parallel_complete
-TaskHandler: Executing task: log_parallel_complete
-TaskHandler: Getting or creating bulkhead for 'tools.log.info'
-TaskHandler: Calling tools.log.info via bulkhead...
-Orchestrator: Task log_parallel_complete completed.
-Orchestrator: Executing task log_end
-TaskHandler: Executing task: log_end
-TaskHandler: Getting or creating bulkhead for 'tools.log.info'
-TaskHandler: Calling tools.log.info via bulkhead...
-Orchestrator: Task log_end completed.
-Orchestrator: Workflow 'tier_2_parallel_wait_test' finished.
-Engine: Workflow tier_2_parallel_wait_test completed successfully.
---- Tier 2 Parallel/Wait Test Finished ---
+2025-11-02 04:29:26,308 - highway_core.engine.engine - INFO - Engine: Loading workflow from: examples/tier_4_persistence_test.yaml
+2025-11-02 04:29:26,310 - highway_core.engine.engine - INFO - Engine: Starting run for ID: persistent-run-123
+2025-11-02 04:29:26,386 - highway_core.tools.registry - INFO - ToolRegistry loaded with 7 functions.
+2025-11-02 04:29:26,386 - highway_core.persistence.db_storage - INFO - DatabasePersistence (File) initialized at: .workflow_state/
+2025-11-02 04:29:26,386 - highway_core.persistence.db_storage - INFO -   [Persistence] Loading state for persistent-run-123 from .workflow_state/persistent-run-123.json
+2025-11-02 04:29:26,386 - highway_core.engine.state - INFO - WorkflowState initialized.
+2025-11-02 04:29:26,386 - highway_core.engine.orchestrator - INFO - Orchestrator: Built dependency graph: {'log_start': set(), 'step_2': {'log_start'}, 'log_end': {'step_2'}}
+2025-11-02 04:29:26,386 - highway_core.engine.orchestrator - INFO - Orchestrator: Completed tasks from persistence: {'log_end', 'log_start', 'step_2'}
+2025-11-02 04:29:26,386 - highway_core.engine.orchestrator - INFO - Orchestrator: Sorter prepared, is_active: True
+2025-11-02 04:29:26,386 - highway_core.engine.orchestrator - INFO - Orchestrator: Initial runnable tasks: ('log_start',)
+2025-11-02 04:29:26,386 - highway_core.engine.orchestrator - INFO - Orchestrator: Task log_start was already completed, marking as done
+2025-11-02 04:29:26,386 - highway_core.engine.orchestrator - INFO - Orchestrator initialized with TopologicalSorter.
+2025-11-02 04:29:26,387 - BulkheadPattern - INFO - Bulkhead 'workflow-tier_4_persistence_test' initialized with 5 concurrent calls and queue size 20
+2025-11-02 04:29:26,387 - highway_core.engine.orchestrator - INFO - Orchestrator: Starting workflow 'tier_4_persistence_test'
+2025-11-02 04:29:26,387 - highway_core.engine.orchestrator - INFO - Orchestrator: Initial runnable tasks: ['step_2'], is_active: True
+2025-11-02 04:29:26,387 - highway_core.engine.orchestrator - INFO - Orchestrator: Task step_2 already completed, marking as done.
+2025-11-02 04:29:26,387 - highway_core.engine.orchestrator - INFO - Orchestrator: No new tasks to execute, continuing to next batch.
+2025-11-02 04:29:26,387 - highway_core.engine.orchestrator - INFO - Orchestrator: Task log_end already completed, marking as done.
+2025-11-02 04:29:26,387 - highway_core.engine.orchestrator - INFO - Orchestrator: No new tasks to execute, continuing to next batch.
+2025-11-02 04:29:26,387 - highway_core.engine.orchestrator - INFO - Orchestrator: Workflow 'tier_4_persistence_test' finished.
+2025-11-02 04:29:26,387 - highway_core.engine.engine - INFO - Engine: Workflow tier_4_persistence_test completed successfully.
+2025-11-02 04:29:26,387 - BulkheadPattern - INFO - Shutting down bulkhead 'workflow-tier_4_persistence_test'
+2025-11-02 04:29:26,387 - BulkheadPattern - INFO - Shutting down bulkhead 'workflow-tier_4_persistence_test'
+2025-11-02 04:29:27,392 - BulkheadPattern - INFO - Bulkhead 'workflow-tier_4_persistence_test' shutdown complete
+2025-11-02 04:29:27,393 - highway_core.engine.engine - INFO - Engine: Loading workflow from: examples/tier_4_persistence_test.yaml
+2025-11-02 04:29:27,401 - highway_core.engine.engine - INFO - Engine: Starting run for ID: persistent-run-123
+2025-11-02 04:29:27,402 - highway_core.tools.registry - INFO - ToolRegistry loaded with 7 functions.
+2025-11-02 04:29:27,402 - highway_core.persistence.db_storage - INFO - DatabasePersistence (File) initialized at: .workflow_state/
+2025-11-02 04:29:27,402 - highway_core.persistence.db_storage - INFO -   [Persistence] Loading state for persistent-run-123 from .workflow_state/persistent-run-123.json
+2025-11-02 04:29:27,403 - highway_core.engine.state - INFO - WorkflowState initialized.
+2025-11-02 04:29:27,403 - highway_core.engine.orchestrator - INFO - Orchestrator: Built dependency graph: {'log_start': set(), 'step_2': {'log_start'}, 'log_end': {'step_2'}}
+2025-11-02 04:29:27,403 - highway_core.engine.orchestrator - INFO - Orchestrator: Completed tasks from persistence: {'log_end', 'log_start', 'step_2'}
+2025-11-02 04:29:27,403 - highway_core.engine.orchestrator - INFO - Orchestrator: Sorter prepared, is_active: True
+2025-11-02 04:29:27,403 - highway_core.engine.orchestrator - INFO - Orchestrator: Initial runnable tasks: ('log_start',)
+2025-11-02 04:29:27,403 - highway_core.engine.orchestrator - INFO - Orchestrator: Task log_start was already completed, marking as done
+2025-11-02 04:29:27,403 - highway_core.engine.orchestrator - INFO - Orchestrator initialized with TopologicalSorter.
+2025-11-02 04:29:27,404 - BulkheadPattern - INFO - Bulkhead 'workflow-tier_4_persistence_test' initialized with 5 concurrent calls and queue size 20
+2025-11-02 04:29:27,404 - highway_core.engine.orchestrator - INFO - Orchestrator: Starting workflow 'tier_4_persistence_test'
+2025-11-02 04:29:27,404 - highway_core.engine.orchestrator - INFO - Orchestrator: Initial runnable tasks: ['step_2'], is_active: True
+2025-11-02 04:29:27,404 - highway_core.engine.orchestrator - INFO - Orchestrator: Task step_2 already completed, marking as done.
+2025-11-02 04:29:27,404 - highway_core.engine.orchestrator - INFO - Orchestrator: No new tasks to execute, continuing to next batch.
+2025-11-02 04:29:27,404 - highway_core.engine.orchestrator - INFO - Orchestrator: Task log_end already completed, marking as done.
+2025-11-02 04:29:27,404 - highway_core.engine.orchestrator - INFO - Orchestrator: No new tasks to execute, continuing to next batch.
+2025-11-02 04:29:27,404 - highway_core.engine.orchestrator - INFO - Orchestrator: Workflow 'tier_4_persistence_test' finished.
+2025-11-02 04:29:27,405 - highway_core.engine.engine - INFO - Engine: Workflow tier_4_persistence_test completed successfully.
+2025-11-02 04:29:27,405 - BulkheadPattern - INFO - Shutting down bulkhead 'workflow-tier_4_persistence_test'
+2025-11-02 04:29:27,405 - BulkheadPattern - INFO - Shutting down bulkhead 'workflow-tier_4_persistence_test'
+2025-11-02 04:29:28,409 - BulkheadPattern - INFO - Bulkhead 'workflow-tier_4_persistence_test' shutdown complete
+--- Starting Tier 4 Test (Run 1) ---
+--- Tier 4 Test (Run 1) Finished ---
+
+
+--- Starting Tier 4 Test (Run 2: Resume) ---
+--- Tier 4 Test (Run 2: Resume) Finished ---
+
