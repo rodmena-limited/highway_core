@@ -444,7 +444,7 @@ class Bulkhead:
             yield func(*args, **kwargs)
 
     def execute(
-        self, func: Callable[..., T], *args, **kwargs
+        self, func: Callable[..., Any], *args: Any, **kwargs: Any
     ) -> Future[ExecutionResult]:
         """
         Execute a function through the bulkhead with isolation.
@@ -513,11 +513,17 @@ class Bulkhead:
 
             timer = threading.Timer(self.config.timeout_seconds, timeout_handler)
             timer.start()
-            future.add_done_callback(lambda _: timer.cancel())
+
+            def _done_callback(fut: Future[ExecutionResult]) -> None:
+                timer.cancel()
+
+            future.add_done_callback(_done_callback)
 
         return future
 
-    def execute_sync(self, func: Callable[..., T], *args, **kwargs) -> ExecutionResult:
+    def execute_sync(
+        self, func: Callable[..., Any], *args: Any, **kwargs: Any
+    ) -> ExecutionResult:
         """
         Synchronously execute a function through the bulkhead.
 
