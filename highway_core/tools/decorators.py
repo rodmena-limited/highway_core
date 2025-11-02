@@ -1,10 +1,12 @@
 # highway_core/tools/decorators.py
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 TOOL_REGISTRY = {}
 
 
-def tool(name: str = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+def tool(
+    name: Optional[str] = None,
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator to register a function as a Highway tool.
     If no name is provided, the function name is used.
     """

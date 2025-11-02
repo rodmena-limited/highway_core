@@ -19,8 +19,8 @@ def _run_sub_workflow(
     sub_graph_tasks: Dict[str, AnyOperatorModel],
     sub_graph: Dict[str, Set[str]],
     state: WorkflowState,
-    registry: ToolRegistry,
-    bulkhead_manager: BulkheadManager,
+    registry: Optional[ToolRegistry],
+    bulkhead_manager: Optional[BulkheadManager],
     executor: Optional["BaseExecutor"] = None,  # Executor from parent (can be None)
     available_executors: Optional[
         Dict[str, "BaseExecutor"]
@@ -71,8 +71,8 @@ def _run_sub_workflow(
                         task=task_clone,
                         state=state,
                         orchestrator=None,
-                        registry=registry,
-                        bulkhead_manager=bulkhead_manager,
+                        registry=registry,  # type: ignore
+                        bulkhead_manager=bulkhead_manager,  # type: ignore
                         executor=selected_sub_executor,
                         resource_manager=None,  # Pass None for resource manager in sub-workflows
                         workflow_run_id="",  # Pass empty string for workflow_run_id in sub-workflows

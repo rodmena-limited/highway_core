@@ -12,6 +12,7 @@ from highway_core.tools.bulkhead import BulkheadManager
 if TYPE_CHECKING:
     from highway_core.engine.orchestrator import Orchestrator
     from highway_core.engine.executors.base import BaseExecutor
+    from highway_core.engine.resource_manager import ContainerResourceManager
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +24,12 @@ def execute(
     registry: Optional["ToolRegistry"],  # <-- Make registry optional
     bulkhead_manager: Optional["BulkheadManager"],  # <-- Make optional
     executor: Optional["BaseExecutor"] = None,  # <-- Add this argument
-    resource_manager=None,  # <-- Add this argument to match orchestrator signature
-    workflow_run_id: str = "",  # <-- Add this argument to match orchestrator signature
+    resource_manager: Optional[
+        "ContainerResourceManager"
+    ] = None,  # <-- Add this argument to match orchestrator signature
+    workflow_run_id: Optional[
+        str
+    ] = None,  # <-- Add this argument to match orchestrator signature
 ) -> List[str]:
     """
     Executes a ForEachOperator by running a sub-workflow for each
@@ -76,8 +81,8 @@ def _run_foreach_item(
     sub_graph_tasks: Dict[str, AnyOperatorModel],
     sub_graph: Dict[str, set[str]],
     main_state: WorkflowState,
-    registry: ToolRegistry,
-    bulkhead_manager: BulkheadManager,
+    registry: Optional["ToolRegistry"],
+    bulkhead_manager: Optional["BulkheadManager"],
     executor: Optional["BaseExecutor"] = None,
     available_executors: Optional[Dict[str, "BaseExecutor"]] = None,
 ) -> None:
@@ -97,8 +102,8 @@ def _run_foreach_item(
         sub_graph_tasks=sub_graph_tasks,
         sub_graph=sub_graph,
         state=item_state,  # Use the isolated state
-        registry=registry,
-        bulkhead_manager=bulkhead_manager,
+        registry=registry,  # type: ignore
+        bulkhead_manager=bulkhead_manager,  # type: ignore
         executor=executor,
         available_executors=available_executors,  # Use the available executors passed to this function
     )

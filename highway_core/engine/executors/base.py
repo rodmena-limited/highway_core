@@ -8,6 +8,7 @@ if TYPE_CHECKING:
     from highway_core.engine.state import WorkflowState
     from highway_core.tools.registry import ToolRegistry
     from highway_core.tools.bulkhead import BulkheadManager
+    from highway_core.engine.resource_manager import ContainerResourceManager
 
 logger = logging.getLogger(__name__)
 

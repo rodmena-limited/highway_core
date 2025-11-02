@@ -43,7 +43,7 @@ class DatabaseManager:
             if db_path is None:
                 # Default to user's home directory
                 home = Path.home()
-                db_path = home / ".highway.sqlite3"
+                db_path = str(home / ".highway.sqlite3")
 
             # Ensure the directory exists
             Path(db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -128,7 +128,7 @@ class DatabaseManager:
         with self.transaction() as session:
             yield session
 
-    def execute_raw_sql(self, sql: str, params: Dict[str, Any] = None) -> Any:
+    def execute_raw_sql(self, sql: str, params: Optional[Dict[str, Any]] = None) -> Any:
         """Execute raw SQL for cases where SQLAlchemy ORM is not suitable."""
         with self.engine.connect() as conn:
             if params:
@@ -300,7 +300,7 @@ class DatabaseManager:
             return False
 
     def update_task_with_result(
-        self, task_id: str, result: Any, completed_at: datetime = None
+        self, task_id: str, result: Any, completed_at: Optional[datetime] = None
     ) -> bool:
         """Update task with result and completion status."""
         try:
@@ -473,7 +473,7 @@ class DatabaseManager:
             .all()
         )
 
-        return {result.result_key: result.result_value for result in results}
+        return {result.result_key: result.result_value for result in results}  # type: ignore
 
     def store_memory(
         self, workflow_id: str, memory_key: str, memory_value: Any
@@ -517,7 +517,7 @@ class DatabaseManager:
             .all()
         )
 
-        return {memory.memory_key: memory.memory_value for memory in memory_entries}
+        return {memory.memory_key: memory.memory_value for memory in memory_entries}  # type: ignore
 
     def store_dependencies(
         self, workflow_id: str, task_id: str, dependencies: List[str]

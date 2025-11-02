@@ -8,6 +8,7 @@ from typing import Optional, List, TYPE_CHECKING
 if TYPE_CHECKING:
     from highway_core.engine.orchestrator import Orchestrator
     from highway_core.engine.executors.base import BaseExecutor  # <-- NEW
+    from highway_core.engine.resource_manager import ContainerResourceManager
 
 logger = logging.getLogger(__name__)
 

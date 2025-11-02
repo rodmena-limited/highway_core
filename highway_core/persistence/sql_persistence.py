@@ -6,11 +6,12 @@ from pathlib import Path
 from highway_core.engine.models import TaskOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.persistence.database_manager import DatabaseManager
+from highway_core.persistence.manager import PersistenceManager
 
 logger = logging.getLogger(__name__)
 
 
-class SQLPersistence:
+class SQLPersistence(PersistenceManager):
     """
     SQL-based persistence manager for Highway Core workflows.
     Uses SQLAlchemy database to store workflow state, tasks, and results.
@@ -103,9 +104,25 @@ class SQLPersistence:
         # For now, I'll update the status and use memory or another mechanism for error message
         self.db_manager.update_task_status(task_id, "failed")
 
+    def save_workflow_state(
+        self, workflow_run_id: str, state: WorkflowState, completed_tasks: Set[str]
+    ) -> None:
+        """
+        Save the workflow state to the database.
+
+        Args:
+            workflow_run_id: Unique identifier for the workflow run
+            state: Current workflow state
+            completed_tasks: Set of completed task IDs
+        """
+        # This method currently stores the state and completed tasks
+        # In a SQL implementation, we might save task completion status to the tasks table
+        for task_id in completed_tasks:
+            self.db_manager.update_task_status(task_id, "completed")
+
     def load_workflow_state(
         self, workflow_run_id: str
-    ) -> Tuple[Optional[WorkflowState], set]:
+    ) -> Tuple[Optional[WorkflowState], Set[str]]:
         """
         Load the workflow state from the database.
 

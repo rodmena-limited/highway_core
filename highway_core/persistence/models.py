@@ -8,15 +8,15 @@ from sqlalchemy import (
     Boolean,
     Index,
 )
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm.decl_api import DeclarativeMeta
 from datetime import datetime
 import json
 
-Base = declarative_base()
+Base = declarative_base()  # type: ignore
 
 
-class Workflow(Base):
+class Workflow(Base):  # type: ignore
     """
     Workflow model for tracking workflow execution instances
     Matches the original SQL schema + extensions added in code
@@ -67,7 +67,7 @@ class Workflow(Base):
         self.workflow_name = value
 
 
-class Task(Base):
+class Task(Base):  # type: ignore
     """
     Task model for tracking individual task executions
     Matches the original SQL schema (with updated_at added after schema creation in the original code)
@@ -166,7 +166,7 @@ class Task(Base):
         self.result_value_json = json.dumps(value)
 
 
-class TaskExecution(Base):
+class TaskExecution(Base):  # type: ignore
     """
     Task execution model for tracking individual task execution attempts
     NOTE: This table was not in the original schema, so I'll keep it as is
@@ -228,7 +228,7 @@ class TaskExecution(Base):
         self.result_json = json.dumps(value)
 
 
-class WorkflowResult(Base):
+class WorkflowResult(Base):  # type: ignore
     """
     Workflow result model for storing task results
     Matches the original SQL schema - with FK to tasks table (workflow_id, task_id)
@@ -254,7 +254,7 @@ class WorkflowResult(Base):
         self.result_value_json = json.dumps(value)
 
 
-class WorkflowMemory(Base):
+class WorkflowMemory(Base):  # type: ignore
     """
     Workflow memory model for storing workflow state variables
     NOTE: This table was not in the original schema, so I'll keep it as is
@@ -284,7 +284,7 @@ class WorkflowMemory(Base):
         self.memory_value_json = json.dumps(value)
 
 
-class TaskDependency(Base):
+class TaskDependency(Base):  # type: ignore
     """
     Task dependency model for tracking task dependencies
     NOTE: This table was not in the original schema, so I'll keep it as is

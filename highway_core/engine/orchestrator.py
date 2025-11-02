@@ -38,12 +38,13 @@ class Orchestrator:
         workflow: WorkflowModel,
         persistence_manager: PersistenceManager,  # This could be either old or new persistence
         registry: ToolRegistry,
-        use_sql_persistence: bool = None,  # Changed to control the behavior
+        use_sql_persistence: Optional[bool] = None,  # Changed to control the behavior
     ) -> None:
         self.run_id = workflow_run_id
         self.workflow = workflow
         self.registry = registry
         self.resource_manager = ContainerResourceManager(workflow_run_id)
+        self.persistence: PersistenceManager  # Declare the type to accept both
 
         # Use provided persistence manager unless explicitly told to use default SQL persistence
         if use_sql_persistence is True:
@@ -215,7 +216,9 @@ class Orchestrator:
             task_id,
             task_model.operator_type,
         )
-        self.persistence.start_task(self.run_id, task_model)
+        # Only call start_task for task operators, not for other operator types that may not support it
+        if task_model.operator_type == "task":
+            self.persistence.start_task(self.run_id, task_model)
 
         handler_func = self.handler_map.get(task_model.operator_type)
         if not handler_func:

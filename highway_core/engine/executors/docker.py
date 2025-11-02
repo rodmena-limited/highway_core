@@ -48,7 +48,11 @@ class DockerExecutor(BaseExecutor):
         resolved_command = state.resolve_templating(task.command)
 
         image_name = task.image
-        container_name = generate_safe_container_name(task.task_id, workflow_run_id)
+        # Handle the case where workflow_run_id is None
+        safe_workflow_id = (
+            workflow_run_id if workflow_run_id is not None else "unknown-workflow"
+        )
+        container_name = generate_safe_container_name(task.task_id, safe_workflow_id)
 
         logger.info(
             "DockerExecutor: Running task %s in container %s (%s)",
@@ -75,7 +79,8 @@ class DockerExecutor(BaseExecutor):
                 stdout=True,
                 stderr=True,
             )
-            resource_manager.register_container(container.id, container_name)
+            if resource_manager:
+                resource_manager.register_container(container.id, container_name)
 
             # Wait for the container to finish
             result = container.wait()

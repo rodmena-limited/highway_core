@@ -12,6 +12,7 @@ from highway_core.tools.bulkhead import BulkheadManager
 if TYPE_CHECKING:
     from highway_core.engine.orchestrator import Orchestrator
     from highway_core.engine.executors.base import BaseExecutor
+    from highway_core.engine.resource_manager import ContainerResourceManager
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +24,12 @@ def execute(
     registry: Optional["ToolRegistry"],  # <-- Make registry optional
     bulkhead_manager: Optional["BulkheadManager"],  # <-- Make optional
     executor: Optional["BaseExecutor"] = None,  # <-- Add this argument
-    resource_manager=None,  # <-- Add this argument to match orchestrator signature
-    workflow_run_id: str = "",  # <-- Add this argument to match orchestrator signature
+    resource_manager: Optional[
+        "ContainerResourceManager"
+    ] = None,  # <-- Add this argument to match orchestrator signature
+    workflow_run_id: Optional[
+        str
+    ] = None,  # <-- Add this argument to match orchestrator signature
 ) -> List[str]:
     """
     Executes a WhileOperator by running its own internal loop.
@@ -59,8 +64,8 @@ def execute(
                 sub_graph_tasks=loop_body_tasks,
                 sub_graph=loop_graph,
                 state=state,  # Use the *main* state
-                registry=registry,
-                bulkhead_manager=bulkhead_manager,
+                registry=registry,  # type: ignore
+                bulkhead_manager=bulkhead_manager,  # type: ignore
                 executor=executor,  # Pass the executor to the sub-workflow
                 available_executors=orchestrator.executors,  # Pass available executors from orchestrator
             )
