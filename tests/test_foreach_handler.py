@@ -65,7 +65,6 @@ def mock_bulkhead_manager():
 def test_foreach_handler_execute_with_items(
     mock_orchestrator, mock_state, mock_registry, mock_bulkhead_manager
 ):
-    """Test foreach handler executes with a list of items"""
     mock_state.set_variable("items", [1, 2, 3])
 
     loop_task = TaskOperatorModel(
@@ -83,7 +82,7 @@ def test_foreach_handler_execute_with_items(
         task_id="foreach_test",
         operator_type="foreach",
         items="{{variables.items}}",
-        loop_body=["loop_task"],
+        loop_body=[loop_task.model_dump()],
     )
 
     # Execute the foreach handler.
@@ -93,7 +92,6 @@ def test_foreach_handler_execute_with_items(
 def test_foreach_handler_execute_with_empty_list(
     mock_orchestrator, mock_state, mock_registry, mock_bulkhead_manager
 ):
-    """Test foreach handler handles empty list"""
     mock_state.set_variable("items", [])
 
     loop_task = TaskOperatorModel(
@@ -111,7 +109,7 @@ def test_foreach_handler_execute_with_empty_list(
         task_id="foreach_test",
         operator_type="foreach",
         items="{{variables.items}}",
-        loop_body=["loop_task"],
+        loop_body=[loop_task.model_dump()],
     )
 
     # Execute the foreach handler
@@ -140,7 +138,7 @@ def test_foreach_handler_execute_with_string_items(
         task_id="foreach_test",
         operator_type="foreach",
         items="{{variables.items}}",
-        loop_body=["loop_task"],
+        loop_body=[loop_task.model_dump()],
     )
 
     # Execute the foreach handler.

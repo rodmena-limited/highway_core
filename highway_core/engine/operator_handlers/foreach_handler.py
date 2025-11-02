@@ -1,96 +1,88 @@
 # highway_core/engine/operator_handlers/foreach_handler.py
 import graphlib
 from concurrent.futures import ThreadPoolExecutor
-from highway_core.engine.common import ForEachOperatorModel, AnyOperatorModel
+from highway_core.engine.models import ForEachOperatorModel, AnyOperatorModel
 from highway_core.engine.state import WorkflowState
+from highway_core.engine.orchestrator import _run_sub_workflow
 from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager
-from highway_core.engine.operator_handlers import task_handler
-from typing import Any, Dict
-
+from typing import List, Dict, Any
 
 def execute(
     task: ForEachOperatorModel,
     state: WorkflowState,
-    orchestrator,
+    orchestrator, # We pass 'self' from Orchestrator
     registry: ToolRegistry,
     bulkhead_manager: BulkheadManager,
-):
+) -> List[str]:
+    """
+    Executes a ForEachOperator by running a sub-workflow for each
+    item in parallel using the orchestrator's thread pool.
+    """
+    
     items = state.resolve_templating(task.items)
     if not isinstance(items, list):
         print(f"ForEachHandler: Error - 'items' did not resolve to a list.")
-        return
-
+        return []
+        
     print(f"ForEachHandler: Starting parallel processing of {len(items)} items.")
+    
+    sub_graph_tasks = {t.task_id: t for t in task.loop_body}
+    sub_graph = {t.task_id: set(t.dependencies) for t in task.loop_body}
 
-    # Build the sub-graph graph from the main workflow.tasks dict
-    sub_graph_tasks = {
-        task_id: orchestrator.workflow.tasks[task_id] for task_id in task.loop_body
-    }
-
-    # Run each item in a separate thread
-    with ThreadPoolExecutor(
-        max_workers=5, thread_name_prefix="ForEachWorker"
-    ) as executor:
-        futures = [
-            executor.submit(
+    # Use the orchestrator's main executor
+    futures = []
+    for item in items:
+        # This function will run in a separate thread
+        futures.append(
+            orchestrator.executor.submit(
                 _run_foreach_item,
                 item,
-                sub_graph_tasks,  # Pass the dict of tasks
-                state,  # Pass the *main* state
+                sub_graph_tasks,
+                sub_graph,
+                state, # Pass the main state
                 registry,
-                bulkhead_manager,
+                bulkhead_manager
             )
-            for item in items
-        ]
-        for future in futures:
-            future.result()  # Wait for all to complete
-
+        )
+        
+    # Wait for all sub-workflows to complete
+    for future in futures:
+        try:
+            future.result() # Wait for it to finish and raise any errors
+        except Exception as e:
+            print(f"ForEachHandler: Sub-workflow failed: {e}")
+            raise # Propagate failure
+    
     print(f"ForEachHandler: All {len(items)} items processed.")
-
+    return [] # This operator adds no new tasks to the main graph
 
 def _run_foreach_item(
     item: Any,
     sub_graph_tasks: Dict[str, AnyOperatorModel],
+    sub_graph: Dict[str, set],
     main_state: WorkflowState,
     registry: ToolRegistry,
-    bulkhead_manager: BulkheadManager,
+    bulkhead_manager: BulkheadManager
 ):
     """
-    Runs a single iteration of a foreach loop.
+    Runs a single iteration of a foreach loop in a separate thread.
     This function acts as a "mini-orchestrator".
     """
     print(f"ForEachHandler: [Item: {item}] Starting sub-workflow...")
-
-    # 1. Create an ISOLATED state, but copy initial variables
-    item_state = WorkflowState(main_state._data["variables"].copy())
+    
+    # 1. Create an ISOLATED state for this item
+    # This is the fix for the race condition
+    item_state = WorkflowState(main_state._data["variables"])
     item_state._data["loop_context"]["item"] = item
-
-    # 2. Create a graph for *only* the loop body
-    loop_graph = {tid: set(t.dependencies) for tid, t in sub_graph_tasks.items()}
-    loop_sorter = graphlib.TopologicalSorter(loop_graph)
-    loop_sorter.prepare()
-
-    handler_map = {"task": task_handler.execute}  # Can expand this later
-
-    # 3. Run the sub-workflow
-    while loop_sorter.is_active():
-        for task_id in loop_sorter.get_ready():
-            task_model = sub_graph_tasks[task_id]
-
-            # We must clone the task to resolve templating without
-            # modifying the original
-            task_clone = task_model.model_copy(deep=True)
-            task_clone.args = item_state.resolve_templating(task_clone.args)
-
-            handler_func = handler_map.get(task_clone.operator_type)
-            if handler_func:
-                handler_func(task_clone, item_state, registry, bulkhead_manager)
-
-            loop_sorter.done(task_id)
-
-            # CRITICAL: If this sub-task had a result_key,
-            # we must copy its result back to the *item_state*
-            # (task_handler already does this)
-
+    
+    # 2. Run the sub-workflow
+    _run_sub_workflow(
+        sub_graph_tasks=sub_graph_tasks,
+        sub_graph=sub_graph,
+        state=item_state, # Use the isolated state
+        registry=registry,
+        bulkhead_manager=bulkhead_manager
+    )
+                
     print(f"ForEachHandler: [Item: {item}] Sub-workflow completed.")

@@ -1,6 +1,6 @@
 import graphlib
 from concurrent.futures import ThreadPoolExecutor, Future
-from highway_core.engine.models import WorkflowModel
+from highway_core.engine.models import WorkflowModel, AnyOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
 from highway_core.engine.operator_handlers import (
@@ -8,11 +8,11 @@ from highway_core.engine.operator_handlers import (
     condition_handler,
     parallel_handler,
     wait_handler,
-    foreach_handler,
     while_handler,
+    foreach_handler,
 )
 from highway_core.tools.bulkhead import BulkheadManager
-from typing import Dict, Set, Callable, Any
+from typing import Dict, Set, Callable, Any, List
 
 
 class Orchestrator:
@@ -22,30 +22,22 @@ class Orchestrator:
         self.workflow = workflow
         self.state = state
         self.registry = registry
+        
+        # 1. Build the dependency graph for ONLY top-level tasks
         self.graph: Dict[str, Set[str]] = {
-            task_id: set(task.dependencies) for task_id, task in workflow.tasks.items()
+            task_id: set(task.dependencies)
+            for task_id, task in workflow.tasks.items()
         }
-
-        # Find all loop body tasks
-        loop_body_tasks = set()
-        for task in workflow.tasks.values():
-            if hasattr(task, "loop_body") and task.loop_body:
-                for task_id in task.loop_body:
-                    loop_body_tasks.add(task_id)
-
-        # Remove loop body tasks from the main graph
-        for task_id in loop_body_tasks:
-            if task_id in self.graph:
-                del self.graph[task_id]
-
         self.sorter = graphlib.TopologicalSorter(self.graph)
+        
+        # 2. Update handler map
         self.handler_map: Dict[str, Callable] = {
             "task": task_handler.execute,
             "condition": condition_handler.execute,
             "parallel": parallel_handler.execute,
             "wait": wait_handler.execute,
-            "foreach": foreach_handler.execute,
             "while": while_handler.execute,
+            "foreach": foreach_handler.execute,
         }
         self.bulkhead_manager = BulkheadManager()
         self.executor = ThreadPoolExecutor(
@@ -74,7 +66,8 @@ class Orchestrator:
                 for future in futures:
                     task_id = futures[future]
                     try:
-                        result_task_id = future.result()
+                        # This function now just returns the task_id
+                        result_task_id = future.result() 
                         self.sorter.done(result_task_id)
                         print(f"Orchestrator: Task {result_task_id} completed.")
                     except Exception as e:
@@ -96,25 +89,23 @@ class Orchestrator:
         """Runs a single task and returns its task_id."""
         task_model = self.workflow.tasks.get(task_id)
         if not task_model:
-            raise ValueError(f"Task ID '{task_id}' not found in workflow tasks.")
+            raise ValueError(f"Task ID '{task_id}' not found.")
 
-        print(
-            f"Orchestrator: Executing task {task_id} (Type: {task_model.operator_type})"
-        )
-
+        print(f"Orchestrator: Executing task {task_id} (Type: {task_model.operator_type})")
+        
         handler_func = self.handler_map.get(task_model.operator_type)
-        if handler_func:
-            if task_model.operator_type == "condition":
-                handler_func(task_model, self.state, self)  # Condition still needs it
-            elif task_model.operator_type in ("while", "foreach"):
-                handler_func(
-                    task_model, self.state, self, self.registry, self.bulkhead_manager
-                )
-            else:
-                handler_func(
-                    task_model, self.state, self.registry, self.bulkhead_manager
-                )
+        if not handler_func:
+            print(f"Orchestrator: Error - No handler for {task_model.operator_type}")
+            return []
 
+        # All handlers now share this signature
+        handler_func(
+            task=task_model,
+            state=self.state,
+            orchestrator=self,
+            registry=self.registry,
+            bulkhead_manager=self.bulkhead_manager
+        )
         return task_id
 
     def __del__(self):
@@ -124,3 +115,48 @@ class Orchestrator:
             self.bulkhead_manager.shutdown_all()
         except:
             pass
+
+
+# --- ADD THIS FUNCTION OUTSIDE THE CLASS ---
+# This is a shared, static helper function for loops
+
+def _run_sub_workflow(
+    sub_graph_tasks: Dict[str, AnyOperatorModel],
+    sub_graph: Dict[str, set],
+    state: WorkflowState,
+    registry: ToolRegistry,
+    bulkhead_manager: BulkheadManager
+):
+    """
+    Runs a sub-workflow (like a loop body) to completion.
+    This is a blocking, sequential, "mini-orchestrator".
+    """
+    sub_sorter = graphlib.TopologicalSorter(sub_graph)
+    sub_sorter.prepare()
+    
+    # We only support 'task' for now in sub-workflows.
+    # This can be expanded later.
+    sub_handler_map = {
+        "task": task_handler.execute
+    }
+
+    while sub_sorter.is_active():
+        runnable_sub_tasks = sub_sorter.get_ready()
+        if not runnable_sub_tasks:
+            break
+            
+        for task_id in runnable_sub_tasks:
+            task_model = sub_graph_tasks[task_id]
+            
+            # We must clone the task to resolve templating
+            # This is the fix for the `log_user` problem
+            task_clone = task_model.model_copy(deep=True)
+            task_clone.args = state.resolve_templating(task_clone.args)
+            
+            handler_func = sub_handler_map.get(task_clone.operator_type)
+            if handler_func:
+                # Note: sub-workflows don't get the orchestrator
+                handler_func(task_clone, state, None, registry, bulkhead_manager) # Pass None for orchestrator
+            
+            sub_sorter.done(task_id)
+

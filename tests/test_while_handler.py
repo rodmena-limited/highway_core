@@ -65,7 +65,7 @@ def test_while_handler_execute_cond_true(
         task_id="while_test",
         operator_type="while",
         condition="{{variables.counter < 3}}",
-        loop_body=["loop_task"],
+        loop_body=[loop_task.model_dump()],
     )
 
     # Execute the while handler
@@ -94,7 +94,7 @@ def test_while_handler_execute_cond_false(
         task_id="while_test",
         operator_type="while",
         condition="{{variables.counter < 3}}",
-        loop_body=["loop_task"],
+        loop_body=[loop_task.model_dump()],
     )
 
     # Execute the while handler
@@ -122,8 +122,7 @@ def test_while_handler_execute_with_templating(
     task = WhileOperatorModel(
         task_id="while_test",
         operator_type="while",
-        condition="{{variables.counter < variables.max_val}}",
-        loop_body=["loop_task"],
+        loop_body=[loop_task.model_dump()],
     )
 
     # Execute the while handler

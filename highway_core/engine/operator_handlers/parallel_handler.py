@@ -4,18 +4,20 @@
 # - Activates all branches by conceptually completing empty branches
 # so they don't block downstream "fan-in" tasks.
 
-from highway_core.engine.common import ParallelOperatorModel
+from highway_core.engine.models import ParallelOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager
+from typing import List
 
 
 def execute(
     task: ParallelOperatorModel,
     state: WorkflowState,
+    orchestrator, # Added for consistent signature
     registry: ToolRegistry,
     bulkhead_manager: BulkheadManager,
-) -> None:
+) -> List[str]:
     """
     Executes a ParallelOperator by activating all branches.
     """
@@ -32,3 +34,4 @@ def execute(
 
     # The actual parallel execution will be handled by the orchestrator's TopologicalSorter
     # which will automatically handle tasks in parallel when their dependencies are met
+    return []

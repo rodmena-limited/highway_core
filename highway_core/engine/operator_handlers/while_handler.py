@@ -1,57 +1,56 @@
 # highway_core/engine/operator_handlers/while_handler.py
 import graphlib
-from highway_core.engine.common import WhileOperatorModel
+from highway_core.engine.models import WhileOperatorModel
 from highway_core.engine.state import WorkflowState
+from highway_core.engine.orchestrator import _run_sub_workflow
 from highway_core.engine.operator_handlers.condition_handler import eval_condition
-from highway_core.engine.operator_handlers import task_handler
-
+from highway_core.tools.registry import ToolRegistry
+from highway_core.tools.bulkhead import BulkheadManager
+from typing import List
 
 def execute(
     task: WhileOperatorModel,
     state: WorkflowState,
-    orchestrator,
-    registry,
-    bulkhead_manager,
-):
-    counter = 0
-    max_iterations = 100  # Safety break
-
-    while counter < max_iterations:
+    orchestrator, # We pass 'self' from Orchestrator
+    registry: ToolRegistry,
+    bulkhead_manager: BulkheadManager,
+) -> List[str]:
+    """
+    Executes a WhileOperator by running its own internal loop.
+    This entire function blocks the main orchestrator's thread
+    until the loop is complete.
+    """
+    
+    loop_body_tasks = {t.task_id: t for t in task.loop_body}
+    loop_graph = {t.task_id: set(t.dependencies) for t in task.loop_body}
+    
+    iteration = 1
+    while True:
+        # 1. Evaluate condition
         resolved_condition = str(state.resolve_templating(task.condition))
         is_true = eval_condition(resolved_condition)
-        print(
-            f"WhileHandler: Iteration {counter + 1} - Resolved '{resolved_condition}'. Result: {is_true}"
-        )
+        print(f"WhileHandler: Iteration {iteration} - Resolved '{resolved_condition}'. Result: {is_true}")
 
         if not is_true:
             print("WhileHandler: Condition is False. Exiting loop.")
             break
+            
+        print(f"WhileHandler: Condition True, executing loop body...")
 
-        print(f"WhileHandler: Condition True, executing loop body: {task.loop_body}")
+        # 2. Run the sub-workflow
+        try:
+            _run_sub_workflow(
+                sub_graph_tasks=loop_body_tasks,
+                sub_graph=loop_graph,
+                state=state, # Use the *main* state
+                registry=registry,
+                bulkhead_manager=bulkhead_manager
+            )
+        except Exception as e:
+            print(f"WhileHandler: Sub-workflow failed: {e}")
+            raise # Propagate failure to the main orchestrator
+            
+        iteration += 1
 
-        # Like foreach, create a sub-orchestrator for the loop body
-        sub_graph_tasks = {
-            task_id: orchestrator.workflow.tasks[task_id] for task_id in task.loop_body
-        }
-        loop_graph = {tid: set(t.dependencies) for tid, t in sub_graph_tasks.items()}
-        loop_sorter = graphlib.TopologicalSorter(loop_graph)
-        loop_sorter.prepare()
-
-        handler_map = {"task": task_handler.execute}
-
-        while loop_sorter.is_active():
-            for task_id in loop_sorter.get_ready():
-                task_model = sub_graph_tasks[task_id]
-                task_clone = task_model.model_copy(deep=True)
-                task_clone.args = state.resolve_templating(task_clone.args)
-
-                handler_func = handler_map.get(task_clone.operator_type)
-                if handler_func:
-                    handler_func(task_clone, state, registry, bulkhead_manager)
-
-                loop_sorter.done(task_id)
-
-        counter += 1
-
-    if counter >= max_iterations:
-        print("WhileHandler: Maximum iterations reached, exiting loop.")
+    # The loop is finished, return no new tasks
+    return []

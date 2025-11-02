@@ -1,4 +1,4 @@
-name: tier_3_loop_test
+name: tier_3_final_test
 version: 1.0.0
 variables:
   user_ids: [1, 2, 3]
@@ -6,7 +6,7 @@ variables:
 start_task: initialize_counter
 
 tasks:
-  # --- Main Graph Tasks ---
+  # --- While Loop Test ---
   initialize_counter:
     task_id: initialize_counter
     operator_type: task
@@ -35,6 +35,7 @@ tasks:
     args: ["While loop complete. Final counter: {{memory.loop_counter}}"]
     dependencies: ["main_while_loop"]
 
+  # --- ForEach Loop Test ---
   process_users_foreach:
     task_id: process_users_foreach
     operator_type: foreach

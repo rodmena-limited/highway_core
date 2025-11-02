@@ -30,8 +30,11 @@ def test_execute_parallel_with_empty_branch():
     # Create a mock bulkhead manager
     bulkhead_manager = MagicMock()
 
+    # Create a mock orchestrator
+    orchestrator = MagicMock()
+
     # Execute the parallel handler
-    execute(task, state, registry, bulkhead_manager)
+    execute(task, state, orchestrator, registry, bulkhead_manager)
 
 
 def test_execute_parallel_without_empty_branches():

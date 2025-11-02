@@ -6,22 +6,24 @@
 import time
 from datetime import datetime
 import re
-from highway_core.engine.common import WaitOperatorModel
+from highway_core.engine.models import WaitOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager
+from typing import List
 
 
 def execute(
     task: WaitOperatorModel,
     state: WorkflowState,
+    orchestrator, # Added for consistent signature
     registry: ToolRegistry,
     bulkhead_manager: BulkheadManager,
-) -> None:
+) -> List[str]:
     """
     Executes a WaitOperator.
     """
-    wait_for = task.wait_for
+    wait_for = state.resolve_templating(task.wait_for)
 
     print(f"WaitHandler: Waiting for {wait_for}...")
 
@@ -93,3 +95,5 @@ def execute(
     else:
         # For other types (datetime objects), we'll implement later
         print(f"WaitHandler: STUB: Waiting for '{wait_for}'. Proceeding immediately.")
+        
+    return []

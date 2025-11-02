@@ -1,16 +1,17 @@
-from highway_core.engine.common import TaskOperatorModel
+from highway_core.engine.models import TaskOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager, BulkheadConfig
-from typing import Optional
+from typing import Optional, List
 
 
 def execute(
     task: TaskOperatorModel,
     state: WorkflowState,
+    orchestrator, # Added for consistent signature
     registry: ToolRegistry,
     bulkhead_manager: Optional[BulkheadManager] = None,
-) -> None:
+) -> List[str]:
     """
     Executes a single TaskOperator with bulkhead isolation.
     """
@@ -71,3 +72,5 @@ def execute(
     # 5. Save the result
     if task.result_key:
         state.set_result(task.result_key, result)
+        
+    return [] # Return an empty list of new tasks

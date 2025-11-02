@@ -23,7 +23,7 @@ def test_orchestrator_initialization():
                 function="tools.log.info",
                 args=["Starting workflow..."],
                 dependencies=[],
-            )
+            ).model_dump()
         },
     )
 
@@ -74,7 +74,7 @@ def test_run_method():
         description="Test workflow",
         variables={},
         start_task="start_task",
-        tasks={"start_task": start_task, "end_task": end_task},
+        tasks={"start_task": start_task.model_dump(), "end_task": end_task.model_dump()},
     )
 
     # Create a state
@@ -113,7 +113,7 @@ def test_run_method_with_missing_task():
         variables={},
         start_task="start_task",
         tasks={
-            "start_task": start_task,
+            "start_task": start_task.model_dump(),
         },
     )
 
@@ -158,7 +158,7 @@ def test_run_method_with_invalid_operator_type():
         description="Test workflow",
         variables={},
         start_task="start_task",
-        tasks={"start_task": start_task, "next_task": next_task},
+        tasks={"start_task": start_task.model_dump(), "next_task": next_task.model_dump()},
     )
 
     # Create a state
