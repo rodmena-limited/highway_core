@@ -11,7 +11,10 @@ from highway_core.engine.models import WaitOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager
-from typing import List
+from typing import List, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from highway_core.engine.orchestrator import Orchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +22,7 @@ logger = logging.getLogger(__name__)
 def execute(
     task: WaitOperatorModel,
     state: WorkflowState,
-    orchestrator,  # Added for consistent signature
+    orchestrator: "Orchestrator",  # Added for consistent signature
     registry: ToolRegistry,
     bulkhead_manager: BulkheadManager,
 ) -> List[str]:

@@ -97,7 +97,7 @@ def run_workflow_from_yaml(yaml_path: str, workflow_run_id: str | None = None) -
         bulkhead_manager.shutdown_all()
 
 
-def _execute_workflow(orchestrator: Orchestrator):
+def _execute_workflow(orchestrator: Orchestrator) -> None:
     """
     Internal function to execute the orchestrator.run() method.
     This is what gets executed inside the bulkhead.

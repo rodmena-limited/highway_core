@@ -7,7 +7,10 @@ from highway_core.engine.state import WorkflowState
 from highway_core.engine.sub_workflow_runner import _run_sub_workflow
 from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager
-from typing import List, Dict, Any
+from typing import List, Dict, Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from highway_core.engine.orchestrator import Orchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +18,7 @@ logger = logging.getLogger(__name__)
 def execute(
     task: ForEachOperatorModel,
     state: WorkflowState,
-    orchestrator,  # We pass 'self' from Orchestrator
+    orchestrator: "Orchestrator",  # We pass 'self' from Orchestrator
     registry: ToolRegistry,
     bulkhead_manager: BulkheadManager,
 ) -> List[str]:
@@ -65,11 +68,11 @@ def execute(
 def _run_foreach_item(
     item: Any,
     sub_graph_tasks: Dict[str, AnyOperatorModel],
-    sub_graph: Dict[str, set],
+    sub_graph: Dict[str, set[str]],
     main_state: WorkflowState,
     registry: ToolRegistry,
     bulkhead_manager: BulkheadManager,
-):
+) -> None:
     """
     Runs a single iteration of a foreach loop in a separate thread.
     This function acts as a "mini-orchestrator".

@@ -2,6 +2,7 @@ import graphlib
 from concurrent.futures import ThreadPoolExecutor, Future
 from highway_core.engine.models import WorkflowModel, AnyOperatorModel
 from highway_core.engine.state import WorkflowState
+from highway_core.persistence.manager import PersistenceManager
 from highway_core.tools.registry import ToolRegistry
 from highway_core.engine.operator_handlers import (
     task_handler,
@@ -23,9 +24,9 @@ class Orchestrator:
         self,
         workflow_run_id: str,
         workflow: WorkflowModel,
-        persistence_manager,
+        persistence_manager: PersistenceManager,
         registry: ToolRegistry,
-    ):
+    ) -> None:
         self.run_id = workflow_run_id
         self.workflow = workflow
         self.registry = registry
@@ -59,7 +60,7 @@ class Orchestrator:
         )
 
         # 2. Update handler map
-        self.handler_map: Dict[str, Callable] = {
+        self.handler_map: Dict[str, Callable[..., Any]] = {
             "task": task_handler.execute,
             "condition": condition_handler.execute,
             "parallel": parallel_handler.execute,
@@ -73,7 +74,7 @@ class Orchestrator:
         )
         logger.info("Orchestrator initialized with TopologicalSorter.")
 
-    def run(self):
+    def run(self) -> None:
         """
         Runs the workflow execution loop using TopologicalSorter.
         """
@@ -127,7 +128,7 @@ class Orchestrator:
                         len(tasks_to_execute),
                         list(tasks_to_execute),
                     )
-                    futures: Dict[Future, str] = {
+                    futures: Dict[Future[str], str] = {
                         self.executor.submit(self._execute_task, task_id): task_id
                         for task_id in tasks_to_execute
                     }

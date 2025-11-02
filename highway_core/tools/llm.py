@@ -7,7 +7,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def ingest_specification(url: str) -> dict:
+def ingest_specification(url: str) -> dict[str, object]:
     logger.info("  [Tool.LLM] STUB: Analyzing spec from %s", url)
     return {"repo_url": "git@github.com:ai/project.git", "microservices": []}
 

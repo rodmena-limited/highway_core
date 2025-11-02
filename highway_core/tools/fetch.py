@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 @tool("tools.fetch.get")
-def get(url: str, headers: Optional[Dict[Any, Any]] = None) -> dict:
+def get(url: str, headers: Optional[Dict[Any, Any]] = None) -> dict[str, object]:
     """Makes an HTTP GET request and returns a standardized dict."""
     logger.info("  [Tool.Fetch.Get] Fetching %s...", url)
     try:
@@ -35,7 +35,7 @@ def post(
     url: str,
     data: Optional[Dict[Any, Any]] = None,
     headers: Optional[Dict[Any, Any]] = None,
-) -> dict:
+) -> dict[str, object]:
     """Makes an HTTP POST request and returns a standardized dict."""
     logger.info("  [Tool.Fetch.Post] Posting to %s...", url)
     try:

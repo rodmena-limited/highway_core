@@ -7,7 +7,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def write(file_path: str, content: str) -> dict:
+def write(file_path: str, content: str) -> dict[str, str]:
     logger.info(
         "  [Tool.FS.Write] STUB: Writing %s chars to %s", len(content), file_path
     )

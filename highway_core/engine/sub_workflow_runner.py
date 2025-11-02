@@ -16,7 +16,7 @@ def _run_sub_workflow(
     state: WorkflowState,
     registry: ToolRegistry,
     bulkhead_manager: BulkheadManager,
-):
+) -> None:
     """
     Runs a sub-workflow (like a loop body) to completion.
     This is a blocking, sequential, "mini-orchestrator".
@@ -39,7 +39,7 @@ def _run_sub_workflow(
             if task_model.operator_type == "task":
                 # We must clone the task to resolve templating
                 # This is the fix for the `log_user` problem
-                task_clone: TaskOperatorModel = task_model.model_copy(deep=True)  # type: ignore
+                task_clone: TaskOperatorModel = task_model.model_copy(deep=True)
                 task_clone.args = state.resolve_templating(task_clone.args)
 
                 handler_func = sub_handler_map.get(task_clone.operator_type)

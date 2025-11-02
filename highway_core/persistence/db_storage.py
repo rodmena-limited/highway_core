@@ -24,8 +24,8 @@ class DatabasePersistence(PersistenceManager):
         return os.path.join(self.storage_path, f"{workflow_run_id}.json")
 
     def save_workflow_state(
-        self, workflow_run_id: str, state: WorkflowState, completed_tasks: set
-    ):
+        self, workflow_run_id: str, state: WorkflowState, completed_tasks: set[str]
+    ) -> None:
         """Saves the current state of a workflow execution to a JSON file."""
         state_file = self._get_state_file_path(workflow_run_id)
         logger.info(
@@ -45,7 +45,7 @@ class DatabasePersistence(PersistenceManager):
 
     def load_workflow_state(
         self, workflow_run_id: str
-    ) -> tuple[WorkflowState | None, set]:
+    ) -> tuple[WorkflowState | None, set[str]]:
         """Loads a workflow state from a JSON file."""
         state_file = self._get_state_file_path(workflow_run_id)
         if not os.path.exists(state_file):

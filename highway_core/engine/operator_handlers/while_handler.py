@@ -7,7 +7,10 @@ from highway_core.engine.sub_workflow_runner import _run_sub_workflow
 from highway_core.engine.operator_handlers.condition_handler import eval_condition
 from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager
-from typing import List
+from typing import List, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from highway_core.engine.orchestrator import Orchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +18,7 @@ logger = logging.getLogger(__name__)
 def execute(
     task: WhileOperatorModel,
     state: WorkflowState,
-    orchestrator,  # We pass 'self' from Orchestrator
+    orchestrator: "Orchestrator",  # We pass 'self' from Orchestrator
     registry: ToolRegistry,
     bulkhead_manager: BulkheadManager,
 ) -> List[str]:

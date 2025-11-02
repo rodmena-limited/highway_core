@@ -12,7 +12,7 @@ class PersistenceManager(ABC):
     @abstractmethod
     def save_workflow_state(
         self, workflow_run_id: str, state: WorkflowState, completed_tasks: Set[str]
-    ):
+    ) -> None:
         """Saves the current state of a workflow execution."""
         pass
 

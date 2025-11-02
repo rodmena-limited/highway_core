@@ -6,13 +6,18 @@
 # - Updates orchestrator state to handle conditional flow.
 
 import logging
+from typing import Any, Optional, TYPE_CHECKING
+
 from highway_core.engine.models import ConditionOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
-from typing import Optional
+
 import ast
 import operator
 import warnings
+
+if TYPE_CHECKING:
+    from highway_core.engine.orchestrator import Orchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +25,7 @@ logger = logging.getLogger(__name__)
 def execute(
     task: ConditionOperatorModel,
     state: WorkflowState,
-    orchestrator,
+    orchestrator: "Orchestrator",
     registry: ToolRegistry,
 ) -> None:
     """
@@ -62,7 +67,7 @@ def execute(
         orchestrator.completed_tasks.add(skipped_task_id)  # <-- ADD THIS LINE
 
 
-def eval_condition(condition_str: str):
+def eval_condition(condition_str: str) -> bool:
     """
     Safely evaluate a condition string using AST.
     Supports basic comparisons like '200 == 200', 'True', 'False', etc.
@@ -70,7 +75,9 @@ def eval_condition(condition_str: str):
     try:
         # Parse the condition into an AST
         tree = ast.parse(condition_str.strip(), mode="eval")
-        return _eval_node(tree.body)
+        result = _eval_node(tree.body)
+        # Ensure the result is converted to boolean
+        return bool(result)
     except Exception as e:
         logger.error(
             "ConditionHandler: Error evaluating condition '%s': %s", condition_str, e
@@ -78,19 +85,20 @@ def eval_condition(condition_str: str):
         return False
 
 
-def _eval_node(node):
+def _eval_node(node: ast.AST) -> Any:
     """
     Recursively evaluate an AST node.
     """
     # Handle constants (ast.Constant is used in Python 3.8+, older versions used ast.Num, ast.Str, ast.NameConstant)
-    node_type = type(node).__name__
-    if node_type == "Constant":  # Python 3.8+
+    if isinstance(node, ast.Constant):  # Python 3.8+
         return node.value
-    elif node_type == "Num":  # Python < 3.8 compatibility - deprecated
+    elif isinstance(node, ast.Num):  # Python < 3.8 compatibility - deprecated
         return node.n
-    elif node_type == "Str":  # Python < 3.8 compatibility - deprecated
+    elif isinstance(node, ast.Str):  # Python < 3.8 compatibility - deprecated
         return node.s
-    elif node_type == "NameConstant":  # True, False, None (Python < 3.8) - deprecated
+    elif isinstance(
+        node, ast.NameConstant
+    ):  # True, False, None (Python < 3.8) - deprecated
         return node.value
 
     # Handle comparison operations
@@ -114,20 +122,20 @@ def _eval_node(node):
 
     # Handle boolean operations
     elif isinstance(node, ast.BoolOp):
-        op = node.op
-        if isinstance(op, ast.And):
+        bool_op = node.op
+        if isinstance(bool_op, ast.And):
             return all(_eval_node(value) for value in node.values)
-        elif isinstance(op, ast.Or):
+        elif isinstance(bool_op, ast.Or):
             return any(_eval_node(value) for value in node.values)
 
     # Handle unary operations
     elif isinstance(node, ast.UnaryOp):
-        op = node.op
-        if isinstance(op, ast.Not):
+        unary_op = node.op
+        if isinstance(unary_op, ast.Not):
             return not _eval_node(node.operand)
-        elif isinstance(op, ast.USub):
+        elif isinstance(unary_op, ast.USub):
             return -_eval_node(node.operand)
-        elif isinstance(op, ast.UAdd):
+        elif isinstance(unary_op, ast.UAdd):
             return +_eval_node(node.operand)
 
     # Unsupported operation

@@ -8,7 +8,7 @@ import shlex
 logger = logging.getLogger(__name__)
 
 
-def run(command: str) -> dict:
+def run(command: str) -> dict[str, object]:
     """
     Runs a shell command and returns its output, error, and status.
     """

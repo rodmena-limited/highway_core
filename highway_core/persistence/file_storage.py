@@ -15,7 +15,9 @@ class FileStorage:
         self.base_path = base_path
         logger.info("FileStorage initialized: %s", base_path)
 
-    def save_artifact(self, workflow_id: str, artifact_name: str, content: bytes):
+    def save_artifact(
+        self, workflow_id: str, artifact_name: str, content: bytes
+    ) -> None:
         """Saves a large file artifact."""
         logger.info(
             "  [FileStorage] STUB: Saving artifact '%s' for %s.",

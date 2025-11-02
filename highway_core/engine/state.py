@@ -18,10 +18,12 @@ class WorkflowState(BaseModel):
 
     # Regex to find {{ variable.name }}
     # Use ClassVar so it's not part of the serialized model
-    TEMPLATE_REGEX: ClassVar[re.Pattern] = re.compile(r"\{\{([\s\w.-]+)\}\}")
+    TEMPLATE_REGEX: ClassVar[re.Pattern[str]] = re.compile(r"\{\{([\s\w.-]+)\}\}")
 
     @classmethod
-    def create_initial(cls, initial_variables: Optional[Dict[str, Any]] = None):
+    def create_initial(
+        cls, initial_variables: Optional[Dict[str, Any]] = None
+    ) -> "WorkflowState":
         """Factory method to create an initial workflow state."""
         return cls(
             variables=deepcopy(initial_variables or {}),
@@ -30,7 +32,9 @@ class WorkflowState(BaseModel):
             loop_context={},
         )
 
-    def __init__(self, initial_variables: Optional[Dict[str, Any]] = None, **data):
+    def __init__(
+        self, initial_variables: Optional[Dict[str, Any]] = None, **data: Any
+    ) -> None:
         if initial_variables is not None:
             # Called directly with initial_variables, initialize properly
             super().__init__(
@@ -49,12 +53,12 @@ class WorkflowState(BaseModel):
             super().__init__(**data)
         logger.info("WorkflowState initialized.")
 
-    def set_result(self, result_key: str, value: Any):
+    def set_result(self, result_key: str, value: Any) -> None:
         """Saves the output of a task (from 'result_key')."""
         logger.info("State: Setting result for key: %s", result_key)
         self.results[result_key] = value
 
-    def set_variable(self, key: str, value: Any):
+    def set_variable(self, key: str, value: Any) -> None:
         """Sets a variable in the workflow state."""
         self.variables[key] = value
 
@@ -186,7 +190,7 @@ class WorkflowState(BaseModel):
                 )  # Return original if not found
 
             # Otherwise, replace all occurrences within the string
-            def replacer(m):
+            def replacer(m: re.Match) -> str:  # type: ignore
                 val = self.get_value_from_path(m.group(1))
                 return (
                     str(val) if val is not None else m.group(0)

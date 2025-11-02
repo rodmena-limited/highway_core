@@ -2,7 +2,18 @@ import threading
 import queue
 import time
 import logging
-from typing import Callable, Any, Optional, Dict, List, Union, TypeVar
+from typing import (
+    Callable,
+    Any,
+    Optional,
+    Dict,
+    List,
+    Union,
+    TypeVar,
+    Iterator,
+    ContextManager,
+    Coroutine,
+)
 from enum import Enum
 from dataclasses import dataclass, field
 from concurrent.futures import Future, TimeoutError as FutureTimeoutError
@@ -92,9 +103,9 @@ class Task:
     """Represents a task to be executed by the bulkhead"""
 
     func: Callable[..., Any]
-    args: tuple
-    kwargs: dict
-    future: Future
+    args: tuple[Any, ...]
+    kwargs: dict[str, Any]
+    future: Future[Any]
     submission_time: float
     execution_id: str
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -122,7 +133,7 @@ class CircuitBreaker:
         self._lock = threading.RLock()
         self._last_state_change = time.time()
 
-    def record_success(self):
+    def record_success(self) -> None:
         """Record a successful execution"""
         with self._lock:
             self._success_count += 1
@@ -137,7 +148,7 @@ class CircuitBreaker:
                     f"Circuit breaker '{self.name}' closed - returned to healthy state"
                 )
 
-    def record_failure(self):
+    def record_failure(self) -> None:
         """Record a failed execution"""
         with self._lock:
             self._failure_count += 1
@@ -156,7 +167,7 @@ class CircuitBreaker:
                     f"Circuit breaker '{self.name}' degraded due to failures"
                 )
 
-    def _transition_to(self, new_state: BulkheadState):
+    def _transition_to(self, new_state: BulkheadState) -> None:
         """Transition to a new state"""
         old_state = self._state
         self._state = new_state
@@ -211,7 +222,9 @@ class Bulkhead:
 
         # Execution control
         self._semaphore = threading.BoundedSemaphore(config.max_concurrent_calls)
-        self._task_queue: queue.Queue = queue.Queue(maxsize=config.max_queue_size)
+        self._task_queue: queue.Queue[Task | None] = queue.Queue(
+            maxsize=config.max_queue_size
+        )
         self._worker_threads: List[threading.Thread] = []
         self._stop_event = threading.Event()
         self._health_check_thread: Optional[threading.Thread] = None
@@ -248,10 +261,10 @@ class Bulkhead:
             f"concurrent calls and queue size {config.max_queue_size}"
         )
 
-    def _start_workers(self):
+    def _start_workers(self) -> None:
         """Start worker threads to process queued tasks"""
 
-        def worker():
+        def worker() -> None:
             while not self._stop_event.is_set():
                 try:
                     task = self._task_queue.get(timeout=1.0)
@@ -279,12 +292,12 @@ class Bulkhead:
             thread.start()
             self._worker_threads.append(thread)
 
-    def _start_health_monitoring(self):
+    def _start_health_monitoring(self) -> None:
         """Start health monitoring thread"""
         if self.config.health_check_interval <= 0:
             return
 
-        def health_monitor():
+        def health_monitor() -> None:
             while not self._stop_event.is_set():
                 try:
                     self._check_health()
@@ -303,7 +316,7 @@ class Bulkhead:
         )
         self._health_check_thread.start()
 
-    def _check_health(self):
+    def _check_health(self) -> None:
         """Perform health checks"""
         # Check for stuck tasks (tasks that have been running too long)
         if self.config.timeout_seconds:
@@ -318,18 +331,22 @@ class Bulkhead:
                         stuck_tasks.append(task_id)
 
                 for task_id in stuck_tasks:
-                    task = self._active_tasks.pop(task_id, None)
-                    if task and not task.future.done():
-                        logger.warning(
-                            f"Terminating stuck task {task_id} in bulkhead '{self.name}'"
-                        )
-                        task.future.set_exception(
-                            BulkheadTimeoutError(
-                                f"Task {task_id} exceeded maximum execution time"
+                    try:
+                        task = self._active_tasks.pop(task_id)
+                        if task and not task.future.done():
+                            logger.warning(
+                                f"Terminating stuck task {task_id} in bulkhead '{self.name}'"
                             )
-                        )
+                            task.future.set_exception(
+                                BulkheadTimeoutError(
+                                    f"Task {task_id} exceeded maximum execution time"
+                                )
+                            )
+                    except KeyError:
+                        # Task was already removed, continue
+                        continue
 
-    def _process_task(self, task: Task):
+    def _process_task(self, task: Task) -> None:
         """Process a single task from the queue"""
         start_time = time.time()
         execution_id = task.execution_id
@@ -403,10 +420,16 @@ class Bulkhead:
         finally:
             # Remove from active tasks
             with self._active_tasks_lock:
-                self._active_tasks.pop(execution_id, None)
+                try:
+                    self._active_tasks.pop(execution_id)
+                except KeyError:
+                    # Task was already removed, ignore
+                    pass
 
     @contextmanager
-    def _execute_with_timeout(self, func: Callable, args: tuple, kwargs: dict):
+    def _execute_with_timeout(
+        self, func: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any]
+    ) -> Iterator[Any]:
         """Execute function with timeout support"""
         if self.config.timeout_seconds:
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
@@ -420,7 +443,9 @@ class Bulkhead:
         else:
             yield func(*args, **kwargs)
 
-    def execute(self, func: Callable[..., T], *args, **kwargs) -> Future[T]:
+    def execute(
+        self, func: Callable[..., T], *args, **kwargs
+    ) -> Future[ExecutionResult]:
         """
         Execute a function through the bulkhead with isolation.
 
@@ -446,7 +471,7 @@ class Bulkhead:
             )
 
         # Create future for result
-        future: Future = Future()
+        future: Future[ExecutionResult] = Future()
         submission_time = time.time()
         execution_id = str(uuid.uuid4())
 
@@ -478,7 +503,7 @@ class Bulkhead:
         # Set timeout handler if configured
         if self.config.timeout_seconds:
 
-            def timeout_handler():
+            def timeout_handler() -> None:
                 if not future.done():
                     future.set_exception(
                         BulkheadTimeoutError(
@@ -528,7 +553,9 @@ class Bulkhead:
                 execution_id=str(uuid.uuid4()),
             )
 
-    async def execute_async(self, func: Callable[..., T], *args, **kwargs) -> T:
+    async def execute_async(
+        self, func: Callable[..., Coroutine[Any, Any, T]], *args: Any, **kwargs: Any
+    ) -> T:
         """
         Asynchronously execute a function through the bulkhead.
 
@@ -547,10 +574,10 @@ class Bulkhead:
         loop = asyncio.get_event_loop()
         future = self.execute(func, *args, **kwargs)
 
-        return await loop.run_in_executor(None, future.result)
+        return await loop.run_in_executor(None, lambda: future.result().result)
 
     @contextmanager
-    def context(self, timeout: Optional[float] = None):
+    def context(self, timeout: Optional[float] = None) -> Iterator["Bulkhead"]:
         """
         Context manager for bulkhead operations.
 
@@ -588,7 +615,7 @@ class Bulkhead:
 
             return stats
 
-    def reset_stats(self):
+    def reset_stats(self) -> None:
         """Reset bulkhead statistics"""
         with self._stats_lock:
             self._total_executions = 0
@@ -601,7 +628,7 @@ class Bulkhead:
         state = self.get_state()
         return state in (BulkheadState.HEALTHY, BulkheadState.DEGRADED)
 
-    def shutdown(self, timeout: float = 5.0):
+    def shutdown(self, timeout: float = 5.0) -> None:
         """Shutdown the bulkhead and all worker threads gracefully"""
         logger.info(f"Shutting down bulkhead '{self.name}'")
         self._stop_event.set()
@@ -654,7 +681,7 @@ class BulkheadManager:
     Manages multiple bulkheads for different system components.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._bulkheads: Dict[str, Bulkhead] = {}
         self._lock = threading.RLock()
         self._shutdown = False
@@ -685,8 +712,8 @@ class BulkheadManager:
             return self.create_bulkhead(config)
 
     def execute_in_bulkhead(
-        self, bulkhead_name: str, func: Callable[..., T], *args, **kwargs
-    ) -> Future[T]:
+        self, bulkhead_name: str, func: Callable[..., T], *args: Any, **kwargs: Any
+    ) -> Future[ExecutionResult]:
         """Execute a function in a specific bulkhead"""
         bulkhead = self.get_bulkhead(bulkhead_name)
         if not bulkhead:
@@ -708,7 +735,7 @@ class BulkheadManager:
                 for name, bulkhead in self._bulkheads.items()
             }
 
-    def shutdown_all(self, timeout: float = 5.0):
+    def shutdown_all(self, timeout: float = 5.0) -> None:
         """Shutdown all bulkheads gracefully"""
         with self._lock:
             self._shutdown = True
@@ -722,15 +749,22 @@ class BulkheadManager:
             # Clear the dictionary
             self._bulkheads.clear()
 
-    def __enter__(self):
+    def __enter__(self) -> "BulkheadManager":
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[Any],
+    ) -> None:
         self.shutdown_all()
 
 
 # Decorator for easy bulkhead usage
-def with_bulkhead(bulkhead_name: str, manager: BulkheadManager, **bulkhead_kwargs):
+def with_bulkhead(
+    bulkhead_name: str, manager: BulkheadManager, **bulkhead_kwargs: Any
+) -> Callable[[Callable[..., T]], Callable[..., Future[ExecutionResult]]]:
     """
     Decorator to execute a function through a bulkhead.
 
@@ -740,9 +774,9 @@ def with_bulkhead(bulkhead_name: str, manager: BulkheadManager, **bulkhead_kwarg
             return db.execute(query)
     """
 
-    def decorator(func):
+    def decorator(func: Callable[..., T]) -> Callable[..., Future[ExecutionResult]]:
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args: Any, **kwargs: Any) -> Future[ExecutionResult]:
             # Add bulkhead metadata to kwargs
             if bulkhead_kwargs:
                 kwargs["_bulkhead_metadata"] = bulkhead_kwargs
@@ -756,8 +790,10 @@ def with_bulkhead(bulkhead_name: str, manager: BulkheadManager, **bulkhead_kwarg
 
 # Async decorator
 def with_bulkhead_async(
-    bulkhead_name: str, manager: BulkheadManager, **bulkhead_kwargs
-):
+    bulkhead_name: str, manager: BulkheadManager, **bulkhead_kwargs: Any
+) -> Callable[
+    [Callable[..., Coroutine[Any, Any, T]]], Callable[..., Coroutine[Any, Any, T]]
+]:
     """
     Async decorator for bulkhead execution.
 
@@ -767,9 +803,11 @@ def with_bulkhead_async(
             return await db.execute_async(query)
     """
 
-    def decorator(func):
+    def decorator(
+        func: Callable[..., Coroutine[Any, Any, T]],
+    ) -> Callable[..., Coroutine[Any, Any, T]]:
         @functools.wraps(func)
-        async def wrapper(*args, **kwargs):
+        async def wrapper(*args: Any, **kwargs: Any) -> T:
             if bulkhead_kwargs:
                 kwargs["_bulkhead_metadata"] = bulkhead_kwargs
 
@@ -798,14 +836,14 @@ def get_default_manager() -> BulkheadManager:
         return _default_manager
 
 
-def set_default_manager(manager: BulkheadManager):
+def set_default_manager(manager: BulkheadManager) -> None:
     """Set the default bulkhead manager"""
     global _default_manager
     with _default_manager_lock:
         _default_manager = manager
 
 
-def shutdown_default_manager():
+def shutdown_default_manager() -> None:
     """Shutdown the default bulkhead manager"""
     global _default_manager
     with _default_manager_lock:
