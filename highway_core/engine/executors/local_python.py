@@ -26,6 +26,8 @@ class LocalPythonExecutor(BaseExecutor):
         state: "WorkflowState",
         registry: "ToolRegistry",
         bulkhead_manager: Optional["BulkheadManager"],
+        resource_manager: Optional["ContainerResourceManager"],
+        workflow_run_id: Optional[str],
     ) -> Any:
         if not task.function:
             logger.error(

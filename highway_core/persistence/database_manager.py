@@ -92,7 +92,7 @@ class DatabaseManager:
         conn.commit()
 
     @contextmanager
-    def transaction(self):
+    def database_transaction(self):
         """Context manager for database transactions."""
         conn = self._get_connection()
         original_isolation = conn.isolation_level

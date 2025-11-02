@@ -19,6 +19,8 @@ def execute(
     registry: ToolRegistry,  # <-- Keep this required
     bulkhead_manager: Optional[BulkheadManager] = None,
     executor: Optional["BaseExecutor"] = None,  # <-- NEW
+    resource_manager: Optional["ContainerResourceManager"] = None,
+    workflow_run_id: Optional[str] = None,
 ) -> List[str]:
     """
     Delegates execution of a TaskOperator to a provided executor.
@@ -38,10 +40,16 @@ def execute(
         state=state,
         registry=registry,
         bulkhead_manager=bulkhead_manager,
+        resource_manager=resource_manager,
+        workflow_run_id=workflow_run_id,
     )
 
     # 2. Save the result (this logic stays in the handler)
     if task.result_key:
         state.set_result(task.result_key, result)
+
+    # 3. Mark the task as completed in persistence
+    if orchestrator and hasattr(orchestrator.persistence, "complete_task"):
+        orchestrator.persistence.complete_task(orchestrator.run_id, task.task_id, result)
 
     return []  # Return an empty list of new tasks

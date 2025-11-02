@@ -25,6 +25,8 @@ class BaseExecutor(ABC):
         state: "WorkflowState",
         registry: "ToolRegistry",
         bulkhead_manager: Optional["BulkheadManager"],
+        resource_manager: Optional["ContainerResourceManager"],
+        workflow_run_id: Optional[str],
     ) -> Any:
         """
         Executes a task given the current state and dependencies.

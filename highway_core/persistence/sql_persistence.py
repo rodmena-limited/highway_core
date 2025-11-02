@@ -1,8 +1,9 @@
 import logging
-from typing import Optional, Tuple, Dict, Any
-from pathlib import Path
 import json
+from typing import Optional, Tuple, Dict, Any, Set
+from pathlib import Path
 
+from highway_core.engine.models import TaskOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.persistence.database_manager import DatabaseManager
 
@@ -35,51 +36,96 @@ class SQLPersistence:
             # Use default production database
             self.db_manager = DatabaseManager()
 
-    def save_workflow_state(
-        self, workflow_run_id: str, state: WorkflowState, completed_tasks: set
-    ) -> None:
-        """
-        Save the current workflow state to the database.
+    def start_workflow(self, workflow_id: str, workflow_name: str, variables: Dict) -> None:
+        """Record workflow start in database"""
+        with self.db_manager.database_transaction() as conn:
+            conn.execute(
+                "INSERT INTO workflows (workflow_id, workflow_name, variables_json) VALUES (?, ?, ?)",
+                (workflow_id, workflow_name, json.dumps(variables)),
+            )
 
-        Args:
-            workflow_run_id: Unique identifier for the workflow run
-            state: Current workflow state object
-            completed_tasks: Set of completed task IDs
-        """
-        try:
-            # Check if workflow exists, if not create it
-            if not self.db_manager.workflow_exists(workflow_run_id):
-                # Create workflow record
-                self.db_manager.create_workflow(
-                    workflow_id=workflow_run_id,
-                    name=workflow_run_id,  # In the current implementation, run ID serves as name
-                    start_task="",  # Start task would need to be passed separately if needed
-                    variables=state.variables,
+    def complete_workflow(self, workflow_id: str) -> None:
+        """Mark workflow as completed"""
+        with self.db_manager.database_transaction() as conn:
+            conn.execute(
+                "UPDATE workflows SET status = 'completed', end_time = CURRENT_TIMESTAMP WHERE workflow_id = ?",
+                (workflow_id,),
+            )
+
+    def fail_workflow(self, workflow_id: str, error_message: str) -> None:
+        """Mark workflow as failed with error details"""
+        with self.db_manager.database_transaction() as conn:
+            conn.execute(
+                "UPDATE workflows SET status = 'failed', error_message = ?, end_time = CURRENT_TIMESTAMP WHERE workflow_id = ?",
+                (error_message, workflow_id),
+            )
+
+    def start_task(self, workflow_id: str, task: TaskOperatorModel) -> None:
+        """Record task start"""
+        with self.db_manager.database_transaction() as conn:
+            conn.execute(
+                """
+                INSERT INTO tasks (
+                    workflow_id, task_id, operator_type, runtime, function, image,
+                    command_json, args_json, kwargs_json, result_key, dependencies_json,
+                    status, started_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'executing', CURRENT_TIMESTAMP)
+                ON CONFLICT(workflow_id, task_id) DO UPDATE SET
+                    status = 'executing',
+                    started_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    workflow_id,
+                    task.task_id,
+                    task.operator_type,
+                    getattr(task, 'runtime', 'python'),
+                    getattr(task, 'function', None),
+                    getattr(task, 'image', None),
+                    json.dumps(getattr(task, 'command', None)),
+                    json.dumps(getattr(task, 'args', [])),
+                    json.dumps(getattr(task, 'kwargs', {})),
+                    getattr(task, 'result_key', None),
+                    json.dumps(getattr(task, 'dependencies', [])),
+                ),
+            )
+
+    def complete_task(self, workflow_id: str, task_id: str, result: Any) -> None:
+        """Record task completion with result"""
+        result_json = json.dumps(result)
+        with self.db_manager.database_transaction() as conn:
+            conn.execute(
+                """
+                UPDATE tasks
+                SET status = 'completed', completed_at = CURRENT_TIMESTAMP, result_value_json = ?
+                WHERE workflow_id = ? AND task_id = ?
+                """,
+                (result_json, workflow_id, task_id),
+            )
+            task_info = conn.execute(
+                "SELECT result_key FROM tasks WHERE workflow_id = ? AND task_id = ?",
+                (workflow_id, task_id),
+            ).fetchone()
+            if task_info and task_info[0]:
+                conn.execute(
+                    """
+                    INSERT INTO workflow_results (workflow_id, task_id, result_key, result_value_json)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (workflow_id, task_id, task_info[0], result_json),
                 )
-            else:
-                # Update workflow with current variables if needed
-                # For now, we just update the updated_at timestamp by changing status to itself
-                workflow_data = self.db_manager.load_workflow(workflow_run_id)
-                if workflow_data:
-                    self.db_manager.update_workflow_status(
-                        workflow_run_id, workflow_data.get("status", "running")
-                    )
 
-            # Save memory values - make a copy to avoid concurrent modification issues
-            memory_copy = dict(state.memory)
-            for key, value in memory_copy.items():
-                self.db_manager.store_memory(workflow_run_id, key, value)
-
-            # Save result values - make a copy to avoid concurrent modification issues
-            results_copy = dict(state.results)
-            for key, value in results_copy.items():
-                self.db_manager.store_result(workflow_run_id, key, value)
-
-            logger.debug(f"Saved workflow state for {workflow_run_id}")
-
-        except Exception as e:
-            logger.error(f"Error saving workflow state for {workflow_run_id}: {e}")
-            raise
+    def fail_task(self, workflow_id: str, task_id: str, error_message: str) -> None:
+        """Record task failure with error details"""
+        with self.db_manager.database_transaction() as conn:
+            conn.execute(
+                """
+                UPDATE tasks
+                SET status = 'failed', error_message = ?, completed_at = CURRENT_TIMESTAMP
+                WHERE workflow_id = ? AND task_id = ?
+                """,
+                (error_message, workflow_id, task_id),
+            )
 
     def load_workflow_state(
         self, workflow_run_id: str
@@ -94,9 +140,8 @@ class SQLPersistence:
             Tuple of (WorkflowState object or None, set of completed task IDs)
         """
         try:
-            # Load workflow data
-            workflow_data = self.db_manager.load_workflow(workflow_run_id)
-            if not workflow_data:
+            state, completed_tasks = self.get_workflow_state(workflow_run_id)
+            if not state:
                 logger.info(f"No workflow found for ID: {workflow_run_id}")
                 return None, set()
 
@@ -106,15 +151,6 @@ class SQLPersistence:
             # Load results
             results = self.db_manager.load_results(workflow_run_id)
 
-            # Get completed tasks - need to get tasks with status 'completed'
-            completed_tasks = self.db_manager.get_completed_tasks(workflow_run_id)
-
-            # Create workflow state object
-            # Note: We may need to get the initial variables from the workflow definition
-            # For now, we'll use the saved variables or an empty dict if not available
-            variables = workflow_data.get("variables", {})
-
-            state = WorkflowState(variables)
             state.memory = memory
             state.results = results
 
@@ -131,6 +167,32 @@ class SQLPersistence:
             logger.error(f"Error loading workflow state for {workflow_run_id}: {e}")
             return None, set()
 
+    def get_workflow_state(self, workflow_id: str) -> Tuple[Optional[WorkflowState], Set[str]]:
+        """Load workflow state and completed tasks"""
+        state = None
+        completed_tasks = set()
+        with self.db_manager.database_transaction() as conn:
+            workflow_row = conn.execute(
+                "SELECT variables_json FROM workflows WHERE workflow_id = ?", (workflow_id,)
+            ).fetchone()
+            if workflow_row:
+                variables = json.loads(workflow_row[0])
+                state = WorkflowState(variables)
+                results_rows = conn.execute(
+                    "SELECT result_key, result_value_json FROM workflow_results WHERE workflow_id = ?",
+                    (workflow_id,),
+                ).fetchall()
+                for row in results_rows:
+                    state.results[row[0]] = json.loads(row[1])
+                
+                completed_tasks_rows = conn.execute(
+                    "SELECT task_id FROM tasks WHERE workflow_id = ? AND status = 'completed'",
+                    (workflow_id,),
+                ).fetchall()
+                completed_tasks = {row[0] for row in completed_tasks_rows}
+
+        return state, completed_tasks
+
     def save_task_result(self, workflow_run_id: str, task_id: str, result: Any) -> bool:
         """
         Save the result of a task execution.
@@ -144,23 +206,7 @@ class SQLPersistence:
             True if successful, False otherwise
         """
         try:
-            # Update task status to completed
-            from datetime import datetime
-
-            self.db_manager.update_task_status(task_id, "completed")
-            self.db_manager.update_task_completion(task_id, datetime.now())
-
-            # If result_key exists for this task, save it to results
-            # We need to get the task to check for result_key
-            task_info = self.db_manager.fetch_one(
-                "SELECT result_key FROM tasks WHERE task_id = ? AND workflow_id = ?",
-                (task_id, workflow_run_id),
-            )
-
-            if task_info and task_info["result_key"]:
-                result_key = task_info["result_key"]
-                self.db_manager.store_result(workflow_run_id, result_key, result)
-
+            # The result is already saved by complete_task, this method is now a no-op
             return True
         except Exception as e:
             logger.error(f"Error saving task result for task {task_id}: {e}")
@@ -200,32 +246,9 @@ class SQLPersistence:
             True if successful, False otherwise
         """
         try:
-            success = self.db_manager.create_task_execution(
-                task_id=task_id,
-                workflow_id=workflow_run_id,
-                executor_runtime=executor_runtime,
-                execution_args=execution_args,
-                execution_kwargs=execution_kwargs,
-                result=result,
-                error_message=error_message,
-                started_at=started_at,
-                completed_at=completed_at,
-                duration_ms=duration_ms,
-                status=status,
-            )
-
-            if success and status == "completed" and result is not None:
-                # Update the task's result key if one exists
-                task_info = self.db_manager.fetch_one(
-                    "SELECT result_key FROM tasks WHERE task_id = ? AND workflow_id = ?",
-                    (task_id, workflow_run_id),
-                )
-
-                if task_info and task_info["result_key"]:
-                    result_key = task_info["result_key"]
-                    self.db_manager.store_result(workflow_run_id, result_key, result)
-
-            return success
+            if status == "failed":
+                self.fail_task(workflow_run_id, task_id, error_message or "Unknown error")
+            return True
         except Exception as e:
             logger.error(f"Error saving task execution for task {task_id}: {e}")
             return False
@@ -242,27 +265,7 @@ class SQLPersistence:
             True if successful, False otherwise
         """
         try:
-            # First check if task exists
-            task_exists = self.db_manager.fetch_one(
-                "SELECT 1 FROM tasks WHERE task_id = ?", (task_id,)
-            )
-
-            if not task_exists:
-                # Create a minimal task record if it doesn't exist
-                # This is a fallback - ideally tasks should be created when first encountered
-                self.db_manager.create_task(
-                    workflow_id=workflow_run_id,
-                    task_id=task_id,
-                    operator_type="unknown",  # Will be updated later
-                    runtime="python",
-                    status="completed",  # Set status to completed directly
-                )
-            else:
-                # Update task status to completed
-                from datetime import datetime
-
-                self.db_manager.update_task_status(task_id, "completed")
-                self.db_manager.update_task_completion(task_id, datetime.now())
+            # This method is now a no-op
             return True
         except Exception as e:
             logger.error(f"Error marking task {task_id} as completed: {e}")

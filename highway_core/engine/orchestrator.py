@@ -26,6 +26,8 @@ from highway_core.engine.executors.base import BaseExecutor
 from highway_core.engine.executors.local_python import LocalPythonExecutor
 from highway_core.engine.executors.docker import DockerExecutor  # <-- NEW
 
+from highway_core.engine.resource_manager import ContainerResourceManager
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,6 +43,7 @@ class Orchestrator:
         self.run_id = workflow_run_id
         self.workflow = workflow
         self.registry = registry
+        self.resource_manager = ContainerResourceManager(workflow_run_id)
 
         # Use SQL persistence if requested (default), otherwise use the provided manager
         if use_sql_persistence:
@@ -57,6 +60,7 @@ class Orchestrator:
         else:
             self.state = WorkflowState(workflow.variables)
             self.completed_tasks = set()
+            self.persistence.start_workflow(self.run_id, self.workflow.name, self.workflow.variables)
 
         # 1. Build the dependency graph for ONLY top-level tasks
         self.graph: Dict[str, Set[str]] = {
@@ -107,88 +111,93 @@ class Orchestrator:
         """
         logger.info("Orchestrator: Starting workflow '%s'", self.workflow.name)
 
-        try:
-            # Get the initial set of runnable tasks
-            runnable_tasks = self.sorter.get_ready()
-
-            logger.info(
-                "Orchestrator: Initial runnable tasks: %s, is_active: %s",
-                list(runnable_tasks),
-                self.sorter.is_active(),
-            )
-
-            # Check if all tasks have been completed from the loaded state
-            # If no tasks are ready and the sorter is not active, workflow is complete
-            if not runnable_tasks and not self.sorter.is_active():
-                logger.info(
-                    "Orchestrator: All tasks already completed from persisted state. Finishing workflow."
-                )
-                return
-
-            while self.sorter.is_active():
-                if (
-                    not runnable_tasks
-                ):  # If no tasks are ready, break to avoid infinite loop
-                    logger.info(
-                        "Orchestrator: No runnable tasks but sorter is still active. Breaking to avoid infinite loop."
-                    )
-                    break
-
-                # Separate tasks that need to be executed from ones that are already completed
-                tasks_to_execute = []
-                for task_id in runnable_tasks:
-                    if task_id in self.completed_tasks:
-                        # This task was already completed, so just mark it as done in the sorter
-                        logger.info(
-                            "Orchestrator: Task %s already completed, marking as done.",
-                            task_id,
-                        )
-                        self.sorter.done(task_id)
-                    else:
-                        # This task needs to be executed
-                        tasks_to_execute.append(task_id)
-
-                # Execute only the tasks that haven't been completed yet
-                if tasks_to_execute:
-                    logger.info(
-                        "Orchestrator: Submitting %s tasks to executor: %s",
-                        len(tasks_to_execute),
-                        list(tasks_to_execute),
-                    )
-                    futures: Dict[Future[str], str] = {
-                        self.executor_pool.submit(
-                            self._execute_task, task_id
-                        ): task_id  # <-- Use executor_pool
-                        for task_id in tasks_to_execute
-                    }
-                    for future in futures:
-                        task_id = futures[future]
-                        try:
-                            # This function now just returns the task_id
-                            result_task_id = future.result()
-                            logger.info(
-                                "Orchestrator: Task %s completed.", result_task_id
-                            )
-                        except Exception as e:
-                            logger.error(
-                                "Orchestrator: FATAL ERROR executing task '%s': %s",
-                                task_id,
-                                e,
-                            )
-                            raise e
-                else:
-                    logger.info(
-                        "Orchestrator: No new tasks to execute, continuing to next batch."
-                    )
-
-                # After processing current batch, get next set of ready tasks
+        with self.resource_manager:
+            try:
+                # Get the initial set of runnable tasks
                 runnable_tasks = self.sorter.get_ready()
 
-        except Exception as e:
-            logger.error("Orchestrator: FATAL ERROR in workflow execution: %s", e)
-        finally:
-            self.executor_pool.shutdown(wait=True)  # <-- Use executor_pool
-            self.bulkhead_manager.shutdown_all()
+                logger.info(
+                    "Orchestrator: Initial runnable tasks: %s, is_active: %s",
+                    list(runnable_tasks),
+                    self.sorter.is_active(),
+                )
+
+                # Check if all tasks have been completed from the loaded state
+                # If no tasks are ready and the sorter is not active, workflow is complete
+                if not runnable_tasks and not self.sorter.is_active():
+                    logger.info(
+                        "Orchestrator: All tasks already completed from persisted state. Finishing workflow."
+                    )
+                    self.persistence.complete_workflow(self.run_id)
+                    return
+
+                while self.sorter.is_active():
+                    if (
+                        not runnable_tasks
+                    ):  # If no tasks are ready, break to avoid infinite loop
+                        logger.info(
+                            "Orchestrator: No runnable tasks but sorter is still active. Breaking to avoid infinite loop."
+                        )
+                        break
+
+                    # Separate tasks that need to be executed from ones that are already completed
+                    tasks_to_execute = []
+                    for task_id in runnable_tasks:
+                        if task_id in self.completed_tasks:
+                            # This task was already completed, so just mark it as done in the sorter
+                            logger.info(
+                                "Orchestrator: Task %s already completed, marking as done.",
+                                task_id,
+                            )
+                            self.sorter.done(task_id)
+                        else:
+                            # This task needs to be executed
+                            tasks_to_execute.append(task_id)
+
+                    # Execute only the tasks that haven't been completed yet
+                    if tasks_to_execute:
+                        logger.info(
+                            "Orchestrator: Submitting %s tasks to executor: %s",
+                            len(tasks_to_execute),
+                            list(tasks_to_execute),
+                        )
+                        futures: Dict[Future[str], str] = {
+                            self.executor_pool.submit(
+                                self._execute_task, task_id
+                            ): task_id  # <-- Use executor_pool
+                            for task_id in tasks_to_execute
+                        }
+                        for future in futures:
+                            task_id = futures[future]
+                            try:
+                                # This function now just returns the task_id
+                                result_task_id = future.result()
+                                logger.info(
+                                    "Orchestrator: Task %s completed.", result_task_id
+                                )
+                            except Exception as e:
+                                logger.error(
+                                    "Orchestrator: FATAL ERROR executing task '%s': %s",
+                                    task_id,
+                                    e,
+                                )
+                                self.persistence.fail_workflow(self.run_id, str(e))
+                                raise e
+                    else:
+                        logger.info(
+                            "Orchestrator: No new tasks to execute, continuing to next batch."
+                        )
+
+                    # After processing current batch, get next set of ready tasks
+                    runnable_tasks = self.sorter.get_ready()
+                self.persistence.complete_workflow(self.run_id)
+
+            except Exception as e:
+                logger.error("Orchestrator: FATAL ERROR in workflow execution: %s", e)
+                self.persistence.fail_workflow(self.run_id, str(e))
+            finally:
+                self.executor_pool.shutdown(wait=True)  # <-- Use executor_pool
+                self.bulkhead_manager.shutdown_all()
 
         logger.info("Orchestrator: Workflow '%s' finished.", self.workflow.name)
 
@@ -203,6 +212,7 @@ class Orchestrator:
             task_id,
             task_model.operator_type,
         )
+        self.persistence.start_task(self.run_id, task_model)
 
         handler_func = self.handler_map.get(task_model.operator_type)
         if not handler_func:
@@ -236,6 +246,8 @@ class Orchestrator:
             registry=self.registry,
             bulkhead_manager=self.bulkhead_manager,
             executor=selected_executor,  # <-- Pass the selected executor
+            resource_manager=self.resource_manager,
+            workflow_run_id=self.run_id,
         )
 
         # At the end of _execute_task, before returning
@@ -243,31 +255,6 @@ class Orchestrator:
         self.sorter.done(task_id)  # Tell the sorter this task is done
         self.completed_tasks.add(task_id)  # Add to our set
 
-        # Also mark the task as completed in persistence if using SQL persistence
-        if hasattr(self.persistence, "save_task_if_not_exists") and isinstance(
-            task_model, TaskOperatorModel
-        ):
-            # Save task information if it doesn't exist
-            self.persistence.save_task_if_not_exists(
-                workflow_run_id=self.run_id,
-                task_id=task_id,
-                operator_type=task_model.operator_type,
-                runtime=getattr(task_model, "runtime", "python"),
-                function=getattr(task_model, "function", None),
-                image=getattr(task_model, "image", None),
-                command=getattr(task_model, "command", None),
-                args=getattr(task_model, "args", None),
-                kwargs=getattr(task_model, "kwargs", None),
-                result_key=getattr(task_model, "result_key", None),
-                dependencies=getattr(task_model, "dependencies", None),
-            )
-
-        if hasattr(self.persistence, "mark_task_completed"):
-            self.persistence.mark_task_completed(self.run_id, task_id)
-
-        self.persistence.save_workflow_state(
-            self.run_id, self.state, self.completed_tasks
-        )
         return task_id
 
     # Avoid using __del__ for cleanup because it can be called multiple times

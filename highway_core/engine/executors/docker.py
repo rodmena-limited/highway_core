@@ -6,11 +6,14 @@ from docker.errors import ImageNotFound, APIError
 
 from highway_core.engine.executors.base import BaseExecutor
 
+from highway_core.utils.naming import generate_safe_container_name
+
 if TYPE_CHECKING:
     from highway_core.engine.models import TaskOperatorModel
     from highway_core.engine.state import WorkflowState
     from highway_core.tools.registry import ToolRegistry
     from highway_core.tools.bulkhead import BulkheadManager
+    from highway_core.engine.resource_manager import ContainerResourceManager
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +38,8 @@ class DockerExecutor(BaseExecutor):
         state: "WorkflowState",
         registry: "ToolRegistry",  # Ignored
         bulkhead_manager: Optional["BulkheadManager"],  # Ignored
+        resource_manager: Optional["ContainerResourceManager"],
+        workflow_run_id: Optional[str],
     ) -> Any:
         if not task.image:
             raise ValueError(f"Docker task {task.task_id} is missing 'image'.")
@@ -43,8 +48,10 @@ class DockerExecutor(BaseExecutor):
         resolved_command = state.resolve_templating(task.command)
 
         image_name = task.image
+        container_name = generate_safe_container_name(task.task_id, workflow_run_id)
+
         logger.info(
-            "DockerExecutor: Running task %s in container %s", task.task_id, image_name
+            "DockerExecutor: Running task %s in container %s (%s)", task.task_id, container_name, image_name
         )
 
         try:
@@ -59,17 +66,23 @@ class DockerExecutor(BaseExecutor):
             container = self.client.containers.run(
                 image=image_name,
                 command=resolved_command,
-                detach=False,  # Run and wait
-                remove=True,  # Automatically remove when done
+                name=container_name,
+                detach=True,  # Run in detached mode
+                remove=False,  # Don't remove automatically
                 stdout=True,
                 stderr=True,
             )
+            resource_manager.register_container(container.id, container_name)
+
+            # Wait for the container to finish
+            result = container.wait()
 
             # 4. Get output
-            # container.logs() returns bytes, decode it
-            output = container.decode("utf-8")
-            # Strip trailing whitespace including newlines as most commands add them
-            output = output.rstrip()
+            output = container.logs().decode("utf-8").rstrip()
+
+            # 5. Remove the container
+            container.remove()
+
             logger.info(
                 "DockerExecutor: Task %s output (stripped):\n%s", task.task_id, output
             )
