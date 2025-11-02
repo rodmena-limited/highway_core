@@ -540,14 +540,8 @@ class Bulkhead:
         """
         future = self.execute(func, *args, **kwargs)
         try:
-            return ExecutionResult(
-                success=True,
-                result=future.result(),
-                error=None,
-                execution_time=0.0,  # This will be filled by the actual execution
-                bulkhead_name=self.name,
-                execution_id=str(uuid.uuid4()),
-            )
+            # Return the ExecutionResult directly from the future
+            return future.result()
         except Exception as e:
             # Return ExecutionResult with error for backward compatibility
             return ExecutionResult(
