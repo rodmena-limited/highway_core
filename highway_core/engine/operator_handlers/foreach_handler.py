@@ -78,8 +78,8 @@ def _run_foreach_item(
 
     # 1. Create an ISOLATED state for this item
     # This is the fix for the race condition
-    item_state = WorkflowState(main_state._data["variables"])
-    item_state._data["loop_context"]["item"] = item
+    item_state = WorkflowState(main_state.variables.copy())
+    item_state.loop_context["item"] = item
 
     # 2. Run the sub-workflow
     _run_sub_workflow(

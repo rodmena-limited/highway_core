@@ -8,10 +8,10 @@ def test_workflow_state_initialization():
     state = WorkflowState(initial_vars)
 
     # Verify initialization
-    assert state._data["variables"] == initial_vars
-    assert state._data["results"] == {}
-    assert state._data["memory"] == {}
-    assert state._data["loop_context"] == {}
+    assert state.variables == initial_vars
+    assert state.results == {}
+    assert state.memory == {}
+    assert state.loop_context == {}
 
 
 def test_set_result():
@@ -22,7 +22,7 @@ def test_set_result():
     state.set_result("test_key", {"data": "test_value"})
 
     # Verify the result was set
-    assert state._data["results"]["test_key"] == {"data": "test_value"}
+    assert state.results["test_key"] == {"data": "test_value"}
 
 
 def test_get_value_variables():
@@ -61,14 +61,14 @@ def test_get_value_memory():
     state = WorkflowState({})
 
     # Set a value in memory directly
-    state._data["memory"]["memory_key"] = "memory_value"
+    state.memory["memory_key"] = "memory_value"
 
     # Get the memory value
     result = state._get_value("memory.memory_key")
     assert result == "memory_value"
 
     # Get a nested memory value
-    state._data["memory"]["nested"] = {"key1": "val1", "key2": "val2"}
+    state.memory["nested"] = {"key1": "val1", "key2": "val2"}
     result = state._get_value("memory.nested.key2")
     assert result == "val2"
 
@@ -78,7 +78,7 @@ def test_get_value_loop_context_item():
     state = WorkflowState({})
 
     # Set an item in loop context
-    state._data["loop_context"]["item"] = "loop_item_value"
+    state.loop_context["item"] = "loop_item_value"
 
     # Get the item
     result = state._get_value("item")

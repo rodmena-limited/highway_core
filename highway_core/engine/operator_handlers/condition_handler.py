@@ -59,6 +59,7 @@ def execute(
         # Mark the skipped task as done in the sorter so that tasks
         # depending on BOTH conditional branches can proceed
         orchestrator.sorter.done(skipped_task_id)
+        orchestrator.completed_tasks.add(skipped_task_id)  # <-- ADD THIS LINE
 
 
 def eval_condition(condition_str: str):

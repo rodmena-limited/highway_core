@@ -10,6 +10,7 @@ from highway_core.engine.models import (
 )
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
+from .test_persistence_mock import MockPersistenceManager
 
 
 def test_orchestrator_initialization():
@@ -27,14 +28,13 @@ def test_orchestrator_initialization():
         name="test_workflow", start_task="task1", tasks={"task1": task1.model_dump()}
     )
 
-    state = WorkflowState({})
     registry = ToolRegistry()
+    persistence_manager = MockPersistenceManager()
 
-    orchestrator = Orchestrator(workflow, state, registry)
+    orchestrator = Orchestrator("test_run_id5", workflow, persistence_manager, registry)
 
     # Check that orchestrator was properly initialized
     assert orchestrator.workflow == workflow
-    assert orchestrator.state == state
     assert orchestrator.registry == registry
 
     # Check that handler map contains expected handlers
@@ -61,10 +61,10 @@ def test_orchestrator_run_method():
         name="test_workflow", start_task="task1", tasks={"task1": task1.model_dump()}
     )
 
-    state = WorkflowState({})
     registry = ToolRegistry()
+    persistence_manager = MockPersistenceManager()
 
-    orchestrator = Orchestrator(workflow, state, registry)
+    orchestrator = Orchestrator("test_run_id6", workflow, persistence_manager, registry)
 
     # Run the workflow
     orchestrator.run()
@@ -110,10 +110,10 @@ def test_orchestrator_with_condition_task():
         },
     )
 
-    state = WorkflowState({})
     registry = ToolRegistry()
+    persistence_manager = MockPersistenceManager()
 
-    orchestrator = Orchestrator(workflow, state, registry)
+    orchestrator = Orchestrator("test_run_id7", workflow, persistence_manager, registry)
 
     # Run the workflow
     orchestrator.run()
@@ -145,10 +145,10 @@ def test_orchestrator_with_wait_task():
         },
     )
 
-    state = WorkflowState({})
     registry = ToolRegistry()
+    persistence_manager = MockPersistenceManager()
 
-    orchestrator = Orchestrator(workflow, state, registry)
+    orchestrator = Orchestrator("test_run_id8", workflow, persistence_manager, registry)
 
     # Run the workflow
     orchestrator.run()
@@ -189,10 +189,10 @@ def test_orchestrator_with_parallel_task():
         },
     )
 
-    state = WorkflowState({})
     registry = ToolRegistry()
+    persistence_manager = MockPersistenceManager()
 
-    orchestrator = Orchestrator(workflow, state, registry)
+    orchestrator = Orchestrator("test_run_id9", workflow, persistence_manager, registry)
 
     # Run the workflow
     orchestrator.run()

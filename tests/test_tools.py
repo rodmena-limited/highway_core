@@ -128,7 +128,7 @@ class TestMemoryTool:
         assert result["status"] == "ok"
 
         # Verify that the value is in the state's memory
-        assert state._data["memory"]["key1"] == "value1"
+        assert state.memory["key1"] == "value1"
 
 
 if __name__ == "__main__":

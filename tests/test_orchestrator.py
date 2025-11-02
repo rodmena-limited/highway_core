@@ -5,6 +5,7 @@ from highway_core.engine.models import WorkflowModel
 from highway_core.engine.models import TaskOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
+from .test_persistence_mock import MockPersistenceManager
 
 
 def test_orchestrator_initialization():
@@ -27,18 +28,17 @@ def test_orchestrator_initialization():
         },
     )
 
-    # Create a state
-    state = WorkflowState({})
-
     # Create a registry
     registry = ToolRegistry()
 
+    # Create a mock persistence manager
+    persistence_manager = MockPersistenceManager()
+
     # Create an orchestrator
-    orchestrator = Orchestrator(workflow, state, registry)
+    orchestrator = Orchestrator("test_run_id", workflow, persistence_manager, registry)
 
     # Verify initialization
     assert orchestrator.workflow == workflow
-    assert orchestrator.state == state
     assert orchestrator.registry == registry
     assert orchestrator.sorter is not None
     assert (
@@ -50,24 +50,16 @@ def test_orchestrator_initialization():
 
 def test_run_method():
     """Test the run method with a simple workflow."""
-    # Create tasks
+    # Create a single task to minimize complexity
     start_task = TaskOperatorModel(
         task_id="start_task",
         operator_type="task",
-        function="tools.log.info",
-        args=["Starting workflow..."],
+        function="tools.memory.set",
+        args=["test_key", "test_value"],
         dependencies=[],
     )
 
-    end_task = TaskOperatorModel(
-        task_id="end_task",
-        operator_type="task",
-        function="tools.log.info",
-        args=["Ending workflow..."],
-        dependencies=["start_task"],
-    )
-
-    # Create a workflow
+    # Create a workflow with just a single task
     workflow = WorkflowModel(
         name="test_workflow",
         version="1.0.0",
@@ -76,22 +68,23 @@ def test_run_method():
         start_task="start_task",
         tasks={
             "start_task": start_task.model_dump(),
-            "end_task": end_task.model_dump(),
         },
     )
 
-    # Create a state
-    state = WorkflowState({})
-
-    # Create a registry
+    # Create a registry - tools should be auto-discovered
     registry = ToolRegistry()
-    registry.functions["tools.log.info"] = lambda msg: {"result": msg}
+
+    # Create a mock persistence manager
+    persistence_manager = MockPersistenceManager()
 
     # Create an orchestrator
-    orchestrator = Orchestrator(workflow, state, registry)
+    orchestrator = Orchestrator("test_run_id2", workflow, persistence_manager, registry)
 
     # Run the workflow
     orchestrator.run()
+
+    # Verify that the workflow completed by checking if tasks are marked as completed
+    assert "start_task" in orchestrator.completed_tasks
 
 
 def test_run_method_with_missing_task():
@@ -103,8 +96,8 @@ def test_run_method_with_missing_task():
     start_task = TaskOperatorModel(
         task_id="start_task",
         operator_type="task",
-        function="tools.log.info",
-        args=["Starting workflow..."],
+        function="tools.memory.set",
+        args=["test_key", "test_value"],
         dependencies=[],
     )
 
@@ -120,15 +113,14 @@ def test_run_method_with_missing_task():
         },
     )
 
-    # Create a state
-    state = WorkflowState({})
-
     # Create a registry
     registry = ToolRegistry()
-    registry.functions["tools.log.info"] = lambda msg: {"result": msg}
+
+    # Create a mock persistence manager
+    persistence_manager = MockPersistenceManager()
 
     # Create an orchestrator
-    orchestrator = Orchestrator(workflow, state, registry)
+    orchestrator = Orchestrator("test_run_id3", workflow, persistence_manager, registry)
 
     # Run the workflow
     orchestrator.run()
@@ -140,8 +132,8 @@ def test_run_method_with_invalid_operator_type():
     start_task = TaskOperatorModel(
         task_id="start_task",
         operator_type="task",  # Valid type
-        function="tools.log.info",
-        args=["Starting workflow..."],
+        function="tools.memory.set",
+        args=["test_key", "test_value"],
         dependencies=[],
     )
 
@@ -149,8 +141,8 @@ def test_run_method_with_invalid_operator_type():
     next_task = TaskOperatorModel(
         task_id="next_task",
         operator_type="task",  # Normally valid type
-        function="tools.log.info",
-        args=["Next step..."],
+        function="tools.memory.set",
+        args=["next_key", "next_value"],
         dependencies=["start_task"],  # Depends on start_task
     )
 
@@ -167,15 +159,14 @@ def test_run_method_with_invalid_operator_type():
         },
     )
 
-    # Create a state
-    state = WorkflowState({})
-
     # Create a registry
     registry = ToolRegistry()
-    registry.functions["tools.log.info"] = lambda msg: {"result": msg}
+
+    # Create a mock persistence manager
+    persistence_manager = MockPersistenceManager()
 
     # Create an orchestrator
-    orchestrator = Orchestrator(workflow, state, registry)
+    orchestrator = Orchestrator("test_run_id4", workflow, persistence_manager, registry)
 
     # Manually remove the handler to simulate an invalid/missing handler for next_task
     # We'll remove the 'task' handler which will affect the next_task execution

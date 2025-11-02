@@ -20,7 +20,7 @@ def set_memory(state: WorkflowState, key: str, value: Any) -> Dict[str, Any]:
     This tool MUST return a dict for the 'mem_report' result_key.
     """
     logger.info("Tool.Memory: Setting key '%s'", key)
-    state._data["memory"][key] = value  # Accessing internal state directly
+    state.memory[key] = value  # Accessing memory field directly
 
     # Return value as specified by the test workflow
     return {"key": key, "status": "ok"}
@@ -32,11 +32,11 @@ def increment_memory(state: WorkflowState, key: str) -> Dict[str, Any]:
     Atomically increments a value in memory.
     """
     with _memory_lock:
-        current_val = state._data["memory"].get(key, 0)
+        current_val = state.memory.get(key, 0)
         if not isinstance(current_val, (int, float)):
             current_val = 0
         new_val = current_val + 1
-        state._data["memory"][key] = new_val
+        state.memory[key] = new_val
 
     logger.info("Tool.Memory: Incremented '%s' to %s", key, new_val)
     return {"key": key, "new_value": new_val}
@@ -95,14 +95,14 @@ def add_memory(state: WorkflowState, key: str, value: Any) -> Dict[str, Any]:
             computed_value = 0  # Default to 0 if not convertible
 
     # Get current value and add to it
-    current_value = state._data["memory"].get(key, 0)
+    current_value = state.memory.get(key, 0)
     try:
         current_value_int = int(current_value)
     except (ValueError, TypeError):
         current_value_int = 0  # Default to 0 if not a number
 
     final_int_value = current_value_int + computed_value
-    state._data["memory"][key] = final_int_value
+    state.memory[key] = final_int_value
 
     # Return value as specified by the test workflow
     return {

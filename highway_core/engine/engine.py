@@ -7,12 +7,14 @@
 
 import logging
 import yaml
+import uuid
 from typing import Any
 from .models import WorkflowModel
 from .state import WorkflowState
 from .orchestrator import Orchestrator
 from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager, BulkheadConfig
+from highway_core.persistence.db_storage import DatabasePersistence  # <--- Import
 
 # Configure root logging before importing other modules
 logging.basicConfig(
@@ -21,7 +23,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def run_workflow_from_yaml(yaml_path: str) -> None:
+def run_workflow_from_yaml(yaml_path: str, workflow_run_id: str = None) -> None:
     """
     The main entry point for the Highway Execution Engine with bulkhead isolation.
     """
@@ -37,10 +39,22 @@ def run_workflow_from_yaml(yaml_path: str) -> None:
         logger.error("Engine: Failed to load or parse YAML: %s", e)
         return
 
-    # 2. Initialize Core Components
+    # 2. Generate Run ID if not provided
+    if not workflow_run_id:
+        workflow_run_id = str(uuid.uuid4())
+    logger.info("Engine: Starting run for ID: %s", workflow_run_id)
+
+    # 3. Initialize Core Components
     registry = ToolRegistry()
-    state = WorkflowState(workflow_model.variables)
-    orchestrator = Orchestrator(workflow_model, state, registry)
+    persistence = DatabasePersistence(connection_string=".workflow_state/")
+
+    # The Orchestrator will load or create its own state
+    orchestrator = Orchestrator(
+        workflow_run_id=workflow_run_id,
+        workflow=workflow_model,
+        persistence_manager=persistence,
+        registry=registry,
+    )
 
     # 3. Execute the workflow in a bulkhead for isolation
     bulkhead_manager = BulkheadManager()

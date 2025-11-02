@@ -214,3 +214,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+.workflow_state/
+QWEN.md
+GEMINI.md

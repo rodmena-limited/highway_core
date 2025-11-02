@@ -7,17 +7,16 @@ def test_state_initialization():
     state = WorkflowState({})
 
     # Check that all required data structures are initialized
-    assert isinstance(state._data, dict)
-    assert "variables" in state._data
-    assert "results" in state._data
-    assert "memory" in state._data
-    assert "loop_context" in state._data
+    assert isinstance(state.variables, dict)
+    assert isinstance(state.results, dict)
+    assert isinstance(state.memory, dict)
+    assert isinstance(state.loop_context, dict)
 
     # Check default values
-    assert state._data["variables"] == {}
-    assert state._data["results"] == {}
-    assert state._data["memory"] == {}
-    assert state._data["loop_context"] == {}
+    assert state.variables == {}
+    assert state.results == {}
+    assert state.memory == {}
+    assert state.loop_context == {}
 
 
 def test_state_initialization_with_variables():
@@ -25,10 +24,10 @@ def test_state_initialization_with_variables():
     variables = {"var1": "value1", "var2": 42}
     state = WorkflowState(variables)
 
-    assert state._data["variables"] == variables
-    assert state._data["results"] == {}
-    assert state._data["memory"] == {}
-    assert state._data["loop_context"] == {}
+    assert state.variables == variables
+    assert state.results == {}
+    assert state.memory == {}
+    assert state.loop_context == {}
 
 
 def test_state_set_result():
@@ -37,7 +36,7 @@ def test_state_set_result():
 
     state.set_result("test_key", "test_value")
 
-    assert state._data["results"]["test_key"] == "test_value"
+    assert state.results["test_key"] == "test_value"
 
 
 def test_state_get_result():
@@ -100,7 +99,7 @@ def test_state_resolve_templating_with_memory():
     state = WorkflowState({"name": "John"})
 
     # Setting memory directly in the data structure
-    state._data["memory"]["session_id"] = "12345"
+    state.memory["session_id"] = "12345"
 
     result = state.resolve_templating(
         "User {{variables.name}} session: {{memory.session_id}}"
@@ -111,7 +110,7 @@ def test_state_resolve_templating_with_memory():
 def test_state_resolve_templating_with_loop_context():
     """Test template resolution with loop context"""
     state = WorkflowState({"name": "John"})
-    state._data["loop_context"]["item"] = "test_item"
+    state.loop_context["item"] = "test_item"
 
     result = state.resolve_templating("Processing {{item}} for {{variables.name}}")
     assert result == "Processing test_item for John"
