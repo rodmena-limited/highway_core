@@ -20,9 +20,9 @@ def execute(
     task: WhileOperatorModel,
     state: WorkflowState,
     orchestrator: "Orchestrator",  # We pass 'self' from Orchestrator
-    registry: Optional["ToolRegistry"], # <-- Make registry optional
-    bulkhead_manager: Optional["BulkheadManager"], # <-- Make optional
-    executor: Optional["BaseExecutor"] = None, # <-- Add this argument
+    registry: Optional["ToolRegistry"],  # <-- Make registry optional
+    bulkhead_manager: Optional["BulkheadManager"],  # <-- Make optional
+    executor: Optional["BaseExecutor"] = None,  # <-- Add this argument
 ) -> List[str]:
     """
     Executes a WhileOperator by running its own internal loop.

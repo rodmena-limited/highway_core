@@ -7,7 +7,7 @@ from typing import Optional, List, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from highway_core.engine.orchestrator import Orchestrator
-    from highway_core.engine.executors.base import BaseExecutor # <-- NEW
+    from highway_core.engine.executors.base import BaseExecutor  # <-- NEW
 
 logger = logging.getLogger(__name__)
 
@@ -16,9 +16,9 @@ def execute(
     task: TaskOperatorModel,
     state: WorkflowState,
     orchestrator: Optional["Orchestrator"],
-    registry: ToolRegistry, # <-- Keep this required
+    registry: ToolRegistry,  # <-- Keep this required
     bulkhead_manager: Optional[BulkheadManager] = None,
-    executor: Optional["BaseExecutor"] = None, # <-- NEW
+    executor: Optional["BaseExecutor"] = None,  # <-- NEW
 ) -> List[str]:
     """
     Delegates execution of a TaskOperator to a provided executor.
@@ -26,7 +26,9 @@ def execute(
     logger.info("TaskHandler: Delegating task %s", task.task_id)
 
     if not executor:
-        logger.error("TaskHandler: Error - No executor provided for task %s", task.task_id)
+        logger.error(
+            "TaskHandler: Error - No executor provided for task %s", task.task_id
+        )
         raise ValueError(f"TaskHandler received no executor for task: {task.task_id}")
 
     # 1. The Orchestrator has already selected the correct executor.

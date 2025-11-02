@@ -33,18 +33,19 @@ class DockerExecutor(BaseExecutor):
         self,
         task: "TaskOperatorModel",
         state: "WorkflowState",
-        registry: "ToolRegistry", # Ignored
-        bulkhead_manager: Optional["BulkheadManager"], # Ignored
+        registry: "ToolRegistry",  # Ignored
+        bulkhead_manager: Optional["BulkheadManager"],  # Ignored
     ) -> Any:
-        
         if not task.image:
             raise ValueError(f"Docker task {task.task_id} is missing 'image'.")
 
         # 1. Resolve templating in command
         resolved_command = state.resolve_templating(task.command)
-        
+
         image_name = task.image
-        logger.info("DockerExecutor: Running task %s in container %s", task.task_id, image_name)
+        logger.info(
+            "DockerExecutor: Running task %s in container %s", task.task_id, image_name
+        )
 
         try:
             # 2. Pull the image
@@ -52,22 +53,28 @@ class DockerExecutor(BaseExecutor):
             self.client.images.pull(image_name)
 
             # 3. Run the container
-            logger.info("DockerExecutor: Running container with command: %s", resolved_command)
+            logger.info(
+                "DockerExecutor: Running container with command: %s", resolved_command
+            )
             container = self.client.containers.run(
                 image=image_name,
                 command=resolved_command,
                 detach=False,  # Run and wait
-                remove=True,   # Automatically remove when done
+                remove=True,  # Automatically remove when done
                 stdout=True,
                 stderr=True,
             )
-            
+
             # 4. Get output
             # container.logs() returns bytes, decode it
-            output = container.decode('utf-8')
-            logger.info("DockerExecutor: Task %s output:\n%s", task.task_id, output)
-            
-            # Return the full log output as the result
+            output = container.decode("utf-8")
+            # Strip trailing whitespace including newlines as most commands add them
+            output = output.rstrip()
+            logger.info(
+                "DockerExecutor: Task %s output (stripped):\n%s", task.task_id, output
+            )
+
+            # Return the cleaned log output as the result
             return output
 
         except ImageNotFound:

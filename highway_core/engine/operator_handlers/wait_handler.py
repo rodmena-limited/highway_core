@@ -24,9 +24,9 @@ def execute(
     task: WaitOperatorModel,
     state: WorkflowState,
     orchestrator: "Orchestrator",  # Added for consistent signature
-    registry: Optional["ToolRegistry"], # <-- Make registry optional
-    bulkhead_manager: Optional["BulkheadManager"], # <-- Make optional
-    executor: Optional["BaseExecutor"] = None, # <-- Add this argument
+    registry: Optional["ToolRegistry"],  # <-- Make registry optional
+    bulkhead_manager: Optional["BulkheadManager"],  # <-- Make optional
+    executor: Optional["BaseExecutor"] = None,  # <-- Add this argument
 ) -> List[str]:
     """
     Executes a WaitOperator.

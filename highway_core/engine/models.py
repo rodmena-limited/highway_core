@@ -43,10 +43,14 @@ class TaskOperatorModel(BaseOperatorModel):
         runtime = values.get("runtime", "python")
         if runtime == "python":
             if not values.get("function"):
-                raise ValueError("Tasks with 'python' runtime must have a 'function' field.")
+                raise ValueError(
+                    "Tasks with 'python' runtime must have a 'function' field."
+                )
         elif runtime == "docker":
             if not values.get("image"):
-                raise ValueError("Tasks with 'docker' runtime must have an 'image' field.")
+                raise ValueError(
+                    "Tasks with 'docker' runtime must have an 'image' field."
+                )
         else:
             raise ValueError(f"Unsupported runtime: {runtime}")
         return values

@@ -27,10 +27,14 @@ class LocalPythonExecutor(BaseExecutor):
         registry: "ToolRegistry",
         bulkhead_manager: Optional["BulkheadManager"],
     ) -> Any:
-        
         if not task.function:
-            logger.error("LocalPythonExecutor: Error - Task %s has 'python' runtime but no 'function' defined.", task.task_id)
-            raise ValueError(f"Task {task.task_id} is missing 'function' attribute for python runtime.")
+            logger.error(
+                "LocalPythonExecutor: Error - Task %s has 'python' runtime but no 'function' defined.",
+                task.task_id,
+            )
+            raise ValueError(
+                f"Task {task.task_id} is missing 'function' attribute for python runtime."
+            )
 
         logger.info("LocalPythonExecutor: Executing task: %s", task.task_id)
 
@@ -76,12 +80,16 @@ class LocalPythonExecutor(BaseExecutor):
                 )  # Get the actual result from ExecutionResult
             except Exception as e:
                 logger.error(
-                    "LocalPythonExecutor: Error executing %s in bulkhead: %s", tool_name, e
+                    "LocalPythonExecutor: Error executing %s in bulkhead: %s",
+                    tool_name,
+                    e,
                 )
                 raise
         else:
             # Execute without bulkhead if not provided
-            logger.info("LocalPythonExecutor: Calling %s with args=%s", tool_name, resolved_args)
+            logger.info(
+                "LocalPythonExecutor: Calling %s with args=%s", tool_name, resolved_args
+            )
             result = tool_func(*resolved_args, **resolved_kwargs)
 
         # 5. Return the result (do NOT save to state here)

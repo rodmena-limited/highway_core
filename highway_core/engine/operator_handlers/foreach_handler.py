@@ -20,9 +20,9 @@ def execute(
     task: ForEachOperatorModel,
     state: WorkflowState,
     orchestrator: "Orchestrator",  # We pass 'self' from Orchestrator
-    registry: Optional["ToolRegistry"], # <-- Make registry optional
-    bulkhead_manager: Optional["BulkheadManager"], # <-- Make optional
-    executor: Optional["BaseExecutor"] = None, # <-- Add this argument
+    registry: Optional["ToolRegistry"],  # <-- Make registry optional
+    bulkhead_manager: Optional["BulkheadManager"],  # <-- Make optional
+    executor: Optional["BaseExecutor"] = None,  # <-- Add this argument
 ) -> List[str]:
     """
     Executes a ForEachOperator by running a sub-workflow for each

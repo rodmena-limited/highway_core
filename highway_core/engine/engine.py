@@ -14,7 +14,7 @@ from .state import WorkflowState
 from .orchestrator import Orchestrator
 from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager, BulkheadConfig
-from highway_core.persistence.db_storage import DatabasePersistence  # <--- Import
+from highway_core.persistence.sql_persistence import SQLPersistence  # <--- New import
 
 # Configure root logging before importing other modules
 logging.basicConfig(
@@ -46,7 +46,7 @@ def run_workflow_from_yaml(yaml_path: str, workflow_run_id: str | None = None) -
 
     # 3. Initialize Core Components
     registry = ToolRegistry()
-    persistence = DatabasePersistence(connection_string=".workflow_state/")
+    persistence = SQLPersistence()  # <--- Use SQL persistence
 
     # The Orchestrator will load or create its own state
     orchestrator = Orchestrator(

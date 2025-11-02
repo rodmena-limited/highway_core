@@ -192,9 +192,14 @@ class WorkflowState(BaseModel):
             # Otherwise, replace all occurrences within the string
             def replacer(m: re.Match) -> str:  # type: ignore
                 val = self.get_value_from_path(m.group(1))
-                return (
-                    str(val) if val is not None else m.group(0)
-                )  # Keep original template if not found, otherwise convert to string
+                if val is not None:
+                    str_val = str(val)
+                    # If this looks like it's used in a Python context, use repr() for safe string literal
+                    # This approach is too heuristic-based, let's handle this at a higher level
+                    return str_val  # Return the raw string value
+                else:
+                    # Keep original template if not found
+                    return m.group(0)
 
             return self.TEMPLATE_REGEX.sub(replacer, input_data)
 

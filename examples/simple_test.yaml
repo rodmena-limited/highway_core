@@ -1,0 +1,15 @@
+name: "Simple Test Workflow"
+start_task: "hello_task"
+
+variables:
+  message: "Hello from Highway Core!"
+
+tasks:
+  hello_task:
+    task_id: "hello_task"
+    operator_type: "task"
+    runtime: "python"
+    function: "tools.log.info"
+    args:
+      - "{{ variables.message }}"
+    result_key: "greeting_result"
