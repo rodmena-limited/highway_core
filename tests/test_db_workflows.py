@@ -38,38 +38,58 @@ def run_workflow_and_verify_db(workflow_path: str, expected_workflow_name: str):
     # Run the workflow
     run_workflow_from_yaml(yaml_path=workflow_path, workflow_run_id=run_id)
 
-    # Verify in database
-    conn = sqlite3.connect(get_db_path())
-    cursor = conn.cursor()
+    import time
+    # Add a small delay to ensure all database operations are completed
+    time.sleep(0.1)
 
-    # Check workflow record exists and is completed - use the specific run_id rather than workflow name
-    cursor.execute(
-        "SELECT workflow_id, workflow_name, status FROM workflows WHERE workflow_id = ?",
-        (run_id,),
-    )
-    workflow_row = cursor.fetchone()
-    assert workflow_row is not None, (
-        f"Workflow run {run_id} not found in database"
-    )
+    # Implement retry mechanism for database verification to handle concurrent access
+    max_retries = 10
+    last_exception = None
+    for attempt in range(max_retries):
+        try:
+            # Verify in database
+            conn = sqlite3.connect(get_db_path())
+            cursor = conn.cursor()
 
-    db_workflow_id, db_workflow_name, status = workflow_row
-    assert db_workflow_id == run_id
-    assert db_workflow_name == expected_workflow_name
-    assert status == "completed", (
-        f"Expected workflow status 'completed' but got '{status}'"
-    )
+            # Check workflow record exists and is completed - use the specific run_id rather than workflow name
+            cursor.execute(
+                "SELECT workflow_id, workflow_name, status FROM workflows WHERE workflow_id = ?",
+                (run_id,),
+            )
+            workflow_row = cursor.fetchone()
+            assert workflow_row is not None, (
+                f"Workflow run {run_id} not found in database"
+            )
 
-    # Verify all tasks for this workflow are in the tasks table
-    cursor.execute(
-        "SELECT task_id, operator_type, status, result_value_json FROM tasks WHERE workflow_id = ? ORDER BY created_at",
-        (run_id,),
-    )
-    tasks = cursor.fetchall()
-    assert len(tasks) > 0, "No tasks found for workflow in database"
+            db_workflow_id, db_workflow_name, status = workflow_row
+            assert db_workflow_id == run_id
+            assert db_workflow_name == expected_workflow_name
+            assert status == "completed", (
+                f"Expected workflow status 'completed' but got '{status}'"
+            )
 
-    conn.close()
+            # Verify all tasks for this workflow are in the tasks table
+            cursor.execute(
+                "SELECT task_id, operator_type, status, result_value_json FROM tasks WHERE workflow_id = ? ORDER BY created_at",
+                (run_id,),
+            )
+            tasks = cursor.fetchall()
+            assert len(tasks) > 0, "No tasks found for workflow in database"
 
-    return run_id
+            conn.close()
+            return run_id
+        except sqlite3.OperationalError as e:
+            last_exception = e
+            if "disk I/O error" in str(e) or "database is locked" in str(e):
+                # Exponential backoff with jitter
+                delay = min(0.01 * (2 ** attempt) + (time.time() % 0.01), 1.0)
+                time.sleep(delay)
+                continue
+            else:
+                raise e
+    
+    # If we exhaust all retries, raise the last exception
+    raise last_exception
 
 
 class TestPersistenceWorkflow:
