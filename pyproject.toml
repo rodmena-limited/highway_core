@@ -10,7 +10,7 @@ authors = [
 ]
 description = "A powerful and flexible workflow engine that enables you to define, execute, and manage complex workflows with ease"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { file = "LICENSE" }
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -18,7 +18,6 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -42,6 +41,7 @@ dev = [
     "types-PyYAML>=6.0.0",
     "types-requests>=2.28.1",
     "pytest-cov>=2.12.1",
+    "pytest-xdist>=3.0.0",
 ]
 
 [project.urls]
@@ -58,7 +58,7 @@ strict = false
 # pytest
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "--cov=highway_core --cov-report=term-missing"
+addopts = "--cov=highway_core --cov-report=term-missing -n auto --dist=loadfile"
 testpaths = ["tests"]
 filterwarnings = [
     "ignore::DeprecationWarning",
