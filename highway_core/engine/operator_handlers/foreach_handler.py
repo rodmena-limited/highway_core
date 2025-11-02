@@ -23,6 +23,8 @@ def execute(
     registry: Optional["ToolRegistry"],  # <-- Make registry optional
     bulkhead_manager: Optional["BulkheadManager"],  # <-- Make optional
     executor: Optional["BaseExecutor"] = None,  # <-- Add this argument
+    resource_manager=None,  # <-- Add this argument to match orchestrator signature
+    workflow_run_id: str = "",  # <-- Add this argument to match orchestrator signature
 ) -> List[str]:
     """
     Executes a ForEachOperator by running a sub-workflow for each
@@ -44,7 +46,7 @@ def execute(
     for item in items:
         # This function will run in a separate thread
         futures.append(
-            orchestrator.executor.submit(
+            orchestrator.executor_pool.submit(
                 _run_foreach_item,
                 item,
                 sub_graph_tasks,
@@ -53,6 +55,7 @@ def execute(
                 registry,
                 bulkhead_manager,
                 executor,  # Pass the executor
+                available_executors=orchestrator.executors,  # Pass available executors from orchestrator
             )
         )
 
@@ -76,6 +79,7 @@ def _run_foreach_item(
     registry: ToolRegistry,
     bulkhead_manager: BulkheadManager,
     executor: Optional["BaseExecutor"] = None,
+    available_executors: Optional[Dict[str, "BaseExecutor"]] = None,
 ) -> None:
     """
     Runs a single iteration of a foreach loop in a separate thread.
@@ -96,6 +100,7 @@ def _run_foreach_item(
         registry=registry,
         bulkhead_manager=bulkhead_manager,
         executor=executor,
+        available_executors=available_executors,  # Use the available executors passed to this function
     )
 
     logger.info("ForEachHandler: [Item: %s] Sub-workflow completed.", item)

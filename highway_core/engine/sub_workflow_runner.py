@@ -10,7 +10,7 @@ from highway_core.engine.operator_handlers import task_handler
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from highway_core.engine.executors.base import BaseExecutor  # <-- NEW
+    from highway_core.engine.executors.base import BaseExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,10 @@ def _run_sub_workflow(
     state: WorkflowState,
     registry: ToolRegistry,
     bulkhead_manager: BulkheadManager,
-    executor: Optional["BaseExecutor"] = None,
+    executor: Optional["BaseExecutor"] = None,  # Executor from parent (can be None)
+    available_executors: Optional[
+        Dict[str, "BaseExecutor"]
+    ] = None,  # Available executors for sub-tasks
 ) -> None:
     """
     Runs a sub-workflow (like a loop body) to completion.
@@ -33,6 +36,8 @@ def _run_sub_workflow(
     # We only support 'task' for now in sub-workflows.
     # This can be expanded later.
     sub_handler_map = {"task": task_handler.execute}
+    # For sub-workflows, we need to select the executor based on each task's runtime
+    # We'll need to have access to available executors, so let's pass them as an option parameter
 
     while sub_sorter.is_active():
         runnable_sub_tasks = sub_sorter.get_ready()
@@ -48,11 +53,29 @@ def _run_sub_workflow(
                 task_clone: TaskOperatorModel = task_model.model_copy(deep=True)
                 task_clone.args = state.resolve_templating(task_clone.args)
 
+                # For sub-workflows, select executor based on the task's runtime
+                selected_sub_executor = executor  # Start with the parent executor
+                if available_executors and isinstance(task_clone, TaskOperatorModel):
+                    # If a specific executor is available for this task's runtime, use it
+                    runtime = getattr(
+                        task_clone, "runtime", "python"
+                    )  # Default to python if no runtime
+                    specific_executor = available_executors.get(runtime)
+                    if specific_executor:
+                        selected_sub_executor = specific_executor
+
                 handler_func = sub_handler_map.get(task_clone.operator_type)
                 if handler_func:
                     # Note: sub-workflows don't get the orchestrator
                     handler_func(
-                        task_clone, state, None, registry, bulkhead_manager, executor
+                        task=task_clone,
+                        state=state,
+                        orchestrator=None,
+                        registry=registry,
+                        bulkhead_manager=bulkhead_manager,
+                        executor=selected_sub_executor,
+                        resource_manager=None,  # Pass None for resource manager in sub-workflows
+                        workflow_run_id="",  # Pass empty string for workflow_run_id in sub-workflows
                     )  # Pass None for orchestrator
             else:
                 logger.warning(

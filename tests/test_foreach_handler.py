@@ -34,7 +34,13 @@ def mock_orchestrator():
             self.sorter = graphlib.TopologicalSorter({})
             self.sorter.prepare()
             self.sorter.done = lambda x: True  # Mock done method
-            self.executor = MockExecutor()  # Add the executor
+            self.executor_pool = (
+                MockExecutor()
+            )  # Add the executor pool (matching main orchestrator)
+            self.executors = {
+                "python": MagicMock(),
+                "docker": MagicMock(),
+            }  # Add executors dict (matching main orchestrator)
             self.registry = ToolRegistry()  # Add the registry
             self.bulkhead_manager = BulkheadManager()  # Add the bulkhead manager
 

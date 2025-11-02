@@ -25,6 +25,8 @@ def execute(
     registry: Optional["ToolRegistry"],  # <-- Make registry optional
     bulkhead_manager: Optional["BulkheadManager"],  # <-- Make optional
     executor: Optional["BaseExecutor"] = None,  # <-- Add this argument
+    resource_manager=None,  # <-- Add this argument to match orchestrator signature
+    workflow_run_id: str = "",  # <-- Add this argument to match orchestrator signature
 ) -> List[str]:
     """
     Executes a ParallelOperator by activating all branches.
