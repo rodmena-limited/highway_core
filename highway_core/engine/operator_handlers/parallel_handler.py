@@ -14,7 +14,7 @@ from typing import List
 def execute(
     task: ParallelOperatorModel,
     state: WorkflowState,
-    orchestrator, # Added for consistent signature
+    orchestrator,  # Added for consistent signature
     registry: ToolRegistry,
     bulkhead_manager: BulkheadManager,
 ) -> List[str]:

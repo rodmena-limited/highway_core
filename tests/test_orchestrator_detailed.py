@@ -103,7 +103,11 @@ def test_orchestrator_with_condition_task():
     workflow = WorkflowModel(
         name="test_cond_workflow",
         start_task="cond_task",
-        tasks={"cond_task": condition_task.model_dump(), "task1": task1.model_dump(), "task2": task2.model_dump()},
+        tasks={
+            "cond_task": condition_task.model_dump(),
+            "task1": task1.model_dump(),
+            "task2": task2.model_dump(),
+        },
     )
 
     state = WorkflowState({})
@@ -135,7 +139,10 @@ def test_orchestrator_with_wait_task():
     workflow = WorkflowModel(
         name="test_wait_workflow",
         start_task="wait_task",
-        tasks={"wait_task": wait_task.model_dump(), "task_after_wait": task_after_wait.model_dump()},
+        tasks={
+            "wait_task": wait_task.model_dump(),
+            "task_after_wait": task_after_wait.model_dump(),
+        },
     )
 
     state = WorkflowState({})
@@ -175,7 +182,11 @@ def test_orchestrator_with_parallel_task():
     workflow = WorkflowModel(
         name="test_parallel_workflow",
         start_task="parallel_task",
-        tasks={"parallel_task": parallel_task.model_dump(), "task1": task1.model_dump(), "task2": task2.model_dump()},
+        tasks={
+            "parallel_task": parallel_task.model_dump(),
+            "task1": task1.model_dump(),
+            "task2": task2.model_dump(),
+        },
     )
 
     state = WorkflowState({})

@@ -74,7 +74,10 @@ def test_run_method():
         description="Test workflow",
         variables={},
         start_task="start_task",
-        tasks={"start_task": start_task.model_dump(), "end_task": end_task.model_dump()},
+        tasks={
+            "start_task": start_task.model_dump(),
+            "end_task": end_task.model_dump(),
+        },
     )
 
     # Create a state
@@ -158,7 +161,10 @@ def test_run_method_with_invalid_operator_type():
         description="Test workflow",
         variables={},
         start_task="start_task",
-        tasks={"start_task": start_task.model_dump(), "next_task": next_task.model_dump()},
+        tasks={
+            "start_task": start_task.model_dump(),
+            "next_task": next_task.model_dump(),
+        },
     )
 
     # Create a state

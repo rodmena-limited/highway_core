@@ -10,6 +10,7 @@ OperatorType = Literal["task", "condition", "parallel", "foreach", "while", "wai
 # --- Base Operator Model ---
 class BaseOperatorModel(BaseModel):
     """The base model all operators share."""
+
     task_id: str
     operator_type: OperatorType
     dependencies: List[str] = Field(default_factory=list)
@@ -46,7 +47,7 @@ class ForEachOperatorModel(BaseOperatorModel):
     operator_type: Literal["foreach"]
     items: str
     # This is the key change: the loop body is defined inline
-    loop_body: List["AnyOperatorModel"] 
+    loop_body: List["AnyOperatorModel"]
 
 
 class WhileOperatorModel(BaseOperatorModel):
@@ -76,9 +77,10 @@ WhileOperatorModel.model_rebuild()
 
 class WorkflowModel(BaseModel):
     """Parses the root YAML file."""
+
     name: str
     start_task: str
     variables: Dict[str, Any] = Field(default_factory=dict)
-    
+
     # This is now a flat map of ONLY the top-level tasks
     tasks: Dict[str, AnyOperatorModel]

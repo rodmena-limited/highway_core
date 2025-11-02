@@ -8,10 +8,11 @@ from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager
 from typing import List
 
+
 def execute(
     task: WhileOperatorModel,
     state: WorkflowState,
-    orchestrator, # We pass 'self' from Orchestrator
+    orchestrator,  # We pass 'self' from Orchestrator
     registry: ToolRegistry,
     bulkhead_manager: BulkheadManager,
 ) -> List[str]:
@@ -20,21 +21,23 @@ def execute(
     This entire function blocks the main orchestrator's thread
     until the loop is complete.
     """
-    
+
     loop_body_tasks = {t.task_id: t for t in task.loop_body}
     loop_graph = {t.task_id: set(t.dependencies) for t in task.loop_body}
-    
+
     iteration = 1
     while True:
         # 1. Evaluate condition
         resolved_condition = str(state.resolve_templating(task.condition))
         is_true = eval_condition(resolved_condition)
-        print(f"WhileHandler: Iteration {iteration} - Resolved '{resolved_condition}'. Result: {is_true}")
+        print(
+            f"WhileHandler: Iteration {iteration} - Resolved '{resolved_condition}'. Result: {is_true}"
+        )
 
         if not is_true:
             print("WhileHandler: Condition is False. Exiting loop.")
             break
-            
+
         print(f"WhileHandler: Condition True, executing loop body...")
 
         # 2. Run the sub-workflow
@@ -42,14 +45,14 @@ def execute(
             _run_sub_workflow(
                 sub_graph_tasks=loop_body_tasks,
                 sub_graph=loop_graph,
-                state=state, # Use the *main* state
+                state=state,  # Use the *main* state
                 registry=registry,
-                bulkhead_manager=bulkhead_manager
+                bulkhead_manager=bulkhead_manager,
             )
         except Exception as e:
             print(f"WhileHandler: Sub-workflow failed: {e}")
-            raise # Propagate failure to the main orchestrator
-            
+            raise  # Propagate failure to the main orchestrator
+
         iteration += 1
 
     # The loop is finished, return no new tasks

@@ -7,6 +7,7 @@ from enum import Enum
 from dataclasses import dataclass
 from concurrent.futures import Future
 import functools
+import concurrent.futures
 
 from .decorators import tool
 
@@ -106,10 +107,15 @@ class Bulkhead:
         """Start worker threads to process queued tasks"""
 
         def worker():
-            while not self._stop_event.is_set():
+            while True:
+                if self._stop_event.is_set():
+                    break
+
                 try:
-                    # Get task from queue with timeout to allow checking stop event
-                    task = self._task_queue.get(timeout=0.1)
+                    task = self._task_queue.get(timeout=0.01)
+                    if task is None:  # Poison pill received, exit
+                        self._task_queue.task_done()
+                        break
                     self._process_task(task)
                     self._task_queue.task_done()
                 except queue.Empty:
@@ -122,7 +128,7 @@ class Bulkhead:
             thread = threading.Thread(
                 target=worker,
                 name=f"BulkheadWorker-{self.name}-{i}",
-                daemon=False,  # Changed to non-daemon for proper shutdown
+                daemon=True,  # Changed to daemon for clean test exit
             )
             thread.start()
             self._worker_threads.append(thread)
@@ -131,62 +137,68 @@ class Bulkhead:
         """Process a single task from the queue"""
         func, args, kwargs, future, start_time = task
 
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        task_future = executor.submit(func, *args, **kwargs)
         try:
-            # Check if bulkhead is isolated
-            if self._state == BulkheadState.ISOLATED:
-                if self._isolation_end_time and time.time() < self._isolation_end_time:
-                    future.set_exception(
-                        BulkheadIsolationError(
-                            f"Bulkhead '{self.name}' is isolated until {self._isolation_end_time}"
-                        )
-                    )
-                    return
-                else:
-                    # Isolation period ended, transition to healthy
-                    with self._state_lock:
-                        if (
-                            self._state == BulkheadState.ISOLATED
-                            and self._isolation_end_time
-                            and time.time() >= self._isolation_end_time
-                        ):
-                            self._state = BulkheadState.HEALTHY
-                            self._failure_count = 0
-                            self._success_count = 0
-                            logger.info(
-                                f"Bulkhead '{self.name}' isolation period ended, returning to healthy state"
-                            )
+            # Apply the bulkhead's configured timeout to the actual function execution
+            result = task_future.result(timeout=self.config.timeout_seconds)
+            execution_time = time.time() - start_time
 
-            # Execute the function
-            with self._semaphore:
-                result = func(*args, **kwargs)
-                execution_time = time.time() - start_time
+            # Update success metrics
+            with self._state_lock:
+                self._success_count += 1
+                self._failure_count = 0
 
-                # Update success metrics
-                with self._state_lock:
-                    self._success_count += 1
-                    self._failure_count = 0
+                # Check if we should transition from degraded to healthy
+                if (
+                    self._state == BulkheadState.DEGRADED
+                    and self._success_count >= self.config.success_threshold
+                ):
+                    self._state = BulkheadState.HEALTHY
+                    logger.info(f"Bulkhead '{self.name}' returned to healthy state")
 
-                    # Check if we should transition from degraded to healthy
-                    if (
-                        self._state == BulkheadState.DEGRADED
-                        and self._success_count >= self.config.success_threshold
-                    ):
-                        self._state = BulkheadState.HEALTHY
-                        logger.info(f"Bulkhead '{self.name}' returned to healthy state")
+            # Update statistics
+            with self._stats_lock:
+                self._successful_executions += 1
 
-                # Update statistics
-                with self._stats_lock:
-                    self._successful_executions += 1
-
-                future.set_result(
-                    ExecutionResult(
-                        success=True,
-                        result=result,
-                        error=None,
-                        execution_time=execution_time,
-                        bulkhead_name=self.name,
-                    )
+            future.set_result(
+                ExecutionResult(
+                    success=True,
+                    result=result,
+                    error=None,
+                    execution_time=execution_time,
+                    bulkhead_name=self.name,
                 )
+            )
+
+        except concurrent.futures.TimeoutError:
+            execution_time = time.time() - start_time
+            e = BulkheadTimeoutError(
+                f"Bulkhead '{self.name}' operation timed out after {self.config.timeout_seconds} seconds"
+            )
+            # Update failure metrics
+            with self._state_lock:
+                self._failure_count += 1
+                self._success_count = 0
+                self._last_failure_time = time.time()
+                # Check state transitions
+                if self._failure_count >= self.config.failure_threshold:
+                    if self._state != BulkheadState.ISOLATED:
+                        self._state = BulkheadState.ISOLATED
+                        self._isolation_end_time = (
+                            time.time() + self.config.isolation_duration
+                        )
+                        logger.warning(
+                            f"Bulkhead '{self.name}' isolated due to {self._failure_count} consecutive failures"
+                        )
+                elif self._state == BulkheadState.HEALTHY and self._failure_count > 0:
+                    self._state = BulkheadState.DEGRADED
+                    logger.warning(f"Bulkhead '{self.name}' degraded due to failures")
+
+            with self._stats_lock:
+                self._failed_executions += 1
+
+            future.set_exception(e)
 
         except Exception as e:
             execution_time = time.time() - start_time
@@ -216,6 +228,8 @@ class Bulkhead:
                 self._failed_executions += 1
 
             future.set_exception(e)
+        finally:
+            executor.shutdown(wait=True)
 
     def execute(self, func: Callable, *args, **kwargs) -> Future:
         """
@@ -343,10 +357,17 @@ class Bulkhead:
         logger.info(f"Shutting down bulkhead '{self.name}'")
         self._stop_event.set()
 
-        # Clear the queue and cancel pending tasks
+        # Put a poison pill for each worker to unblock them from queue.get()
+        for _ in self._worker_threads:
+            self._task_queue.put(None)
+
+        # Clear the queue and cancel pending tasks (existing logic)
         while not self._task_queue.empty():
             try:
                 task = self._task_queue.get_nowait()
+                if task is None:  # Poison pill received, mark as done
+                    self._task_queue.task_done()
+                    continue
                 func, args, kwargs, future, start_time = task
                 if not future.done():
                     future.set_exception(

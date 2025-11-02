@@ -36,7 +36,6 @@ def test_execute_wait_with_integer_seconds():
         bulkhead_manager.shutdown_all()
 
 
-
 def test_execute_wait_with_duration_seconds():
     """Test executing a wait task with duration string in seconds."""
     # Create a mock task

@@ -8,7 +8,7 @@ from typing import Optional, List
 def execute(
     task: TaskOperatorModel,
     state: WorkflowState,
-    orchestrator, # Added for consistent signature
+    orchestrator,  # Added for consistent signature
     registry: ToolRegistry,
     bulkhead_manager: Optional[BulkheadManager] = None,
 ) -> List[str]:
@@ -72,5 +72,5 @@ def execute(
     # 5. Save the result
     if task.result_key:
         state.set_result(task.result_key, result)
-        
-    return [] # Return an empty list of new tasks
+
+    return []  # Return an empty list of new tasks

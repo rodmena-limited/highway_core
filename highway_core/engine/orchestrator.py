@@ -22,14 +22,13 @@ class Orchestrator:
         self.workflow = workflow
         self.state = state
         self.registry = registry
-        
+
         # 1. Build the dependency graph for ONLY top-level tasks
         self.graph: Dict[str, Set[str]] = {
-            task_id: set(task.dependencies)
-            for task_id, task in workflow.tasks.items()
+            task_id: set(task.dependencies) for task_id, task in workflow.tasks.items()
         }
         self.sorter = graphlib.TopologicalSorter(self.graph)
-        
+
         # 2. Update handler map
         self.handler_map: Dict[str, Callable] = {
             "task": task_handler.execute,
@@ -67,7 +66,7 @@ class Orchestrator:
                     task_id = futures[future]
                     try:
                         # This function now just returns the task_id
-                        result_task_id = future.result() 
+                        result_task_id = future.result()
                         self.sorter.done(result_task_id)
                         print(f"Orchestrator: Task {result_task_id} completed.")
                     except Exception as e:
@@ -91,8 +90,10 @@ class Orchestrator:
         if not task_model:
             raise ValueError(f"Task ID '{task_id}' not found.")
 
-        print(f"Orchestrator: Executing task {task_id} (Type: {task_model.operator_type})")
-        
+        print(
+            f"Orchestrator: Executing task {task_id} (Type: {task_model.operator_type})"
+        )
+
         handler_func = self.handler_map.get(task_model.operator_type)
         if not handler_func:
             print(f"Orchestrator: Error - No handler for {task_model.operator_type}")
@@ -104,10 +105,9 @@ class Orchestrator:
             state=self.state,
             orchestrator=self,
             registry=self.registry,
-            bulkhead_manager=self.bulkhead_manager
+            bulkhead_manager=self.bulkhead_manager,
         )
         return task_id
 
     # Avoid using __del__ for cleanup because it can be called multiple times
     # and it can cause issues. Cleanup is handled in the run method's finally block.
-

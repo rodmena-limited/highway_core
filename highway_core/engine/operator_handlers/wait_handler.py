@@ -16,7 +16,7 @@ from typing import List
 def execute(
     task: WaitOperatorModel,
     state: WorkflowState,
-    orchestrator, # Added for consistent signature
+    orchestrator,  # Added for consistent signature
     registry: ToolRegistry,
     bulkhead_manager: BulkheadManager,
 ) -> List[str]:
@@ -95,5 +95,5 @@ def execute(
     else:
         # For other types (datetime objects), we'll implement later
         print(f"WaitHandler: STUB: Waiting for '{wait_for}'. Proceeding immediately.")
-        
+
     return []

@@ -8,10 +8,11 @@ from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager
 from typing import List, Dict, Any
 
+
 def execute(
     task: ForEachOperatorModel,
     state: WorkflowState,
-    orchestrator, # We pass 'self' from Orchestrator
+    orchestrator,  # We pass 'self' from Orchestrator
     registry: ToolRegistry,
     bulkhead_manager: BulkheadManager,
 ) -> List[str]:
@@ -19,14 +20,14 @@ def execute(
     Executes a ForEachOperator by running a sub-workflow for each
     item in parallel using the orchestrator's thread pool.
     """
-    
+
     items = state.resolve_templating(task.items)
     if not isinstance(items, list):
         print(f"ForEachHandler: Error - 'items' did not resolve to a list.")
         return []
-        
+
     print(f"ForEachHandler: Starting parallel processing of {len(items)} items.")
-    
+
     sub_graph_tasks = {t.task_id: t for t in task.loop_body}
     sub_graph = {t.task_id: set(t.dependencies) for t in task.loop_body}
 
@@ -40,22 +41,23 @@ def execute(
                 item,
                 sub_graph_tasks,
                 sub_graph,
-                state, # Pass the main state
+                state,  # Pass the main state
                 registry,
-                bulkhead_manager
+                bulkhead_manager,
             )
         )
-        
+
     # Wait for all sub-workflows to complete
     for future in futures:
         try:
-            future.result() # Wait for it to finish and raise any errors
+            future.result()  # Wait for it to finish and raise any errors
         except Exception as e:
             print(f"ForEachHandler: Sub-workflow failed: {e}")
-            raise # Propagate failure
-    
+            raise  # Propagate failure
+
     print(f"ForEachHandler: All {len(items)} items processed.")
-    return [] # This operator adds no new tasks to the main graph
+    return []  # This operator adds no new tasks to the main graph
+
 
 def _run_foreach_item(
     item: Any,
@@ -63,26 +65,26 @@ def _run_foreach_item(
     sub_graph: Dict[str, set],
     main_state: WorkflowState,
     registry: ToolRegistry,
-    bulkhead_manager: BulkheadManager
+    bulkhead_manager: BulkheadManager,
 ):
     """
     Runs a single iteration of a foreach loop in a separate thread.
     This function acts as a "mini-orchestrator".
     """
     print(f"ForEachHandler: [Item: {item}] Starting sub-workflow...")
-    
+
     # 1. Create an ISOLATED state for this item
     # This is the fix for the race condition
     item_state = WorkflowState(main_state._data["variables"])
     item_state._data["loop_context"]["item"] = item
-    
+
     # 2. Run the sub-workflow
     _run_sub_workflow(
         sub_graph_tasks=sub_graph_tasks,
         sub_graph=sub_graph,
-        state=item_state, # Use the isolated state
+        state=item_state,  # Use the isolated state
         registry=registry,
-        bulkhead_manager=bulkhead_manager
+        bulkhead_manager=bulkhead_manager,
     )
-                
+
     print(f"ForEachHandler: [Item: {item}] Sub-workflow completed.")
