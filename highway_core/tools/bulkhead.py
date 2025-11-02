@@ -571,10 +571,26 @@ class Bulkhead:
             BulkheadError: If bulkhead operation fails
             Exception: If the function execution fails
         """
-        loop = asyncio.get_event_loop()
-        future = self.execute(func, *args, **kwargs)
 
-        return await loop.run_in_executor(None, lambda: future.result().result)
+        def run_async():
+            # Create a new event loop in the thread to run the async function
+            import asyncio
+
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(func(*args, **kwargs))
+            finally:
+                loop.close()
+
+        # Use the regular execute method but with our async wrapper
+        future = self.execute(run_async)
+
+        # Wait for the result using run_in_executor to avoid blocking
+        execution_result = await asyncio.get_event_loop().run_in_executor(
+            None, future.result
+        )
+        return execution_result.result
 
     @contextmanager
     def context(self, timeout: Optional[float] = None) -> Iterator["Bulkhead"]:

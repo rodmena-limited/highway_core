@@ -37,7 +37,7 @@ async def test_bulkhead_execute_async_with_exception():
         await asyncio.sleep(0.1)
         raise ValueError("Async error")
 
-    with pytest.raises(ValueError):
+    with pytest.raises(BulkheadError):
         await bulkhead.execute_async(failing_async_func)
 
     bulkhead.shutdown()
@@ -73,7 +73,7 @@ async def test_with_bulkhead_async_decorator_exception():
         await asyncio.sleep(0.1)
         raise ValueError("Async test error")
 
-    with pytest.raises(ValueError):
+    with pytest.raises(BulkheadError):
         await failing_async_func()
 
     manager.shutdown_all()
