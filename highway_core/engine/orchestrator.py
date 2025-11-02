@@ -1,6 +1,6 @@
 import graphlib
 from concurrent.futures import ThreadPoolExecutor, Future
-from highway_core.engine.models import WorkflowModel, AnyOperatorModel
+from highway_core.engine.models import WorkflowModel, AnyOperatorModel, TaskOperatorModel # <-- NEW: Import TaskOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.persistence.manager import PersistenceManager
 from highway_core.tools.registry import ToolRegistry
@@ -13,8 +13,13 @@ from highway_core.engine.operator_handlers import (
     foreach_handler,
 )
 from highway_core.tools.bulkhead import BulkheadManager
-from typing import Dict, Set, Callable, Any, List
+from typing import Dict, Set, Callable, Any, List, Optional
 import logging
+
+# NEW IMPORTS
+from highway_core.engine.executors.base import BaseExecutor
+from highway_core.engine.executors.local_python import LocalPythonExecutor
+from highway_core.engine.executors.docker import DockerExecutor # <-- NEW
 
 logger = logging.getLogger(__name__)
 
@@ -68,11 +73,19 @@ class Orchestrator:
             "while": while_handler.execute,
             "foreach": foreach_handler.execute,
         }
+        
+        # 3. Initialize Executors
+        #    This is now a map of runtime:executor
+        self.executors: Dict[str, BaseExecutor] = {
+            "python": LocalPythonExecutor(),
+            "docker": DockerExecutor(),
+        }
+        
         self.bulkhead_manager = BulkheadManager()
-        self.executor = ThreadPoolExecutor(
+        self.executor_pool = ThreadPoolExecutor(
             max_workers=10, thread_name_prefix="HighwayWorker"
         )
-        logger.info("Orchestrator initialized with TopologicalSorter.")
+        logger.info("Orchestrator initialized with Executors for: %s", list(self.executors.keys()))
 
     def run(self) -> None:
         """
@@ -129,7 +142,7 @@ class Orchestrator:
                         list(tasks_to_execute),
                     )
                     futures: Dict[Future[str], str] = {
-                        self.executor.submit(self._execute_task, task_id): task_id
+                        self.executor_pool.submit(self._execute_task, task_id): task_id # <-- Use executor_pool
                         for task_id in tasks_to_execute
                     }
                     for future in futures:
@@ -158,7 +171,7 @@ class Orchestrator:
         except Exception as e:
             logger.error("Orchestrator: FATAL ERROR in workflow execution: %s", e)
         finally:
-            self.executor.shutdown(wait=True)
+            self.executor_pool.shutdown(wait=True) # <-- Use executor_pool
             self.bulkhead_manager.shutdown_all()
 
         logger.info("Orchestrator: Workflow '%s' finished.", self.workflow.name)
@@ -168,7 +181,7 @@ class Orchestrator:
         task_model = self.workflow.tasks.get(task_id)
         if not task_model:
             raise ValueError(f"Task ID '{task_id}' not found.")
-
+        
         logger.info(
             "Orchestrator: Executing task %s (Type: %s)",
             task_id,
@@ -177,6 +190,7 @@ class Orchestrator:
 
         handler_func = self.handler_map.get(task_model.operator_type)
         if not handler_func:
+            # ... (error logic)
             logger.error(
                 "Orchestrator: Error - No handler for %s", task_model.operator_type
             )
@@ -184,6 +198,19 @@ class Orchestrator:
                 f"No handler for operator type: {task_model.operator_type}"
             )
 
+        # *** THIS IS THE KEY CHANGE ***
+        # Select the correct executor based on the task's runtime
+        
+        selected_executor: Optional[BaseExecutor] = None
+        if isinstance(task_model, TaskOperatorModel):
+            runtime = task_model.runtime
+            selected_executor = self.executors.get(runtime)
+            if not selected_executor:
+                logger.error(
+                    "Orchestrator: Error - No executor registered for runtime '%s'", runtime
+                )
+                raise ValueError(f"No executor registered for runtime: {runtime}")
+        
         # All handlers now share this signature
         handler_func(
             task=task_model,
@@ -191,6 +218,7 @@ class Orchestrator:
             orchestrator=self,
             registry=self.registry,
             bulkhead_manager=self.bulkhead_manager,
+            executor=selected_executor, # <-- Pass the selected executor
         )
 
         # At the end of _execute_task, before returning

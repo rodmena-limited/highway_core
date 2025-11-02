@@ -32,6 +32,7 @@ dependencies = [
     "pyyaml>=6.0",
     "requests>=2.28.1",
     "pydantic>=2.0.1",
+    "docker>=7.1.0",
     ]
 # dev dependencies
 [project.optional-dependencies]
@@ -52,7 +53,8 @@ Issues = "https://github.com/rodmena-limited/highway_core/issues"
 # mypy, ignore tests/ folder
 [tool.mypy]
 files = "highway_core"
-exclude = "tests/.*"
+#  exclude tests and examples
+exclude = 'tests/|examples/'
 ignore_missing_imports = true
 strict = false
 

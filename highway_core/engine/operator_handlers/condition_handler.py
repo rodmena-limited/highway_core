@@ -18,6 +18,8 @@ import warnings
 
 if TYPE_CHECKING:
     from highway_core.engine.orchestrator import Orchestrator
+    from highway_core.engine.executors.base import BaseExecutor # <-- Add this import
+    from highway_core.tools.bulkhead import BulkheadManager
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +28,9 @@ def execute(
     task: ConditionOperatorModel,
     state: WorkflowState,
     orchestrator: "Orchestrator",
-    registry: ToolRegistry,
+    registry: Optional["ToolRegistry"], # <-- Make registry optional
+    bulkhead_manager: Optional["BulkheadManager"], # <-- Make optional
+    executor: Optional["BaseExecutor"] = None, # <-- Add this argument
 ) -> None:
     """
     Evaluates a ConditionOperator.

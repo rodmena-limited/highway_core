@@ -1,0 +1,54 @@
+name: "Test URL Fetching with Docker"
+start_task: "fetch_urls"
+
+variables:
+  url1: "https://jsonplaceholder.typicode.com/todos/1"
+  url2: "https://jsonplaceholder.typicode.com/todos/2"
+  output_file: "container_test.json"
+
+tasks:
+  fetch_urls:
+    task_id: "fetch_urls"
+    operator_type: "task"
+    runtime: "docker"
+    image: "curlimages/curl:latest"
+    command:
+      - "/bin/sh"
+      - "-c"
+      - |
+        response1=$(curl -s '{{ variables.url1 }}') &&
+        response2=$(curl -s '{{ variables.url2 }}') &&
+        echo "TODO 1:" &&
+        echo "$response1" &&
+        echo "--- SPLIT ---" &&
+        echo "TODO 2:" &&
+        echo "$response2"
+    result_key: "fetch_result"
+
+  save_response_to_memory:
+    task_id: "save_response_to_memory"
+    operator_type: "task"
+    runtime: "python"
+    function: "tools.memory.set"
+    args:
+      - "combined_response"
+      - "{{ results.fetch_result }}"
+    dependencies:
+      - "fetch_urls"
+    result_key: "save_result"
+
+  write_to_file:
+    task_id: "write_to_file"
+    operator_type: "task"
+    runtime: "docker"
+    image: "alpine:latest"
+    command:
+      - "/bin/sh"
+      - "-c"
+      - |
+        echo '{{ memory.combined_response }}' > {{ variables.output_file }} &&
+        echo "Content of {{ variables.output_file }}:" &&
+        cat {{ variables.output_file }}
+    dependencies:
+      - "save_response_to_memory"
+    result_key: "file_write_result"

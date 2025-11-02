@@ -1,0 +1,16 @@
+name: "Test Docker Runtime - Visible"
+start_task: "run_docker"
+
+variables: {}
+
+tasks:
+  run_docker:
+    task_id: "run_docker"
+    operator_type: "task"
+    runtime: "docker"
+    image: "alpine:latest"
+    command:
+      - "sh"
+      - "-c"
+      - "echo 'Hello from container'; sleep 10; echo 'Container finishing'"
+    result_key: "docker_output"

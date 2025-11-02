@@ -1,16 +1,17 @@
 # highway_core/engine/operator_handlers/while_handler.py
 import logging
 import graphlib
+from typing import List, Optional, TYPE_CHECKING
 from highway_core.engine.models import WhileOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.engine.sub_workflow_runner import _run_sub_workflow
 from highway_core.engine.operator_handlers.condition_handler import eval_condition
 from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager
-from typing import List, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from highway_core.engine.orchestrator import Orchestrator
+    from highway_core.engine.executors.base import BaseExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +20,9 @@ def execute(
     task: WhileOperatorModel,
     state: WorkflowState,
     orchestrator: "Orchestrator",  # We pass 'self' from Orchestrator
-    registry: ToolRegistry,
-    bulkhead_manager: BulkheadManager,
+    registry: Optional["ToolRegistry"], # <-- Make registry optional
+    bulkhead_manager: Optional["BulkheadManager"], # <-- Make optional
+    executor: Optional["BaseExecutor"] = None, # <-- Add this argument
 ) -> List[str]:
     """
     Executes a WhileOperator by running its own internal loop.

@@ -1,0 +1,16 @@
+name: "Test Python Runtime"
+start_task: "run_command"
+
+variables:
+  message: "Hello from Python"
+
+tasks:
+  run_command:
+    task_id: "run_command"
+    operator_type: "task"
+    # runtime: "python" # <-- This is now the default
+    function: "tools.memory.set"
+    args:
+      - "test_result"
+      - "{{ variables.message }}"
+    result_key: "command_output"

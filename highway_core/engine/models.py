@@ -1,5 +1,6 @@
 # highway_core/engine/models.py
 from pydantic import BaseModel, Field, ConfigDict
+from pydantic import field_validator, model_validator  # Import model_validator
 from typing import Any, List, Dict, Optional, Literal, Union
 from typing_extensions import Annotated
 
@@ -20,10 +21,35 @@ class BaseOperatorModel(BaseModel):
 # --- Specific Operator Models ---
 class TaskOperatorModel(BaseOperatorModel):
     operator_type: Literal["task"]
-    function: str
+    result_key: Optional[str] = None
+
+    # --- NEW: Runtime selection ---
+    # Defaults to "python" for backward compatibility
+    runtime: str = Field(default="python")
+
+    # --- Python runtime fields ---
+    function: Optional[str] = None  # <-- Make Optional
     args: List[Any] = Field(default_factory=list)
     kwargs: Dict[str, Any] = Field(default_factory=dict)
-    result_key: Optional[str] = None
+
+    # --- Docker runtime fields ---
+    image: Optional[str] = None
+    command: Optional[List[str]] = None
+    # We can add env_vars, volumes, etc. here later
+
+    # Add a validation rule
+    @model_validator(mode="before")
+    def validate_runtime_fields(cls, values):
+        runtime = values.get("runtime", "python")
+        if runtime == "python":
+            if not values.get("function"):
+                raise ValueError("Tasks with 'python' runtime must have a 'function' field.")
+        elif runtime == "docker":
+            if not values.get("image"):
+                raise ValueError("Tasks with 'docker' runtime must have an 'image' field.")
+        else:
+            raise ValueError(f"Unsupported runtime: {runtime}")
+        return values
 
 
 class ConditionOperatorModel(BaseOperatorModel):
