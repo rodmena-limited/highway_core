@@ -38,17 +38,18 @@ class Orchestrator:
         workflow: WorkflowModel,
         persistence_manager: PersistenceManager,  # This could be either old or new persistence
         registry: ToolRegistry,
-        use_sql_persistence: bool = True,  # New parameter to control persistence type
+        use_sql_persistence: bool = None,  # Changed to control the behavior
     ) -> None:
         self.run_id = workflow_run_id
         self.workflow = workflow
         self.registry = registry
         self.resource_manager = ContainerResourceManager(workflow_run_id)
 
-        # Use SQL persistence if requested (default), otherwise use the provided manager
-        if use_sql_persistence:
-            self.persistence = SQLPersistence()
+        # Use provided persistence manager unless explicitly told to use default SQL persistence
+        if use_sql_persistence is True:
+            self.persistence = SQLPersistence()  # Use default database
         else:
+            # Use the provided persistence manager (allows passing custom db_path)
             self.persistence = persistence_manager
 
         loaded_state, self.completed_tasks = self.persistence.load_workflow_state(

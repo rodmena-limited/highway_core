@@ -10,7 +10,15 @@ from sqlalchemy import create_engine, text, Column, DateTime
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.pool import StaticPool
-from .models import Base, Workflow, Task, TaskExecution, WorkflowResult, WorkflowMemory, TaskDependency
+from .models import (
+    Base,
+    Workflow,
+    Task,
+    TaskExecution,
+    WorkflowResult,
+    WorkflowMemory,
+    TaskDependency,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -36,10 +44,10 @@ class DatabaseManager:
                 # Default to user's home directory
                 home = Path.home()
                 db_path = home / ".highway.sqlite3"
-            
+
             # Ensure the directory exists
             Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-            
+
             self.engine_url = f"sqlite:///{db_path}"
         else:
             self.engine_url = engine_url
@@ -51,15 +59,15 @@ class DatabaseManager:
                 poolclass=StaticPool,  # Use StaticPool for SQLite to avoid issues with multiple threads
                 connect_args={
                     "check_same_thread": False,
-                    "timeout": 30.0  # Increase timeout for busy operations
+                    "timeout": 30.0,  # Increase timeout for busy operations
                 },
-                echo=False  # Set to True for SQL debugging
+                echo=False,  # Set to True for SQL debugging
             )
         else:
             # For other database engines
             self.engine = create_engine(
                 self.engine_url,
-                echo=False  # Set to True for SQL debugging
+                echo=False,  # Set to True for SQL debugging
             )
 
         # Create session factory
@@ -92,9 +100,11 @@ class DatabaseManager:
                 if "updated_at" not in columns:
                     try:
                         # Add updated_at column to tasks table
-                        conn.execute(text(
-                            "ALTER TABLE tasks ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
-                        ))
+                        conn.execute(
+                            text(
+                                "ALTER TABLE tasks ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                            )
+                        )
                         conn.commit()
                     except Exception:
                         # Column might already exist
@@ -131,7 +141,9 @@ class DatabaseManager:
     def workflow_exists(self, workflow_id: str) -> bool:
         """Check if a workflow exists."""
         session = self._get_session()
-        result = session.query(Workflow).filter(Workflow.workflow_id == workflow_id).first()
+        result = (
+            session.query(Workflow).filter(Workflow.workflow_id == workflow_id).first()
+        )
         return result is not None
 
     def create_workflow(
@@ -146,7 +158,7 @@ class DatabaseManager:
                     start_task=start_task,
                     variables=variables,
                     start_time=datetime.utcnow(),
-                    updated_at=datetime.utcnow()
+                    updated_at=datetime.utcnow(),
                 )
                 session.add(workflow)
             return True
@@ -161,7 +173,11 @@ class DatabaseManager:
         """Update workflow status."""
         try:
             with self.transaction() as session:
-                workflow = session.query(Workflow).filter(Workflow.workflow_id == workflow_id).first()
+                workflow = (
+                    session.query(Workflow)
+                    .filter(Workflow.workflow_id == workflow_id)
+                    .first()
+                )
                 if workflow:
                     workflow.status = status
                     workflow.updated_at = datetime.utcnow()
@@ -174,13 +190,15 @@ class DatabaseManager:
     def load_workflow(self, workflow_id: str) -> Optional[Dict[str, Any]]:
         """Load a workflow by ID."""
         session = self._get_session()
-        workflow = session.query(Workflow).filter(Workflow.workflow_id == workflow_id).first()
+        workflow = (
+            session.query(Workflow).filter(Workflow.workflow_id == workflow_id).first()
+        )
 
         if workflow:
             return {
                 "workflow_id": workflow.workflow_id,
                 "name": workflow.name,  # Using the property alias
-                "start_task": workflow.start_task or '',  # Use the field we added
+                "start_task": workflow.start_task or "",  # Use the field we added
                 "variables": workflow.variables,
                 "created_at": workflow.start_time,  # Use start_time which matches original schema
                 "updated_at": workflow.updated_at,  # Now this field exists
@@ -236,7 +254,7 @@ class DatabaseManager:
                     error_message=error_message,
                     started_at=started_at,
                     completed_at=completed_at,
-                    updated_at=datetime.utcnow()
+                    updated_at=datetime.utcnow(),
                 )
                 session.add(task)
             return True
@@ -274,21 +292,23 @@ class DatabaseManager:
                 task = session.query(Task).filter(Task.task_id == task_id).first()
                 if task:
                     task.completed_at = completed_at
-                    task.status = 'completed'
+                    task.status = "completed"
                     return True
                 return False
         except Exception as e:
             logger.error(f"Error updating task {task_id} completion: {e}")
             return False
 
-    def update_task_with_result(self, task_id: str, result: Any, completed_at: datetime = None) -> bool:
+    def update_task_with_result(
+        self, task_id: str, result: Any, completed_at: datetime = None
+    ) -> bool:
         """Update task with result and completion status."""
         try:
             with self.transaction() as session:
                 task = session.query(Task).filter(Task.task_id == task_id).first()
                 if task:
                     task.result_value = result
-                    task.status = 'completed'
+                    task.status = "completed"
                     if completed_at:
                         task.completed_at = completed_at
                     else:
@@ -328,7 +348,7 @@ class DatabaseManager:
                     started_at=started_at,
                     completed_at=completed_at,
                     duration_ms=duration_ms,
-                    status=status
+                    status=status,
                 )
                 session.add(execution)
             return True
@@ -339,7 +359,12 @@ class DatabaseManager:
     def get_tasks_by_workflow(self, workflow_id: str) -> List[Dict[str, Any]]:
         """Get all tasks for a workflow."""
         session = self._get_session()
-        tasks = session.query(Task).filter(Task.workflow_id == workflow_id).order_by(Task.created_at).all()
+        tasks = (
+            session.query(Task)
+            .filter(Task.workflow_id == workflow_id)
+            .order_by(Task.created_at)
+            .all()
+        )
 
         task_list = []
         for task in tasks:
@@ -367,9 +392,12 @@ class DatabaseManager:
     def get_task_executions(self, task_id: str) -> List[Dict[str, Any]]:
         """Get all executions for a task."""
         session = self._get_session()
-        executions = session.query(TaskExecution).filter(
-            TaskExecution.task_id == task_id
-        ).order_by(TaskExecution.created_at.desc()).all()
+        executions = (
+            session.query(TaskExecution)
+            .filter(TaskExecution.task_id == task_id)
+            .order_by(TaskExecution.created_at.desc())
+            .all()
+        )
 
         execution_list = []
         for execution in executions:
@@ -394,11 +422,12 @@ class DatabaseManager:
     def get_completed_tasks(self, workflow_id: str) -> set:
         """Get set of completed task IDs for a workflow."""
         session = self._get_session()
-        completed_tasks = session.query(Task.task_id).filter(
-            Task.workflow_id == workflow_id,
-            Task.status == 'completed'
-        ).all()
-        
+        completed_tasks = (
+            session.query(Task.task_id)
+            .filter(Task.workflow_id == workflow_id, Task.status == "completed")
+            .all()
+        )
+
         return {task.task_id for task in completed_tasks}
 
     def store_result(
@@ -408,12 +437,16 @@ class DatabaseManager:
         try:
             with self.transaction() as session:
                 # Check if result already exists, if so, update it, otherwise create new
-                result_obj = session.query(WorkflowResult).filter(
-                    WorkflowResult.workflow_id == workflow_id,
-                    WorkflowResult.task_id == task_id,
-                    WorkflowResult.result_key == result_key
-                ).first()
-                
+                result_obj = (
+                    session.query(WorkflowResult)
+                    .filter(
+                        WorkflowResult.workflow_id == workflow_id,
+                        WorkflowResult.task_id == task_id,
+                        WorkflowResult.result_key == result_key,
+                    )
+                    .first()
+                )
+
                 if result_obj:
                     result_obj.result_value = result_value
                 else:
@@ -421,7 +454,7 @@ class DatabaseManager:
                         workflow_id=workflow_id,
                         task_id=task_id,
                         result_key=result_key,
-                        result_value=result_value
+                        result_value=result_value,
                     )
                     session.add(result_obj)
             return True
@@ -434,13 +467,13 @@ class DatabaseManager:
     def load_results(self, workflow_id: str) -> Dict[str, Any]:
         """Load all results for a workflow."""
         session = self._get_session()
-        results = session.query(WorkflowResult).filter(
-            WorkflowResult.workflow_id == workflow_id
-        ).all()
+        results = (
+            session.query(WorkflowResult)
+            .filter(WorkflowResult.workflow_id == workflow_id)
+            .all()
+        )
 
-        return {
-            result.result_key: result.result_value for result in results
-        }
+        return {result.result_key: result.result_value for result in results}
 
     def store_memory(
         self, workflow_id: str, memory_key: str, memory_value: Any
@@ -449,11 +482,15 @@ class DatabaseManager:
         try:
             with self.transaction() as session:
                 # Check if memory already exists, if so, update it, otherwise create new
-                memory_obj = session.query(WorkflowMemory).filter(
-                    WorkflowMemory.workflow_id == workflow_id,
-                    WorkflowMemory.memory_key == memory_key
-                ).first()
-                
+                memory_obj = (
+                    session.query(WorkflowMemory)
+                    .filter(
+                        WorkflowMemory.workflow_id == workflow_id,
+                        WorkflowMemory.memory_key == memory_key,
+                    )
+                    .first()
+                )
+
                 if memory_obj:
                     memory_obj.memory_value = memory_value
                     memory_obj.updated_at = datetime.utcnow()
@@ -461,7 +498,7 @@ class DatabaseManager:
                     memory_obj = WorkflowMemory(
                         workflow_id=workflow_id,
                         memory_key=memory_key,
-                        memory_value=memory_value
+                        memory_value=memory_value,
                     )
                     session.add(memory_obj)
             return True
@@ -474,13 +511,13 @@ class DatabaseManager:
     def load_memory(self, workflow_id: str) -> Dict[str, Any]:
         """Load all memory for a workflow."""
         session = self._get_session()
-        memory_entries = session.query(WorkflowMemory).filter(
-            WorkflowMemory.workflow_id == workflow_id
-        ).all()
+        memory_entries = (
+            session.query(WorkflowMemory)
+            .filter(WorkflowMemory.workflow_id == workflow_id)
+            .all()
+        )
 
-        return {
-            memory.memory_key: memory.memory_value for memory in memory_entries
-        }
+        return {memory.memory_key: memory.memory_value for memory in memory_entries}
 
     def store_dependencies(
         self, workflow_id: str, task_id: str, dependencies: List[str]
@@ -491,15 +528,15 @@ class DatabaseManager:
                 # First, remove existing dependencies for this task
                 session.query(TaskDependency).filter(
                     TaskDependency.task_id == task_id,
-                    TaskDependency.workflow_id == workflow_id
+                    TaskDependency.workflow_id == workflow_id,
                 ).delete()
-                
+
                 # Add new dependencies
                 for dep_task_id in dependencies:
                     dependency = TaskDependency(
                         task_id=task_id,
                         depends_on_task_id=dep_task_id,
-                        workflow_id=workflow_id
+                        workflow_id=workflow_id,
                     )
                     session.add(dependency)
             return True
@@ -510,19 +547,23 @@ class DatabaseManager:
     def get_dependencies(self, task_id: str) -> List[str]:
         """Get dependencies for a task."""
         session = self._get_session()
-        dependencies = session.query(TaskDependency.depends_on_task_id).filter(
-            TaskDependency.task_id == task_id
-        ).all()
-        
+        dependencies = (
+            session.query(TaskDependency.depends_on_task_id)
+            .filter(TaskDependency.task_id == task_id)
+            .all()
+        )
+
         return [dep.depends_on_task_id for dep in dependencies]
 
     def get_dependents(self, task_id: str) -> List[str]:
         """Get tasks that depend on this task."""
         session = self._get_session()
-        dependents = session.query(TaskDependency.task_id).filter(
-            TaskDependency.depends_on_task_id == task_id
-        ).all()
-        
+        dependents = (
+            session.query(TaskDependency.task_id)
+            .filter(TaskDependency.depends_on_task_id == task_id)
+            .all()
+        )
+
         return [dep.task_id for dep in dependents]
 
     def close(self) -> None:

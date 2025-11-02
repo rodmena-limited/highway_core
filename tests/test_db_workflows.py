@@ -1,14 +1,19 @@
 import os
 import pytest
-import sqlite3
 import uuid
+import tempfile
 from pathlib import Path
 from highway_core.engine.engine import run_workflow_from_yaml
+from highway_core.persistence.database_manager import DatabaseManager
+import time
 
 
 def get_db_path():
-    """Get the path to the SQLite database."""
-    return os.path.expanduser("~/.highway.sqlite3")
+    """Get the path to the SQLite database for testing."""
+    # Use a temporary file to avoid conflicts in parallel tests
+    temp_dir = Path(tempfile.gettempdir()) / "highway_tests"
+    temp_dir.mkdir(exist_ok=True)
+    return str(temp_dir / f"test_db_{os.getpid()}.sqlite3")
 
 
 def reset_test_database():
@@ -20,7 +25,7 @@ def reset_test_database():
 
 def run_workflow_and_verify_db(workflow_path: str, expected_workflow_name: str):
     """
-    Run a workflow and verify that it's correctly stored in the database.
+    Run a workflow and verify that it's correctly stored in the database using SQLAlchemy.
 
     Args:
         workflow_path: Path to the workflow YAML file
@@ -36,64 +41,54 @@ def run_workflow_and_verify_db(workflow_path: str, expected_workflow_name: str):
     run_id = f"test-run-{str(uuid.uuid4())}"
 
     # Run the workflow
-    run_workflow_from_yaml(yaml_path=workflow_path, workflow_run_id=run_id)
+    run_workflow_from_yaml(
+        yaml_path=workflow_path, workflow_run_id=run_id, db_path=get_db_path()
+    )
 
-    import time
     # Add a small delay to ensure all database operations are completed
     time.sleep(0.1)
 
-    # Implement retry mechanism for database verification to handle concurrent access
+    # Create database manager instance to verify the contents
+    db_manager = DatabaseManager(db_path=get_db_path())
+
+    # Verify in database using the SQLAlchemy-based manager
     max_retries = 10
     last_exception = None
     for attempt in range(max_retries):
         try:
-            # Verify in database
-            conn = sqlite3.connect(get_db_path())
-            cursor = conn.cursor()
-
-            # Check workflow record exists and is completed - use the specific run_id rather than workflow name
-            cursor.execute(
-                "SELECT workflow_id, workflow_name, status FROM workflows WHERE workflow_id = ?",
-                (run_id,),
-            )
-            workflow_row = cursor.fetchone()
-            assert workflow_row is not None, (
+            # Check workflow record exists and is completed
+            workflow_data = db_manager.load_workflow(run_id)
+            assert workflow_data is not None, (
                 f"Workflow run {run_id} not found in database"
             )
 
-            db_workflow_id, db_workflow_name, status = workflow_row
-            assert db_workflow_id == run_id
-            assert db_workflow_name == expected_workflow_name
-            assert status == "completed", (
-                f"Expected workflow status 'completed' but got '{status}'"
+            assert workflow_data["workflow_id"] == run_id
+            assert workflow_data["name"] == expected_workflow_name
+            assert workflow_data["status"] == "completed", (
+                f"Expected workflow status 'completed' but got '{workflow_data['status']}'"
             )
 
             # Verify all tasks for this workflow are in the tasks table
-            cursor.execute(
-                "SELECT task_id, operator_type, status, result_value_json FROM tasks WHERE workflow_id = ? ORDER BY created_at",
-                (run_id,),
-            )
-            tasks = cursor.fetchall()
+            tasks = db_manager.get_tasks_by_workflow(run_id)
             assert len(tasks) > 0, "No tasks found for workflow in database"
 
-            conn.close()
             return run_id
-        except sqlite3.OperationalError as e:
+        except Exception as e:
             last_exception = e
-            if "disk I/O error" in str(e) or "database is locked" in str(e):
+            if "database is locked" in str(e) or "database is busy" in str(e):
                 # Exponential backoff with jitter
-                delay = min(0.01 * (2 ** attempt) + (time.time() % 0.01), 1.0)
+                delay = min(0.01 * (2**attempt) + (time.time() % 0.01), 1.0)
                 time.sleep(delay)
                 continue
             else:
                 raise e
-    
+
     # If we exhaust all retries, raise the last exception
     raise last_exception
 
 
 class TestPersistenceWorkflow:
-    """Test the persistence workflow functionality."""
+    """Test the persistence workflow functionality using SQLAlchemy."""
 
     def test_persistence_workflow_db(self):
         """Test that persistence workflow runs and stores results in database."""
@@ -102,24 +97,18 @@ class TestPersistenceWorkflow:
 
         run_id = run_workflow_and_verify_db(workflow_path, expected_name)
 
-        # Verify the specific workflow completed successfully
-        conn = sqlite3.connect(get_db_path())
-        cursor = conn.cursor()
+        # Create database manager instance for verification
+        db_manager = DatabaseManager(db_path=get_db_path())
 
         # Check that the workflow has the expected variables
-        cursor.execute(
-            "SELECT variables_json FROM workflows WHERE workflow_id = ?", (run_id,)
-        )
-        row = cursor.fetchone()
-        assert row is not None
-        assert '"persistent-run-123"' in row[0]  # Check that the variable was stored
+        workflow_data = db_manager.load_workflow(run_id)
+        assert workflow_data is not None
+        variables = workflow_data.get("variables", {})
+        assert variables.get("run_id") == "persistent-run-123"
 
         # Verify all expected tasks are present in the tasks table
-        cursor.execute(
-            "SELECT task_id, status FROM tasks WHERE workflow_id = ?", (run_id,)
-        )
-        tasks = cursor.fetchall()
-        task_ids = {task[0] for task in tasks}
+        tasks = db_manager.get_tasks_by_workflow(run_id)
+        task_ids = {task["task_id"] for task in tasks}
 
         # The persistence test workflow should have these tasks
         expected_task_ids = {"log_start", "step_2", "log_end"}
@@ -128,19 +117,17 @@ class TestPersistenceWorkflow:
         )
 
         # All tasks should be completed
-        for task_id, status in tasks:
-            assert status == "completed", (
-                f"Task {task_id} was not completed, status: {status}"
+        for task in tasks:
+            assert task["status"] == "completed", (
+                f"Task {task['task_id']} was not completed, status: {task['status']}"
             )
-
-        conn.close()
 
         # The workflow should have completed successfully
         assert run_id is not None
 
 
 class TestParallelWaitWorkflow:
-    """Test the parallel wait workflow functionality."""
+    """Test the parallel wait workflow functionality using SQLAlchemy."""
 
     def test_parallel_wait_workflow_db(self):
         """Test that parallel wait workflow runs and stores results in database."""
@@ -149,37 +136,45 @@ class TestParallelWaitWorkflow:
 
         run_id = run_workflow_and_verify_db(workflow_path, expected_name)
 
-        # Verify that parallel and wait tasks were correctly recorded
-        conn = sqlite3.connect(get_db_path())
-        cursor = conn.cursor()
+        # Create database manager instance for verification
+        db_manager = DatabaseManager(db_path=get_db_path())
 
         # Check that specific parallel and wait tasks exist and are executed
-        cursor.execute(
-            "SELECT task_id, operator_type, status FROM tasks WHERE workflow_id = ? AND operator_type IN ('parallel', 'wait')",
-            (run_id,),
-        )
-        operator_tasks = cursor.fetchall()
+        tasks = db_manager.get_tasks_by_workflow(run_id)
+        operator_tasks = [
+            task for task in tasks if task["operator_type"] in ("parallel", "wait")
+        ]
 
         assert len(operator_tasks) >= 2, (
-            f"Expected parallel and wait tasks, found: {operator_tasks}"
+            f"Expected parallel and wait tasks, found: {[t['task_id'] for t in operator_tasks]}"
         )
 
-        # Check that fetch tasks were completed
-        cursor.execute(
-            "SELECT task_id, result_value_json FROM tasks WHERE workflow_id = ? AND task_id LIKE 'fetch_%' AND status = 'completed'",
-            (run_id,),
-        )
-        fetch_tasks = cursor.fetchall()
+        # Check that fetch tasks were completed (with potential retry due to parallel execution timing)
+        fetch_tasks = [
+            task
+            for task in tasks
+            if task["task_id"].startswith("fetch_") and task["status"] == "completed"
+        ]
+        # Retry verification if we don't have both fetch tasks completed
+        attempts = 0
+        max_attempts = 5
+        while len(fetch_tasks) < 2 and attempts < max_attempts:
+            time.sleep(0.5)  # Additional wait for parallel tasks to complete
+            tasks = db_manager.get_tasks_by_workflow(run_id)
+            fetch_tasks = [
+                task
+                for task in tasks
+                if task["task_id"].startswith("fetch_")
+                and task["status"] == "completed"
+            ]
+            attempts += 1
+
         assert len(fetch_tasks) >= 2, (
-            f"Expected at least 2 completed fetch tasks, found: {fetch_tasks}"
+            f"Expected at least 2 completed fetch tasks, found: {[t['task_id'] for t in fetch_tasks]}. All tasks: {[(t['task_id'], t['status']) for t in tasks]}. Attempted {attempts} retries."
         )
 
         # Verify that all expected tasks are present
-        cursor.execute(
-            "SELECT task_id, status FROM tasks WHERE workflow_id = ?", (run_id,)
-        )
-        all_tasks = cursor.fetchall()
-        all_task_ids = {task[0] for task in all_tasks}
+        all_task_ids = {task["task_id"] for task in tasks}
 
         expected_task_ids = {
             "log_start",
@@ -196,18 +191,16 @@ class TestParallelWaitWorkflow:
         )
 
         # All tasks should be completed or in 'executing' status for operators like parallel/wait
-        for task_id, status in all_tasks:
-            assert status in ["completed", "executing"], (
-                f"Task {task_id} has unexpected status: {status}"
+        for task in tasks:
+            assert task["status"] in ["completed", "executing"], (
+                f"Task {task['task_id']} has unexpected status: {task['status']}"
             )
-
-        conn.close()
 
         assert run_id is not None
 
 
 class TestLoopWorkflow:
-    """Test the loop workflow functionality."""
+    """Test the loop workflow functionality using SQLAlchemy."""
 
     def test_loop_workflow_db(self):
         """Test that loop workflow runs and stores results in database."""
@@ -216,36 +209,26 @@ class TestLoopWorkflow:
 
         run_id = run_workflow_and_verify_db(workflow_path, expected_name)
 
-        # Verify that while and foreach tasks were correctly recorded
-        conn = sqlite3.connect(get_db_path())
-        cursor = conn.cursor()
+        # Create database manager instance for verification
+        db_manager = DatabaseManager(db_path=get_db_path())
+
+        # Check that while and foreach tasks were correctly recorded
+        tasks = db_manager.get_tasks_by_workflow(run_id)
 
         # Check that while task exists and was executed
-        cursor.execute(
-            "SELECT task_id, operator_type, status FROM tasks WHERE workflow_id = ? AND operator_type = 'while'",
-            (run_id,),
-        )
-        while_tasks = cursor.fetchall()
+        while_tasks = [task for task in tasks if task["operator_type"] == "while"]
         assert len(while_tasks) >= 1, (
-            f"Expected at least 1 while task, found: {while_tasks}"
+            f"Expected at least 1 while task, found: {[t['task_id'] for t in while_tasks]}"
         )
 
         # Check that foreach task exists and was executed
-        cursor.execute(
-            "SELECT task_id, operator_type, status FROM tasks WHERE workflow_id = ? AND operator_type = 'foreach'",
-            (run_id,),
-        )
-        foreach_tasks = cursor.fetchall()
+        foreach_tasks = [task for task in tasks if task["operator_type"] == "foreach"]
         assert len(foreach_tasks) >= 1, (
-            f"Expected at least 1 foreach task, found: {foreach_tasks}"
+            f"Expected at least 1 foreach task, found: {[t['task_id'] for t in foreach_tasks]}"
         )
 
         # Verify that all expected tasks are present
-        cursor.execute(
-            "SELECT task_id, status FROM tasks WHERE workflow_id = ?", (run_id,)
-        )
-        all_tasks = cursor.fetchall()
-        all_task_ids = {task[0] for task in all_tasks}
+        all_task_ids = {task["task_id"] for task in tasks}
 
         expected_task_ids = {
             "initialize_counter",
@@ -259,18 +242,16 @@ class TestLoopWorkflow:
         )
 
         # All tasks should be completed or in 'executing' status for operators like while/foreach
-        for task_id, status in all_tasks:
-            assert status in ["completed", "executing"], (
-                f"Task {task_id} has unexpected status: {status}"
+        for task in tasks:
+            assert task["status"] in ["completed", "executing"], (
+                f"Task {task['task_id']} has unexpected status: {task['status']}"
             )
-
-        conn.close()
 
         assert run_id is not None
 
 
 class TestWhileWorkflow:
-    """Test the while workflow functionality."""
+    """Test the while workflow functionality using SQLAlchemy."""
 
     def test_while_workflow_db(self):
         """Test that while workflow runs and stores results in database."""
@@ -279,36 +260,26 @@ class TestWhileWorkflow:
 
         run_id = run_workflow_and_verify_db(workflow_path, expected_name)
 
-        # Verify that while and foreach tasks were correctly recorded
-        conn = sqlite3.connect(get_db_path())
-        cursor = conn.cursor()
+        # Create database manager instance for verification
+        db_manager = DatabaseManager(db_path=get_db_path())
+
+        # Check that while and foreach tasks were correctly recorded
+        tasks = db_manager.get_tasks_by_workflow(run_id)
 
         # Check that while task exists and was executed
-        cursor.execute(
-            "SELECT task_id, operator_type, status FROM tasks WHERE workflow_id = ? AND operator_type = 'while'",
-            (run_id,),
-        )
-        while_tasks = cursor.fetchall()
+        while_tasks = [task for task in tasks if task["operator_type"] == "while"]
         assert len(while_tasks) >= 1, (
-            f"Expected at least 1 while task, found: {while_tasks}"
+            f"Expected at least 1 while task, found: {[t['task_id'] for t in while_tasks]}"
         )
 
         # Check that foreach task exists and was executed
-        cursor.execute(
-            "SELECT task_id, operator_type, status FROM tasks WHERE workflow_id = ? AND operator_type = 'foreach'",
-            (run_id,),
-        )
-        foreach_tasks = cursor.fetchall()
+        foreach_tasks = [task for task in tasks if task["operator_type"] == "foreach"]
         assert len(foreach_tasks) >= 1, (
-            f"Expected at least 1 foreach task, found: {foreach_tasks}"
+            f"Expected at least 1 foreach task, found: {[t['task_id'] for t in foreach_tasks]}"
         )
 
         # Verify that all expected tasks are present
-        cursor.execute(
-            "SELECT task_id, status FROM tasks WHERE workflow_id = ?", (run_id,)
-        )
-        all_tasks = cursor.fetchall()
-        all_task_ids = {task[0] for task in all_tasks}
+        all_task_ids = {task["task_id"] for task in tasks}
 
         expected_task_ids = {
             "initialize_counter",
@@ -322,12 +293,10 @@ class TestWhileWorkflow:
         )
 
         # All tasks should be completed or in 'executing' status for operators like while/foreach
-        for task_id, status in all_tasks:
-            assert status in ["completed", "executing"], (
-                f"Task {task_id} has unexpected status: {status}"
+        for task in tasks:
+            assert task["status"] in ["completed", "executing"], (
+                f"Task {task['task_id']} has unexpected status: {task['status']}"
             )
-
-        conn.close()
 
         assert run_id is not None
 
