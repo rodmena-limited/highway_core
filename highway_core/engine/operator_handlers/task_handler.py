@@ -33,23 +33,30 @@ def execute(
         )
         raise ValueError(f"TaskHandler received no executor for task: {task.task_id}")
 
-    # 1. The Orchestrator has already selected the correct executor.
-    #    We just call it and pass all dependencies.
-    result = executor.execute(
-        task=task,
-        state=state,
-        registry=registry,
-        bulkhead_manager=bulkhead_manager,
-        resource_manager=resource_manager,
-        workflow_run_id=workflow_run_id,
-    )
+    try:
+        # 1. The Orchestrator has already selected the correct executor.
+        #    We just call it and pass all dependencies.
+        result = executor.execute(
+            task=task,
+            state=state,
+            registry=registry,
+            bulkhead_manager=bulkhead_manager,
+            resource_manager=resource_manager,
+            workflow_run_id=workflow_run_id,
+        )
 
-    # 2. Save the result (this logic stays in the handler)
-    if task.result_key:
-        state.set_result(task.result_key, result)
+        # 2. Save the result (this logic stays in the handler)
+        if task.result_key:
+            state.set_result(task.result_key, result)
 
-    # 3. Mark the task as completed in persistence
-    if orchestrator and hasattr(orchestrator.persistence, "complete_task"):
-        orchestrator.persistence.complete_task(orchestrator.run_id, task.task_id, result)
+        # 3. Mark the task as completed in persistence
+        if orchestrator and hasattr(orchestrator.persistence, "complete_task"):
+            orchestrator.persistence.complete_task(orchestrator.run_id, task.task_id, result)
 
-    return []  # Return an empty list of new tasks
+        return []  # Return an empty list of new tasks
+    except Exception as e:
+        logger.error(f"TaskHandler: Error executing task {task.task_id}: {e}")
+        # Mark the task as failed in persistence
+        if orchestrator and hasattr(orchestrator.persistence, "fail_task"):
+            orchestrator.persistence.fail_task(orchestrator.run_id, task.task_id, str(e))
+        raise

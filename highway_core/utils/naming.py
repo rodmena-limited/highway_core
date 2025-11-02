@@ -1,10 +1,13 @@
 import re
+import hashlib
+
 
 def generate_unique_identifier(base_name: str, workflow_id: str) -> str:
     """Generate unique identifier for container resources"""
-    # Use first 8 chars of workflow_id for uniqueness
-    short_id = workflow_id[:8] if len(workflow_id) > 8 else workflow_id
-    return f"{base_name}_{short_id}"
+    # Create a hash of the workflow_id to ensure uniqueness
+    hash_obj = hashlib.md5(workflow_id.encode('utf-8'))
+    short_hash = hash_obj.hexdigest()[:8]  # Use first 8 chars of hash
+    return f"{base_name}_{short_hash}"
 
 def generate_safe_container_name(name: str, workflow_id: str) -> str:
     """Generate RFC 1123 compliant container name"""
