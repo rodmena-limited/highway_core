@@ -1,6 +1,9 @@
+import logging
 import re
 from copy import deepcopy
 from typing import Any, Optional, Dict, Union
+
+logger = logging.getLogger(__name__)
 
 
 class WorkflowState:
@@ -17,11 +20,11 @@ class WorkflowState:
             "memory": {},  # For tools.memory.set
             "loop_context": {},  # For foreach/while loop items
         }
-        print("WorkflowState initialized.")
+        logger.info("WorkflowState initialized.")
 
     def set_result(self, result_key: str, value: Any):
         """Saves the output of a task (from 'result_key')."""
-        print(f"State: Setting result for key: {result_key}")
+        logger.info("State: Setting result for key: %s", result_key)
         self._data["results"][result_key] = value
 
     def set_variable(self, key: str, value: Any):
@@ -59,11 +62,14 @@ class WorkflowState:
                 if isinstance(current_val, dict):
                     current_val = current_val.get(part)
                     if current_val is None:
-                        print(f"State: Warning - could not find variable path: {path}")
+                        logger.warning(
+                            "State: Warning - could not find variable path: %s", path
+                        )
                         return None
                 else:
-                    print(
-                        f"State: Error - Cannot access property '{part}' on non-dict variable."
+                    logger.error(
+                        "State: Error - Cannot access property '%s' on non-dict variable.",
+                        part,
                     )
                     return None
             return current_val
@@ -79,7 +85,9 @@ class WorkflowState:
             # Get the first part which should be the result key
             current_val = results_dict.get(parts[0])
             if current_val is None:
-                print(f"State: Warning - could not find result key: {parts[0]}")
+                logger.warning(
+                    "State: Warning - could not find result key: %s", parts[0]
+                )
                 return None
 
             # Traverse remaining nested path
@@ -87,13 +95,15 @@ class WorkflowState:
                 if isinstance(current_val, dict):
                     current_val = current_val.get(part)
                     if current_val is None:
-                        print(
-                            f"State: Warning - could not find nested result path: {path}"
+                        logger.warning(
+                            "State: Warning - could not find nested result path: %s",
+                            path,
                         )
                         return None
                 else:
-                    print(
-                        f"State: Error - Cannot access property '{part}' on non-dict result."
+                    logger.error(
+                        "State: Error - Cannot access property '%s' on non-dict result.",
+                        part,
                     )
                     return None
             return current_val
@@ -112,11 +122,14 @@ class WorkflowState:
                 if isinstance(current_val, dict):
                     current_val = current_val.get(part)
                     if current_val is None:
-                        print(f"State: Warning - could not find memory path: {path}")
+                        logger.warning(
+                            "State: Warning - could not find memory path: %s", path
+                        )
                         return None
                 else:
-                    print(
-                        f"State: Error - Cannot access property '{part}' on non-dict memory."
+                    logger.error(
+                        "State: Error - Cannot access property '%s' on non-dict memory.",
+                        part,
                     )
                     return None
             return current_val
@@ -127,10 +140,10 @@ class WorkflowState:
 
         else:
             # For backward compatibility or other cases
-            print(
-                f"State: Warning - path must start with 'variables.', 'results.', 'memory.', or be 'item': {path}"
+            logger.warning(
+                "State: Warning - path must start with 'variables.', 'results.', 'memory.', or be 'item': %s",
+                path,
             )
-            return None
 
     def resolve_templating(self, input_data: Any) -> Any:
         """

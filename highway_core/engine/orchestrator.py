@@ -13,6 +13,9 @@ from highway_core.engine.operator_handlers import (
 )
 from highway_core.tools.bulkhead import BulkheadManager
 from typing import Dict, Set, Callable, Any, List
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class Orchestrator:
@@ -42,21 +45,23 @@ class Orchestrator:
         self.executor = ThreadPoolExecutor(
             max_workers=10, thread_name_prefix="HighwayWorker"
         )
-        print("Orchestrator initialized with TopologicalSorter.")
+        logger.info("Orchestrator initialized with TopologicalSorter.")
 
     def run(self):
         """
         Runs the workflow execution loop using TopologicalSorter.
         """
-        print(f"Orchestrator: Starting workflow '{self.workflow.name}'")
+        logger.info("Orchestrator: Starting workflow '%s'", self.workflow.name)
 
         try:
             self.sorter.prepare()
 
             while self.sorter.is_active():
                 runnable_tasks = self.sorter.get_ready()
-                print(
-                    f"Orchestrator: Submitting {len(runnable_tasks)} tasks to executor: {list(runnable_tasks)}"
+                logger.info(
+                    "Orchestrator: Submitting %s tasks to executor: %s",
+                    len(runnable_tasks),
+                    list(runnable_tasks),
                 )
                 futures: Dict[Future, str] = {
                     self.executor.submit(self._execute_task, task_id): task_id
@@ -68,21 +73,23 @@ class Orchestrator:
                         # This function now just returns the task_id
                         result_task_id = future.result()
                         self.sorter.done(result_task_id)
-                        print(f"Orchestrator: Task {result_task_id} completed.")
+                        logger.info("Orchestrator: Task %s completed.", result_task_id)
                     except Exception as e:
-                        print(
-                            f"Orchestrator: FATAL ERROR executing task '{task_id}': {e}"
+                        logger.error(
+                            "Orchestrator: FATAL ERROR executing task '%s': %s",
+                            task_id,
+                            e,
                         )
                         self.sorter.done(task_id)
                         raise e
 
         except Exception as e:
-            print(f"Orchestrator: FATAL ERROR in workflow execution: {e}")
+            logger.error("Orchestrator: FATAL ERROR in workflow execution: %s", e)
         finally:
             self.executor.shutdown(wait=True)
             self.bulkhead_manager.shutdown_all()
 
-        print(f"Orchestrator: Workflow '{self.workflow.name}' finished.")
+        logger.info("Orchestrator: Workflow '%s' finished.", self.workflow.name)
 
     def _execute_task(self, task_id: str) -> str:
         """Runs a single task and returns its task_id."""
@@ -90,13 +97,17 @@ class Orchestrator:
         if not task_model:
             raise ValueError(f"Task ID '{task_id}' not found.")
 
-        print(
-            f"Orchestrator: Executing task {task_id} (Type: {task_model.operator_type})"
+        logger.info(
+            "Orchestrator: Executing task %s (Type: %s)",
+            task_id,
+            task_model.operator_type,
         )
 
         handler_func = self.handler_map.get(task_model.operator_type)
         if not handler_func:
-            print(f"Orchestrator: Error - No handler for {task_model.operator_type}")
+            logger.error(
+                "Orchestrator: Error - No handler for %s", task_model.operator_type
+            )
             return []
 
         # All handlers now share this signature

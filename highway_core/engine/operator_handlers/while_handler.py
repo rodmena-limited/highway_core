@@ -1,4 +1,5 @@
 # highway_core/engine/operator_handlers/while_handler.py
+import logging
 import graphlib
 from highway_core.engine.models import WhileOperatorModel
 from highway_core.engine.state import WorkflowState
@@ -7,6 +8,8 @@ from highway_core.engine.operator_handlers.condition_handler import eval_conditi
 from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager
 from typing import List
+
+logger = logging.getLogger(__name__)
 
 
 def execute(
@@ -30,15 +33,18 @@ def execute(
         # 1. Evaluate condition
         resolved_condition = str(state.resolve_templating(task.condition))
         is_true = eval_condition(resolved_condition)
-        print(
-            f"WhileHandler: Iteration {iteration} - Resolved '{resolved_condition}'. Result: {is_true}"
+        logger.info(
+            "WhileHandler: Iteration %s - Resolved '%s'. Result: %s",
+            iteration,
+            resolved_condition,
+            is_true,
         )
 
         if not is_true:
-            print("WhileHandler: Condition is False. Exiting loop.")
+            logger.info("WhileHandler: Condition is False. Exiting loop.")
             break
 
-        print(f"WhileHandler: Condition True, executing loop body...")
+        logger.info("WhileHandler: Condition True, executing loop body...")
 
         # 2. Run the sub-workflow
         try:
@@ -50,7 +56,7 @@ def execute(
                 bulkhead_manager=bulkhead_manager,
             )
         except Exception as e:
-            print(f"WhileHandler: Sub-workflow failed: {e}")
+            logger.error("WhileHandler: Sub-workflow failed: %s", e)
             raise  # Propagate failure to the main orchestrator
 
         iteration += 1

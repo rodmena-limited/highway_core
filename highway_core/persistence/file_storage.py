@@ -5,15 +5,22 @@
 # - Complements the DB storage, which is for structured state.
 
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 class FileStorage:
     def __init__(self, base_path: str = "/var/highway/artifacts"):
         self.base_path = base_path
-        print(f"FileStorage initialized: {base_path}")
+        logger.info("FileStorage initialized: %s", base_path)
 
     def save_artifact(self, workflow_id: str, artifact_name: str, content: bytes):
         """Saves a large file artifact."""
-        print(
-            f"  [FileStorage] STUB: Saving artifact '{artifact_name}' for {workflow_id}."
+        logger.info(
+            "  [FileStorage] STUB: Saving artifact '%s' for %s.",
+            artifact_name,
+            workflow_id,
         )
         # path = f"{self.base_path}/{workflow_id}/{artifact_name}"
         # os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -23,7 +30,9 @@ class FileStorage:
 
     def load_artifact(self, workflow_id: str, artifact_name: str) -> bytes:
         """Loads a large file artifact."""
-        print(
-            f"  [FileStorage] STUB: Loading artifact '{artifact_name}' for {workflow_id}."
+        logger.info(
+            "  [FileStorage] STUB: Loading artifact '%s' for %s.",
+            artifact_name,
+            workflow_id,
         )
         return b"stubbed artifact content"

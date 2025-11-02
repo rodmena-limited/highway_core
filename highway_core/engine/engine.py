@@ -18,13 +18,14 @@ from highway_core.tools.bulkhead import BulkheadManager, BulkheadConfig
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
+logger = logging.getLogger(__name__)
 
 
 def run_workflow_from_yaml(yaml_path: str) -> None:
     """
     The main entry point for the Highway Execution Engine with bulkhead isolation.
     """
-    print(f"Engine: Loading workflow from: {yaml_path}")
+    logger.info("Engine: Loading workflow from: %s", yaml_path)
 
     # 1. Load and Parse YAML
     try:
@@ -33,7 +34,7 @@ def run_workflow_from_yaml(yaml_path: str) -> None:
 
         workflow_model = WorkflowModel.model_validate(workflow_data)
     except Exception as e:
-        print(f"Engine: Failed to load or parse YAML: {e}")
+        logger.error("Engine: Failed to load or parse YAML: %s", e)
         return
 
     # 2. Initialize Core Components
@@ -58,8 +59,10 @@ def run_workflow_from_yaml(yaml_path: str) -> None:
     try:
         workflow_bulkhead = bulkhead_manager.create_bulkhead(workflow_bulkhead_config)
     except ValueError as e:
-        print(
-            f"Engine: Failed to create bulkhead for workflow {workflow_model.name}: {e}"
+        logger.error(
+            "Engine: Failed to create bulkhead for workflow %s: %s",
+            workflow_model.name,
+            e,
         )
         # Fallback: run directly without bulkhead
         orchestrator.run()
@@ -71,9 +74,11 @@ def run_workflow_from_yaml(yaml_path: str) -> None:
     try:
         # Wait for the result of the workflow execution
         result = future.result()
-        print(f"Engine: Workflow {workflow_model.name} completed successfully.")
+        logger.info("Engine: Workflow %s completed successfully.", workflow_model.name)
     except Exception as e:
-        print(f"Engine: Workflow {workflow_model.name} failed with error: {e}")
+        logger.error(
+            "Engine: Workflow %s failed with error: %s", workflow_model.name, e
+        )
     finally:
         bulkhead_manager.shutdown_all()
 

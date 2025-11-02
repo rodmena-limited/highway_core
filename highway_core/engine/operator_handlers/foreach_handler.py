@@ -1,4 +1,5 @@
 # highway_core/engine/operator_handlers/foreach_handler.py
+import logging
 import graphlib
 from concurrent.futures import ThreadPoolExecutor
 from highway_core.engine.models import ForEachOperatorModel, AnyOperatorModel
@@ -7,6 +8,8 @@ from highway_core.engine.sub_workflow_runner import _run_sub_workflow
 from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager
 from typing import List, Dict, Any
+
+logger = logging.getLogger(__name__)
 
 
 def execute(
@@ -23,10 +26,10 @@ def execute(
 
     items = state.resolve_templating(task.items)
     if not isinstance(items, list):
-        print(f"ForEachHandler: Error - 'items' did not resolve to a list.")
+        logger.error("ForEachHandler: Error - 'items' did not resolve to a list.")
         return []
 
-    print(f"ForEachHandler: Starting parallel processing of {len(items)} items.")
+    logger.info("ForEachHandler: Starting parallel processing of %s items.", len(items))
 
     sub_graph_tasks = {t.task_id: t for t in task.loop_body}
     sub_graph = {t.task_id: set(t.dependencies) for t in task.loop_body}
@@ -52,10 +55,10 @@ def execute(
         try:
             future.result()  # Wait for it to finish and raise any errors
         except Exception as e:
-            print(f"ForEachHandler: Sub-workflow failed: {e}")
+            logger.error("ForEachHandler: Sub-workflow failed: %s", e)
             raise  # Propagate failure
 
-    print(f"ForEachHandler: All {len(items)} items processed.")
+    logger.info("ForEachHandler: All %s items processed.", len(items))
     return []  # This operator adds no new tasks to the main graph
 
 
@@ -71,7 +74,7 @@ def _run_foreach_item(
     Runs a single iteration of a foreach loop in a separate thread.
     This function acts as a "mini-orchestrator".
     """
-    print(f"ForEachHandler: [Item: {item}] Starting sub-workflow...")
+    logger.info("ForEachHandler: [Item: %s] Starting sub-workflow...", item)
 
     # 1. Create an ISOLATED state for this item
     # This is the fix for the race condition
@@ -87,4 +90,4 @@ def _run_foreach_item(
         bulkhead_manager=bulkhead_manager,
     )
 
-    print(f"ForEachHandler: [Item: {item}] Sub-workflow completed.")
+    logger.info("ForEachHandler: [Item: %s] Sub-workflow completed.", item)

@@ -2,11 +2,16 @@
 # Stubs for 'llm.*' functions.
 
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 def ingest_specification(url: str) -> dict:
-    print(f"  [Tool.LLM] STUB: Analyzing spec from {url}")
+    logger.info("  [Tool.LLM] STUB: Analyzing spec from %s", url)
     return {"repo_url": "git@github.com:ai/project.git", "microservices": []}
 
 
 def write_implementation(workspace: str, target: str, prompt: str) -> str:
-    print(f"  [Tool.LLM] STUB: Writing code for {target}")
+    logger.info("  [Tool.LLM] STUB: Writing code for %s", target)
     return "stubbed code diff..."

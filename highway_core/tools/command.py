@@ -1,15 +1,18 @@
 # --- tools/command.py ---
 # Implements 'tools.shell.run' for executing shell commands.
 
+import logging
 import subprocess
 import shlex
+
+logger = logging.getLogger(__name__)
 
 
 def run(command: str) -> dict:
     """
     Runs a shell command and returns its output, error, and status.
     """
-    print(f"  [Tool.Shell.Run] Executing: {command}")
+    logger.info("  [Tool.Shell.Run] Executing: %s", command)
     try:
         args = shlex.split(command)
         result = subprocess.run(
@@ -25,14 +28,14 @@ def run(command: str) -> dict:
             "stderr": result.stderr,
         }
     except subprocess.CalledProcessError as e:
-        print(f"  [Tool.Shell.Run] FAILED with code {e.returncode}")
+        logger.error("  [Tool.Shell.Run] FAILED with code %s", e.returncode)
         return {
             "status_code": e.returncode,
             "stdout": e.stdout,
             "stderr": e.stderr,
         }
     except Exception as e:
-        print(f"  [Tool.Shell.Run] FAILED: {e}")
+        logger.error("  [Tool.Shell.Run] FAILED: %s", e)
         return {
             "status_code": -1,
             "stdout": "",

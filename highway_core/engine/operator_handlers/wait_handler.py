@@ -3,6 +3,7 @@
 # Responsibilities:
 # - Pauses execution for a specified duration or until a specific time.
 
+import logging
 import time
 from datetime import datetime
 import re
@@ -11,6 +12,8 @@ from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager
 from typing import List
+
+logger = logging.getLogger(__name__)
 
 
 def execute(
@@ -25,13 +28,13 @@ def execute(
     """
     wait_for = state.resolve_templating(task.wait_for)
 
-    print(f"WaitHandler: Waiting for {wait_for}...")
+    logger.info("WaitHandler: Waiting for %s...", wait_for)
 
     # Handle different wait_for formats
     if isinstance(wait_for, (int, float)):
         # If it's a number, treat as seconds
         time.sleep(wait_for)
-        print("WaitHandler: Wait complete.")
+        logger.info("WaitHandler: Wait complete.")
 
     elif isinstance(wait_for, str):
         if wait_for.startswith("duration:"):
@@ -51,16 +54,17 @@ def execute(
                 else:
                     seconds = value  # Default to seconds if unit not recognized
                 time.sleep(seconds)
-                print("WaitHandler: Wait complete.")
+                logger.info("WaitHandler: Wait complete.")
             else:
                 # If format doesn't match, fallback to seconds (handle potential float conversion errors)
                 try:
                     seconds = float(duration_str)
                     time.sleep(seconds)
-                    print("WaitHandler: Wait complete.")
+                    logger.info("WaitHandler: Wait complete.")
                 except ValueError:
-                    print(
-                        f"WaitHandler: Invalid duration format '{duration_str}'. Continuing."
+                    logger.warning(
+                        "WaitHandler: Invalid duration format '%s'. Continuing.",
+                        duration_str,
                     )
 
         elif wait_for.startswith("time:"):
@@ -78,22 +82,26 @@ def execute(
 
             wait_seconds = (target_datetime - now).total_seconds()
             if wait_seconds > 0:
-                print(f"WaitHandler: Waiting until {target_time}...")
+                logger.info("WaitHandler: Waiting until %s...", target_time)
                 time.sleep(wait_seconds)
-                print("WaitHandler: Wait complete.")
+                logger.info("WaitHandler: Wait complete.")
             else:
-                print(
-                    f"WaitHandler: Target time {target_time} is in the past for today. Continuing."
+                logger.info(
+                    "WaitHandler: Target time %s is in the past for today. Continuing.",
+                    target_time,
                 )
 
         else:
             # For other string formats (datetime, event-based), we'll implement later
-            print(
-                f"WaitHandler: STUB: Waiting for event/datetime '{wait_for}'. Proceeding immediately."
+            logger.info(
+                "WaitHandler: STUB: Waiting for event/datetime '%s'. Proceeding immediately.",
+                wait_for,
             )
 
     else:
         # For other types (datetime objects), we'll implement later
-        print(f"WaitHandler: STUB: Waiting for '{wait_for}'. Proceeding immediately.")
+        logger.info(
+            "WaitHandler: STUB: Waiting for '%s'. Proceeding immediately.", wait_for
+        )
 
     return []

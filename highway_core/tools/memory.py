@@ -1,10 +1,13 @@
 # This is a special tool that requires the WorkflowState.
 # The task_handler will inject the 'state' argument.
 
+import logging
 import threading
 from highway_core.engine.state import WorkflowState
 from typing import Any, Dict
 from .decorators import tool
+
+logger = logging.getLogger(__name__)
 
 # A lock to make counter operations atomic
 _memory_lock = threading.Lock()
@@ -16,7 +19,7 @@ def set_memory(state: WorkflowState, key: str, value: Any) -> Dict[str, Any]:
     Saves a value to the workflow's volatile memory.
     This tool MUST return a dict for the 'mem_report' result_key.
     """
-    print(f"Tool.Memory: Setting key '{key}'")
+    logger.info("Tool.Memory: Setting key '%s'", key)
     state._data["memory"][key] = value  # Accessing internal state directly
 
     # Return value as specified by the test workflow
@@ -35,7 +38,7 @@ def increment_memory(state: WorkflowState, key: str) -> Dict[str, Any]:
         new_val = current_val + 1
         state._data["memory"][key] = new_val
 
-    print(f"Tool.Memory: Incremented '{key}' to {new_val}")
+    logger.info("Tool.Memory: Incremented '%s' to %s", key, new_val)
     return {"key": key, "new_value": new_val}
 
 
@@ -45,7 +48,7 @@ def add_memory(state: WorkflowState, key: str, value: Any) -> Dict[str, Any]:
     Adds a value to a memory key. If the current value is a number, adds to it.
     If the value parameter contains an arithmetic expression, evaluates it first.
     """
-    print(f"Tool.Memory: Adding value to key '{key}'")
+    logger.info("Tool.Memory: Adding value to key '%s'", key)
 
     computed_value: int = 0
 
@@ -68,14 +71,17 @@ def add_memory(state: WorkflowState, key: str, value: Any) -> Dict[str, Any]:
                         total += int(part)
                 except ValueError:
                     # If we can't convert to int, just return early
-                    print(f"Tool.Memory: Could not convert '{part}' to integer")
+                    logger.warning(
+                        "Tool.Memory: Could not convert '%s' to integer", part
+                    )
                     return {"key": key, "status": "error"}
 
             computed_value = total
         except Exception:
             # If expression evaluation fails, just use the raw value as an integer if possible
-            print(
-                f"Tool.Memory: Error evaluating expression '{value}', using raw value"
+            logger.warning(
+                "Tool.Memory: Error evaluating expression '%s', using raw value",
+                value,
             )
             try:
                 computed_value = int(value)

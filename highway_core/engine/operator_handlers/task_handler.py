@@ -1,8 +1,11 @@
+import logging
 from highway_core.engine.models import TaskOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager, BulkheadConfig
 from typing import Optional, List
+
+logger = logging.getLogger(__name__)
 
 
 def execute(
@@ -15,14 +18,14 @@ def execute(
     """
     Executes a single TaskOperator with bulkhead isolation.
     """
-    print(f"TaskHandler: Executing task: {task.task_id}")
+    logger.info("TaskHandler: Executing task: %s", task.task_id)
 
     # 1. Get the tool from the registry
     tool_name = task.function
     try:
         tool_func = registry.get_function(tool_name)
     except KeyError:
-        print(f"TaskHandler: Error - {tool_name} not found.")
+        logger.error("TaskHandler: Error - %s not found.", tool_name)
         raise
 
     # 2. Resolve arguments
@@ -51,10 +54,10 @@ def execute(
             )
             bulkhead = bulkhead_manager.create_bulkhead(config)
 
-        print(f"TaskHandler: Getting or creating bulkhead for '{tool_name}'")
+        logger.info("TaskHandler: Getting or creating bulkhead for '%s'", tool_name)
 
         # Execute the tool function in the bulkhead
-        print(f"TaskHandler: Calling {tool_name} via bulkhead...")
+        logger.info("TaskHandler: Calling %s via bulkhead...", tool_name)
         future = bulkhead.execute(tool_func, *resolved_args, **resolved_kwargs)
 
         try:
@@ -62,11 +65,13 @@ def execute(
                 future.result().result
             )  # Get the actual result from ExecutionResult
         except Exception as e:
-            print(f"TaskHandler: Error executing {tool_name} in bulkhead: {e}")
+            logger.error(
+                "TaskHandler: Error executing %s in bulkhead: %s", tool_name, e
+            )
             raise
     else:
         # For backward compatibility, execute without bulkhead if not provided
-        print(f"TaskHandler: Calling {tool_name} with args={resolved_args}")
+        logger.info("TaskHandler: Calling %s with args=%s", tool_name, resolved_args)
         result = tool_func(*resolved_args, **resolved_kwargs)
 
     # 5. Save the result

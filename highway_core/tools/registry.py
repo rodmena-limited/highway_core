@@ -1,7 +1,10 @@
+import logging
 import pkgutil
 import importlib
 from typing import Callable, Dict
 from .decorators import TOOL_REGISTRY
+
+logger = logging.getLogger(__name__)
 
 
 class ToolRegistry:
@@ -10,7 +13,7 @@ class ToolRegistry:
         # populated by the @tool decorator.
         self.functions = TOOL_REGISTRY
         self._discover_tools()
-        print(f"ToolRegistry loaded with {len(self.functions)} functions.")
+        logger.info("ToolRegistry loaded with %s functions.", len(self.functions))
 
     def _discover_tools(self):
         """Dynamically imports all modules in 'highway_core.tools'."""
@@ -26,6 +29,6 @@ class ToolRegistry:
     def get_function(self, name: str) -> Callable:
         func = self.functions.get(name)
         if func is None:
-            print(f"Error: Tool '{name}' not found in registry.")
+            logger.error("Error: Tool '%s' not found in registry.", name)
             raise KeyError(f"Tool '{name}' not found.")
         return func

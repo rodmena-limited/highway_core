@@ -5,6 +5,7 @@
 # - Evaluates the condition.
 # - Updates orchestrator state to handle conditional flow.
 
+import logging
 from highway_core.engine.models import ConditionOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
@@ -12,6 +13,8 @@ from typing import Optional
 import ast
 import operator
 import warnings
+
+logger = logging.getLogger(__name__)
 
 
 def execute(
@@ -24,14 +27,16 @@ def execute(
     Evaluates a ConditionOperator.
     Updates the orchestrator's completed tasks to handle conditional branches.
     """
-    print(f"ConditionHandler: Evaluating '{task.condition}'")
+    logger.info("ConditionHandler: Evaluating '%s'", task.condition)
 
     # 1. Resolve the condition string
     resolved_condition_value = state.resolve_templating(task.condition)
     # Ensure it's a string for eval_condition
     resolved_condition_str = str(resolved_condition_value)
     result = eval_condition(resolved_condition_str)
-    print(f"ConditionHandler: Resolved to '{resolved_condition_str}'. Result: {result}")
+    logger.info(
+        "ConditionHandler: Resolved to '%s'. Result: %s", resolved_condition_str, result
+    )
 
     # 2. Determine which path to take and mark the other as conceptually completed
     next_task_id: Optional[str] = None
@@ -39,17 +44,17 @@ def execute(
     if result:
         next_task_id = task.if_true
         skipped_task_id = task.if_false
-        print(f"ConditionHandler: Taking 'if_true' path to '{next_task_id}'")
+        logger.info("ConditionHandler: Taking 'if_true' path to '%s'", next_task_id)
     else:
         next_task_id = task.if_false
         skipped_task_id = task.if_true
-        print(f"ConditionHandler: Taking 'if_false' path to '{next_task_id}'")
+        logger.info("ConditionHandler: Taking 'if_false' path to '%s'", next_task_id)
 
     # 3. Mark the skipped branch as conceptually completed to satisfy dependencies
     # This is needed for tasks that depend on both conditional branches (like log_end in the test)
     if skipped_task_id:
-        print(
-            f"ConditionHandler: Marking '{skipped_task_id}' as conceptually completed."
+        logger.info(
+            "ConditionHandler: Marking '%s' as conceptually completed.", skipped_task_id
         )
         # Mark the skipped task as done in the sorter so that tasks
         # depending on BOTH conditional branches can proceed
@@ -66,7 +71,9 @@ def eval_condition(condition_str: str):
         tree = ast.parse(condition_str.strip(), mode="eval")
         return _eval_node(tree.body)
     except Exception as e:
-        print(f"ConditionHandler: Error evaluating condition '{condition_str}': {e}")
+        logger.error(
+            "ConditionHandler: Error evaluating condition '%s': %s", condition_str, e
+        )
         return False
 
 
