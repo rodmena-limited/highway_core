@@ -136,11 +136,33 @@ class Orchestrator:
                     return
 
                 while self.sorter.is_active():
-                    if (
-                        not runnable_tasks
-                    ):  # If no tasks are ready, break to avoid infinite loop
+                    if not runnable_tasks:
+                        # If no tasks are ready but the sorter is still active, this could indicate a deadlock
+                        # due to circular dependencies or other issues in the workflow
+                        logger.warning(
+                            "Orchestrator: No runnable tasks but sorter is still active. "
+                            "This may indicate a potential circular dependency or unmet dependencies. "
+                            "Checking remaining dependencies..."
+                        )
+                        
+                        # Log remaining dependencies for debugging
+                        remaining_tasks = set(self.graph.keys()) - self.completed_tasks
+                        if remaining_tasks:
+                            logger.warning(
+                                "Orchestrator: Remaining tasks: %s. "
+                                "Their dependencies: %s", 
+                                remaining_tasks, 
+                                {task_id: self.graph[task_id] for task_id in remaining_tasks}
+                            )
+                        
+                        # Instead of breaking, let's see if dependencies can eventually be resolved
+                        # For now, just log the issue and continue
                         logger.info(
-                            "Orchestrator: No runnable tasks but sorter is still active. Breaking to avoid infinite loop."
+                            "Orchestrator: Stopping workflow execution due to unmet dependencies."
+                        )
+                        self.persistence.fail_workflow(
+                            self.run_id, 
+                            "Workflow stopped due to unmet dependencies - possible circular dependency"
                         )
                         break
 
@@ -165,12 +187,26 @@ class Orchestrator:
                             len(tasks_to_execute),
                             list(tasks_to_execute),
                         )
-                        futures: Dict[Future[str], str] = {
-                            self.executor_pool.submit(
-                                self._execute_task, task_id
-                            ): task_id  # <-- Use executor_pool
-                            for task_id in tasks_to_execute
-                        }
+                        futures: Dict[Future[str], str] = {}
+                        # Submit each task with more specific error handling
+                        for task_id in tasks_to_execute:
+                            try:
+                                future = self.executor_pool.submit(
+                                    self._execute_task, task_id
+                                )
+                                futures[future] = task_id
+                            except Exception as e:
+                                logger.error(
+                                    "Orchestrator: Failed to submit task '%s' to executor: %s",
+                                    task_id, e
+                                )
+                                self.persistence.fail_workflow(
+                                    self.run_id, 
+                                    f"Failed to submit task '{task_id}': {str(e)}"
+                                )
+                                raise e
+
+                        # Wait for all submitted tasks to complete
                         for future in futures:
                             task_id = futures[future]
                             try:
@@ -186,6 +222,17 @@ class Orchestrator:
                                     e,
                                 )
                                 self.persistence.fail_workflow(self.run_id, str(e))
+                                # Ensure task is marked as done to prevent workflow from hanging
+                                try:
+                                    self.sorter.done(task_id)
+                                    self.completed_tasks.add(task_id)
+                                except Exception:
+                                    # If we can't mark the task as done, the workflow may hang
+                                    logger.error(
+                                        "Orchestrator: Could not mark failed task %s as done. "
+                                        "This may cause workflow to hang.", 
+                                        task_id
+                                    )
                                 raise e
                     else:
                         logger.info(
@@ -209,55 +256,83 @@ class Orchestrator:
         """Runs a single task and returns its task_id."""
         task_model = self.workflow.tasks.get(task_id)
         if not task_model:
-            raise ValueError(f"Task ID '{task_id}' not found.")
+            error_msg = f"Task ID '{task_id}' not found in workflow definition."
+            logger.error("Orchestrator: %s", error_msg)
+            raise ValueError(error_msg)
 
         logger.info(
             "Orchestrator: Executing task %s (Type: %s)",
             task_id,
             task_model.operator_type,
         )
-        self.persistence.start_task(self.run_id, task_model)
+        
+        try:
+            self.persistence.start_task(self.run_id, task_model)
+        except Exception as e:
+            logger.error(
+                "Orchestrator: Failed to persist start of task '%s': %s",
+                task_id, e
+            )
+            raise ValueError(f"Failed to persist task '{task_id}' start state: {str(e)}")
 
         handler_func = self.handler_map.get(task_model.operator_type)
         if not handler_func:
-            # ... (error logic)
-            logger.error(
-                "Orchestrator: Error - No handler for %s", task_model.operator_type
-            )
-            raise ValueError(
-                f"No handler for operator type: {task_model.operator_type}"
-            )
+            error_msg = f"No handler for operator type: {task_model.operator_type}"
+            logger.error("Orchestrator: %s", error_msg)
+            raise ValueError(error_msg)
 
-        # *** THIS IS THE KEY CHANGE ***
         # Select the correct executor based on the task's runtime
-
         selected_executor: Optional[BaseExecutor] = None
         if isinstance(task_model, TaskOperatorModel):
             runtime = task_model.runtime
             selected_executor = self.executors.get(runtime)
             if not selected_executor:
-                logger.error(
-                    "Orchestrator: Error - No executor registered for runtime '%s'",
-                    runtime,
-                )
-                raise ValueError(f"No executor registered for runtime: {runtime}")
+                error_msg = f"No executor registered for runtime: {runtime}"
+                logger.error("Orchestrator: %s", error_msg)
+                raise ValueError(error_msg)
 
-        # All handlers now share this signature
-        handler_func(
-            task=task_model,
-            state=self.state,
-            orchestrator=self,
-            registry=self.registry,
-            bulkhead_manager=self.bulkhead_manager,
-            executor=selected_executor,  # <-- Pass the selected executor
-            resource_manager=self.resource_manager,
-            workflow_run_id=self.run_id,
-        )
+        try:
+            # All handlers now share this signature
+            handler_func(
+                task=task_model,
+                state=self.state,
+                orchestrator=self,
+                registry=self.registry,
+                bulkhead_manager=self.bulkhead_manager,
+                executor=selected_executor,  # <-- Pass the selected executor
+                resource_manager=self.resource_manager,
+                workflow_run_id=self.run_id,
+            )
+        except Exception as e:
+            # Mark the task as failed in persistence before re-raising
+            try:
+                self.persistence.fail_task(
+                    self.run_id, 
+                    task_id, 
+                    str(e)
+                )
+            except Exception as persistence_error:
+                logger.error(
+                    "Orchestrator: Error persisting task failure for '%s': %s",
+                    task_id, persistence_error
+                )
+            logger.error(
+                "Orchestrator: Handler function failed for task '%s': %s",
+                task_id, e
+            )
+            raise e
 
         # At the end of _execute_task, before returning
         # Mark the task as done in the sorter (this allows dependent tasks to become ready)
-        self.sorter.done(task_id)  # Tell the sorter this task is done
-        self.completed_tasks.add(task_id)  # Add to our set
+        try:
+            self.sorter.done(task_id)  # Tell the sorter this task is done
+            self.completed_tasks.add(task_id)  # Add to our set
+        except Exception as e:
+            logger.error(
+                "Orchestrator: Failed to mark task '%s' as done in sorter: %s",
+                task_id, e
+            )
+            raise e
 
         return task_id
 
