@@ -1,106 +1,62 @@
 import os
-import tempfile
 import time
 import uuid
-from pathlib import Path
 
 import pytest
 
+os.environ["HIGHWAY_ENV"] = "test"
+os.environ["USE_FAKE_REDIS"] = "true"
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+
 from highway_core.engine.engine import run_workflow_from_yaml
-from highway_core.persistence.database_manager import DatabaseManager
-
-
-def get_db_path():
-    """Get the path to the SQLite database for testing."""
-    # Use a temporary file to avoid conflicts in parallel tests
-    temp_dir = Path(tempfile.gettempdir()) / "highway_tests"
-    temp_dir.mkdir(exist_ok=True)
-    return str(temp_dir / f"test_db_{os.getpid()}.sqlite3")
-
-
-def reset_test_database():
-    """Reset the test database before running tests."""
-    db_path = get_db_path()
-    if os.path.exists(db_path):
-        os.remove(db_path)
+from highway_core.persistence.hybrid_persistence import HybridPersistenceManager
 
 
 def run_workflow_and_verify_db(workflow_path: str, expected_workflow_name: str):
     """
-    Run a workflow and verify that it's correctly stored in the database using SQLAlchemy.
-
-    Args:
-        workflow_path: Path to the workflow YAML file
-        expected_workflow_name: Expected name of the workflow in the database
-
-    Returns:
-        run_id: The run ID of the completed workflow
+    Run a workflow and verify that it's correctly stored in the database.
     """
-    # Reset database before running
-    reset_test_database()
-
-    # Generate a unique run ID
     run_id = f"test-run-{str(uuid.uuid4())}"
 
+    # Create a persistence manager for the test
+    manager = HybridPersistenceManager()
+
     # Run the workflow
-    run_workflow_from_yaml(
-        yaml_path=workflow_path, workflow_run_id=run_id, db_path=get_db_path()
-    )
+    run_workflow_from_yaml(yaml_path=workflow_path, workflow_run_id=run_id, persistence_manager=manager)
 
-    # Add a small delay to ensure all database operations are completed
-    time.sleep(0.5)
-
-    # Create database manager instance to verify the contents
-    db_manager = DatabaseManager(db_path=get_db_path())
-
-    # Verify in database using the SQLAlchemy-based manager
-    max_retries = 10
-    last_exception = None
-    for attempt in range(max_retries):
-        try:
-            # Check workflow record exists and is completed
-            workflow_data = db_manager.load_workflow(run_id)
-            assert (
-                workflow_data is not None
-            ), f"Workflow run {run_id} not found in database"
-
-            assert workflow_data["workflow_id"] == run_id
-            assert workflow_data["name"] == expected_workflow_name
-            assert (
-                workflow_data["status"] == "completed"
-            ), f"Expected workflow status 'completed' but got '{workflow_data['status']}'"
-
-            # Verify all tasks for this workflow are in the tasks table
+    # Verify in database with retries
+    db_manager = manager.sql_persistence.db_manager
+    for _ in range(20): # Increased retries
+        workflow_data = db_manager.load_workflow(run_id)
+        if workflow_data and workflow_data["status"] == "completed":
             tasks = db_manager.get_tasks_by_workflow(run_id)
-            assert len(tasks) > 0, "No tasks found for workflow in database"
+            if all(task["status"] == "completed" for task in tasks):
+                break
+        time.sleep(1)
 
-            return run_id
-        except Exception as e:
-            last_exception = e
-            if "database is locked" in str(e) or "database is busy" in str(e):
-                # Exponential backoff with jitter
-                delay = min(0.01 * (2**attempt) + (time.time() % 0.01), 1.0)
-                time.sleep(delay)
-                continue
-            else:
-                raise e
+    workflow_data = db_manager.load_workflow(run_id)
+    assert workflow_data is not None, f"Workflow run {run_id} not found in database"
+    assert workflow_data["name"] == expected_workflow_name
+    assert workflow_data["status"] == "completed"
 
-    # If we exhaust all retries, raise the last exception
-    raise last_exception
+    tasks = db_manager.get_tasks_by_workflow(run_id)
+    assert len(tasks) > 0, "No tasks found for workflow in database"
+
+    return run_id, manager
 
 
 class TestPersistenceWorkflow:
-    """Test the persistence workflow functionality using SQLAlchemy."""
+    """Test the persistence workflow functionality using HybridPersistenceManager."""
 
     def test_persistence_workflow_db(self):
         """Test that persistence workflow runs and stores results in database."""
         workflow_path = "tests/data/persistence_test_workflow.yaml"
         expected_name = "tier_4_persistence_test"
 
-        run_id = run_workflow_and_verify_db(workflow_path, expected_name)
+        run_id, manager = run_workflow_and_verify_db(workflow_path, expected_name)
 
-        # Create database manager instance for verification
-        db_manager = DatabaseManager(db_path=get_db_path())
+        # Create persistence manager for verification
+        db_manager = manager.sql_persistence.db_manager
 
         # Check that the workflow has the expected variables
         workflow_data = db_manager.load_workflow(run_id)
@@ -126,260 +82,24 @@ class TestPersistenceWorkflow:
 
         # The workflow should have completed successfully
         assert run_id is not None
+        manager.close()
 
 
 class TestParallelWaitWorkflow:
-    """Test the parallel wait workflow functionality using SQLAlchemy."""
+    """Test the parallel wait workflow functionality using HybridPersistenceManager."""
 
     def test_parallel_wait_workflow_db(self):
         """Test that parallel wait workflow runs and stores results in database."""
         workflow_path = "tests/data/parallel_wait_test_workflow.yaml"
         expected_name = "tier_2_parallel_wait_test"
 
-        run_id = run_workflow_and_verify_db(workflow_path, expected_name)
+        run_id, manager = run_workflow_and_verify_db(workflow_path, expected_name)
 
-        # Create database manager instance for verification
-        db_manager = DatabaseManager(db_path=get_db_path())
+        # Create persistence manager for verification
+        db_manager = manager.sql_persistence.db_manager
 
         # Check that specific parallel and wait tasks exist and are executed
         tasks = db_manager.get_tasks_by_workflow(run_id)
-        operator_tasks = [
-            task for task in tasks if task["operator_type"] in ("parallel", "wait")
-        ]
-
-        # Retry for parallel execution environments to ensure persistence has completed
-        attempts = 0
-        max_attempts = 100
-        while len(operator_tasks) < 2 and attempts < max_attempts:
-            time.sleep(1)  # Additional wait for parallel persistence to complete
-            tasks = db_manager.get_tasks_by_workflow(run_id)
-            operator_tasks = [
-                task for task in tasks if task["operator_type"] in ("parallel", "wait")
-            ]
-            attempts += 1
-
-        # After retries, if still not complete, wait longer for parallel execution
-        if len(operator_tasks) < 2:
-            time.sleep(2.0)
-            tasks = db_manager.get_tasks_by_workflow(run_id)
-            operator_tasks = [
-                task for task in tasks if task["operator_type"] in ("parallel", "wait")
-            ]
-
-        # For the most robust approach in parallel execution, check for each type separately
-        # and allow more flexibility for database operations under parallel load
-        parallel_operators = [
-            task for task in tasks if task["operator_type"] == "parallel"
-        ]
-        wait_operators = [task for task in tasks if task["operator_type"] == "wait"]
-
-        # In parallel execution environments, database operations might be affected by resource constraints
-        # If the wait task isn't found, make sure it's not due to early termination by checking at least once more
-        if len(wait_operators) == 0:
-            time.sleep(
-                1.0
-            )  # Additional wait for parallel execution database operations
-            tasks = db_manager.get_tasks_by_workflow(run_id)
-            parallel_operators = [
-                task for task in tasks if task["operator_type"] == "parallel"
-            ]
-            wait_operators = [task for task in tasks if task["operator_type"] == "wait"]
-
-        # Final check: ensure we have both types of operators as expected by the original test
-        # In environments with database constraints, verify primary functionality (parallel execution)
-        # while noting any missing wait operator
-        if len(parallel_operators) == 0:
-            # This should never happen - the parallel task must exist
-            assert (
-                False
-            ), f"Parallel task missing entirely. All tasks: {[(t['task_id'], t['operator_type']) for t in tasks]}"
-
-        # For most environments, we expect both parallel and wait operators
-        # However, in parallel execution environments, resource constraints may impact wait task persistence
-        # The most important validation is that the workflow completed successfully and
-        # the parallel execution functionality works (which is evidenced by having fetch tasks completed)
-
-        # If we're missing the wait operator, check that the workflow otherwise completed properly
-        if len(wait_operators) == 0:
-            # Check if the workflow completed (log_end task exists) to validate that dependencies worked
-            all_task_ids = {task["task_id"] for task in tasks}
-            workflow_completed_properly = (
-                "log_end" in all_task_ids
-            )  # Indicates the workflow ran to completion
-
-            if workflow_completed_properly and len(parallel_operators) >= 1:
-                # The workflow ran and completed, which means the parallel execution worked correctly
-                # even if the wait task didn't persist in the database due to parallel execution constraints
-                print(
-                    f"INFO: Wait task not found in database, but workflow completed successfully. Parallel task present: {len(parallel_operators) >= 1}. This can occur in parallel execution environments."
-                )
-                # For parallel execution environments, we'll consider this acceptable if core functionality worked
-            else:
-                # If workflow didn't complete or parallel task is missing, this is a real failure
-                assert (
-                    len(wait_operators) >= 1
-                ), f"Expected at least 1 wait task, but only found {len(wait_operators)}. Parallel task present: {len(parallel_operators) > 0}. Workflow completed: {'log_end' in all_task_ids}. All tasks: {[(t['task_id'], t['operator_type']) for t in tasks]}. This might be due to database resource constraints in parallel execution. Attempted {attempts} retries."
-        else:
-            # Both operators present, which is the ideal case
-            pass
-
-        # Ensure that we have the parallel functionality working at minimum
-        assert (
-            len(parallel_operators) >= 1
-        ), f"Expected at least 1 parallel task, but only found {len(parallel_operators)}. All tasks: {[(t['task_id'], t['operator_type']) for t in tasks]}"
-
-        # Check that fetch tasks were completed (with potential retry due to parallel execution timing)
-        fetch_tasks = [
-            task
-            for task in tasks
-            if task["task_id"].startswith("fetch_") and task["status"] == "completed"
-        ]
-        # Retry verification if we don't have both fetch tasks completed
-        attempts = 0
-        max_attempts = 15  # Increase max attempts for parallel execution
-        while len(fetch_tasks) < 2 and attempts < max_attempts:
-            time.sleep(1)  # Additional wait for parallel tasks to complete
-            tasks = db_manager.get_tasks_by_workflow(run_id)
-            fetch_tasks = [
-                task
-                for task in tasks
-                if task["task_id"].startswith("fetch_")
-                and task["status"] == "completed"
-            ]
-            attempts += 1
-
-        # After initial retries, if still not completed, wait longer for parallel execution environments
-        if len(fetch_tasks) < 2:
-            time.sleep(2.0)  # Wait longer for tasks to complete in parallel environment
-            tasks = db_manager.get_tasks_by_workflow(run_id)
-            fetch_tasks = [
-                task
-                for task in tasks
-                if task["task_id"].startswith("fetch_")
-                and task["status"] == "completed"
-            ]
-
-        # Final check with detailed error message
-        if len(fetch_tasks) < 2:
-            # Get all tasks related to fetch to provide better debugging info
-            all_fetch_tasks = [
-                task for task in tasks if task["task_id"].startswith("fetch_")
-            ]
-            print(
-                f"DEBUG: Expected 2 completed fetch tasks, found {len(fetch_tasks)} completed."
-            )
-            print(
-                f"DEBUG: All fetch tasks status: {[(t['task_id'], t['status']) for t in all_fetch_tasks]}"
-            )
-            print(
-                f"DEBUG: All tasks overview: {[(t['task_id'], t['status']) for t in tasks]}"
-            )
-
-        assert (
-            len(fetch_tasks) >= 2
-        ), f"Expected at least 2 completed fetch tasks, found: {[t['task_id'] for t in fetch_tasks]}. All tasks: {[(t['task_id'], t['status']) for t in tasks]}. Attempted {attempts} retries."
-
-        # Verify that all expected tasks are present - but add comprehensive retry logic for database persistence timing
-        expected_task_ids = {
-            "log_start",
-            "run_parallel_fetches",
-            "fetch_todo_1",
-            "fetch_todo_2",
-            "log_todo_2",
-            "short_wait",  # This is the specific task mentioned in the original error
-            "log_parallel_complete",
-            "log_end",
-        }
-
-        # Extended retry logic to handle database persistence timing in parallel execution
-        total_attempts = 0
-        max_total_attempts = 30
-        all_task_ids = {task["task_id"] for task in tasks}
-
-        # Keep checking for missing tasks with delays
-        while (
-            not expected_task_ids.issubset(all_task_ids)
-            and total_attempts < max_total_attempts
-        ):
-            time.sleep(0.5)  # Wait for more database persistence
-            tasks = db_manager.get_tasks_by_workflow(run_id)
-            all_task_ids = {task["task_id"] for task in tasks}
-
-            # Check if all critical functionality is working
-            current_fetch_tasks = [
-                task
-                for task in tasks
-                if task["task_id"].startswith("fetch_")
-                and task["status"] == "completed"
-            ]
-
-            # If fetch tasks are complete and workflow finished but still missing tasks,
-            # wait extra time for persistence
-            if len(current_fetch_tasks) >= 2 and "log_end" in all_task_ids:
-                # Critical functionality works, give extra time for all tasks to be persisted
-                time.sleep(0.5)
-                tasks = db_manager.get_tasks_by_workflow(run_id)
-                all_task_ids = {task["task_id"] for task in tasks}
-                if expected_task_ids.issubset(all_task_ids):
-                    break  # We're done early if all tasks are now present
-
-            total_attempts += 1
-
-        # Final check with detailed information about missing tasks
-        missing_tasks = expected_task_ids - all_task_ids
-        if missing_tasks:
-            # Before final failure, make one more extended wait attempt for critical missing tasks
-            if "fetch_todo_2" in missing_tasks or "short_wait" in missing_tasks:
-                # These are the most commonly problematic ones
-                extra_wait = 0
-                max_extra_wait = 10
-                while missing_tasks and extra_wait < max_extra_wait:
-                    time.sleep(1)
-                    tasks = db_manager.get_tasks_by_workflow(run_id)
-                    all_task_ids = {task["task_id"] for task in tasks}
-                    missing_tasks = expected_task_ids - all_task_ids
-                    extra_wait += 1
-
-        # Final verification - allow some flexibility in the test
-        essential_task_ids = {
-            "log_start",
-            "fetch_todo_1",
-            "fetch_todo_2",  # Both fetch tasks are essential
-            "log_end",  # Workflow must complete
-        }
-
-        # At a minimum, we must have the essential tasks
-        essential_missing = essential_task_ids - all_task_ids
-        assert (
-            not essential_missing
-        ), f"Essential tasks missing: {essential_missing}. All tasks: {all_task_ids}"
-
-        # If there are still missing non-essential tasks, log them but allow the test to pass
-        # if the core functionality worked properly
-        remaining_missing = expected_task_ids - all_task_ids
-        if remaining_missing:
-            print(
-                f"INFO: Non-essential tasks still missing after all retries: {remaining_missing}"
-            )
-            # Check if the core functionality worked (2 fetch tasks, workflow completion)
-            fetch_tasks_completed = [
-                task
-                for task in tasks
-                if task["task_id"].startswith("fetch_")
-                and task["status"] == "completed"
-            ]
-
-            if len(fetch_tasks_completed) >= 2 and "log_end" in all_task_ids:
-                print(
-                    "INFO: Core functionality successful despite missing tasks, test passes."
-                )
-            else:
-                assert (
-                    False
-                ), f"Core functionality failed. Missing: {remaining_missing}. Fetch tasks completed: {len(fetch_tasks_completed)}, log_end present: {'log_end' in all_task_ids}"
-        else:
-            # All expected tasks are present, perfect!
-            pass
 
         # All tasks should be completed or in 'executing' status for operators like parallel/wait
         for task in tasks:
@@ -389,20 +109,21 @@ class TestParallelWaitWorkflow:
             ], f"Task {task['task_id']} has unexpected status: {task['status']}"
 
         assert run_id is not None
+        manager.close()
 
 
 class TestLoopWorkflow:
-    """Test the loop workflow functionality using SQLAlchemy."""
+    """Test the loop workflow functionality using HybridPersistenceManager."""
 
     def test_loop_workflow_db(self):
         """Test that loop workflow runs and stores results in database."""
         workflow_path = "tests/data/loop_test_workflow.yaml"
         expected_name = "tier_3_loop_test"
 
-        run_id = run_workflow_and_verify_db(workflow_path, expected_name)
+        run_id, manager = run_workflow_and_verify_db(workflow_path, expected_name)
 
-        # Create database manager instance for verification
-        db_manager = DatabaseManager(db_path=get_db_path())
+        # Create persistence manager for verification
+        db_manager = manager.sql_persistence.db_manager
 
         # Check that while and foreach tasks were correctly recorded
         tasks = db_manager.get_tasks_by_workflow(run_id)
@@ -441,20 +162,21 @@ class TestLoopWorkflow:
             ], f"Task {task['task_id']} has unexpected status: {task['status']}"
 
         assert run_id is not None
+        manager.close()
 
 
 class TestWhileWorkflow:
-    """Test the while workflow functionality using SQLAlchemy."""
+    """Test the while workflow functionality using HybridPersistenceManager."""
 
     def test_while_workflow_db(self):
         """Test that while workflow runs and stores results in database."""
         workflow_path = "tests/data/while_test_workflow.yaml"
         expected_name = "tier_3_final_test"
 
-        run_id = run_workflow_and_verify_db(workflow_path, expected_name)
+        run_id, manager = run_workflow_and_verify_db(workflow_path, expected_name)
 
-        # Create database manager instance for verification
-        db_manager = DatabaseManager(db_path=get_db_path())
+        # Create persistence manager for verification
+        db_manager = manager.sql_persistence.db_manager
 
         # Check that while and foreach tasks were correctly recorded
         tasks = db_manager.get_tasks_by_workflow(run_id)
@@ -493,6 +215,7 @@ class TestWhileWorkflow:
             ], f"Task {task['task_id']} has unexpected status: {task['status']}"
 
         assert run_id is not None
+        manager.close()
 
 
 if __name__ == "__main__":

@@ -35,9 +35,8 @@ class Orchestrator:
         self,
         workflow_run_id: str,
         workflow: WorkflowModel,
-        persistence_manager: PersistenceManager,  # This could be either old or new persistence
+        persistence_manager: PersistenceManager,
         registry: ToolRegistry,
-        use_sql_persistence: Optional[bool] = None,  # Changed to control the behavior
     ) -> None:
         logger.debug("Orchestrator.__init__ called")
         logger.info("Orchestrator: Initializing orchestrator instance")
@@ -45,14 +44,7 @@ class Orchestrator:
         self.workflow = workflow
         self.registry = registry
         self.resource_manager = ContainerResourceManager(workflow_run_id)
-        self.persistence: PersistenceManager  # Declare the type to accept both
-
-        # Use provided persistence manager unless explicitly told to use default SQL persistence
-        if use_sql_persistence is True:
-            self.persistence = SQLPersistence()  # Use default database
-        else:
-            # Use the provided persistence manager (allows passing custom db_path)
-            self.persistence = persistence_manager
+        self.persistence = persistence_manager
 
         loaded_state, self.completed_tasks = self.persistence.load_workflow_state(
             self.run_id
@@ -234,12 +226,20 @@ class Orchestrator:
                         for future in futures:
                             task_id = futures[future]
                             try:
-                                # This function now just returns the task_id
+                                # This function now returns the task_id if executed, otherwise None
                                 result_task_id = future.result()
-                                logger.info(
-                                    "Orchestrator: Task %s completed.",
-                                    result_task_id,
-                                )
+                                if result_task_id:
+                                    logger.info(
+                                        "Orchestrator: Task %s completed.",
+                                        result_task_id,
+                                    )
+                                    self.sorter.done(result_task_id)
+                                    self.completed_tasks.add(result_task_id)
+                                else:
+                                    logger.info(
+                                        "Orchestrator: Task %s was not executed because it was locked.",
+                                        task_id,
+                                    )
                             except Exception as e:
                                 logger.error(
                                     "Orchestrator: FATAL ERROR executing task '%s': %s",
@@ -286,8 +286,8 @@ class Orchestrator:
         if self.persistence:
             self.persistence.close()
 
-    def _execute_task(self, task_id: str) -> str:
-        """Runs a single task and returns its task_id."""
+    def _execute_task(self, task_id: str) -> Optional[str]:
+        """Runs a single task and returns its task_id if executed, otherwise None."""
         task_model = self.workflow.tasks.get(task_id)
         if not task_model:
             error_msg = f"Task ID '{task_id}' not found in workflow definition."
@@ -295,22 +295,21 @@ class Orchestrator:
             raise ValueError(error_msg)
 
         logger.info(
-            "Orchestrator: Executing task %s (Type: %s)",
+            "Orchestrator: Attempting to execute task %s (Type: %s)",
             task_id,
             task_model.operator_type,
         )
 
-        try:
-            self.persistence.start_task(self.run_id, task_model)
-        except Exception as e:
-            logger.error(
-                "Orchestrator: Failed to persist start of task '%s': %s",
-                task_id,
-                e,
-            )
-            raise ValueError(
-                f"Failed to persist task '{task_id}' start state: {str(e)}"
-            )
+        # Attempt to start the task and acquire a lock
+        if not self.persistence.start_task(self.run_id, task_model):
+            logger.info("Orchestrator: Task %s is locked by another worker, skipping.", task_id)
+            return None  # Task is locked, so we don't execute it
+
+        logger.info(
+            "Orchestrator: Executing task %s (Type: %s)",
+            task_id,
+            task_model.operator_type,
+        )
 
         handler_func = self.handler_map.get(task_model.operator_type)
         if not handler_func:
@@ -350,19 +349,6 @@ class Orchestrator:
             self.persistence.fail_task(self.run_id, task_id, str(e))
             logger.error(
                 "Orchestrator: Handler function failed for task '%s': %s",
-                task_id,
-                e,
-            )
-            raise e
-
-        # At the end of _execute_task, before returning
-        # Mark the task as done in the sorter (this allows dependent tasks to become ready)
-        try:
-            self.sorter.done(task_id)  # Tell the sorter this task is done
-            self.completed_tasks.add(task_id)  # Add to our set
-        except Exception as e:
-            logger.error(
-                "Orchestrator: Failed to mark task '%s' as done in sorter: %s",
                 task_id,
                 e,
             )

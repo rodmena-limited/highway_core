@@ -11,6 +11,7 @@ class MockPersistenceManager(PersistenceManager):
         self.state_store = {}
         self.completed_tasks_store = {}
         self.workflow_store = {}  # Store workflow metadata
+        self.completed_tasks = set()
 
     def save_workflow_state(
         self,
@@ -28,7 +29,7 @@ class MockPersistenceManager(PersistenceManager):
         """Mock load method"""
         state = self.state_store.get(workflow_run_id)
         completed_tasks = self.completed_tasks_store.get(workflow_run_id, set())
-        return state, completed_tasks
+        return state, self.completed_tasks
 
     def start_workflow(
         self, workflow_id: str, workflow_name: str, variables: Dict
@@ -52,13 +53,13 @@ class MockPersistenceManager(PersistenceManager):
             self.workflow_store[workflow_id]["status"] = "failed"
             self.workflow_store[workflow_id]["error_message"] = error_message
 
-    def start_task(self, workflow_id: str, task: Any) -> None:
+    def start_task(self, workflow_id: str, task: Any) -> bool:
         """Mock method to start task"""
-        pass
+        return True
 
     def complete_task(self, workflow_id: str, task_id: str, result: Any) -> None:
         """Mock method to complete task"""
-        pass
+        self.completed_tasks.add(task_id)
 
     def fail_task(self, workflow_id: str, task_id: str, error_message: str) -> None:
         """Mock method to fail task"""

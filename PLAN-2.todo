@@ -1,0 +1,75 @@
+# Highway Core Hybrid Persistence Plan (Final)
+
+## Overview
+This document outlines a revised plan to architect a highly reliable and scalable persistence layer for the Highway Workflow Engine. The goal is to leverage Redis for speed and low-latency state management for in-flight workflows, while using a SQL database as the durable source of truth. This architecture is designed to be a "bullet-proof" foundation, addressing concurrency, failure recovery, and future scalability, while keeping the complexity hidden from the end-user.
+
+## Core Principles
+1.  **Hybrid Model:** Use Redis as a fast, volatile cache for active workflow states and the SQL database as the slow, durable, permanent store.
+2.  **SQL as Source of Truth:** The SQL database holds the definitive record of all workflows, tasks, and results. It is the ultimate recovery source in case of catastrophic failure.
+3.  **Redis for Performance:** Redis holds the "hot" data for running workflows, enabling rapid state transitions, task execution, and result passing.
+4.  **Resilience & Scalability:** The architecture must be able to withstand component failures and be designed to scale horizontally.
+5.  **Transparency:** The use of Redis and SQL is an internal implementation detail of the persistence layer, not exposed to the workflow author or the engine's core logic.
+
+## Architectural Considerations for a Bullet-Proof Engine
+
+Before the implementation steps, it's crucial to outline the architectural principles that will guide the development:
+
+1.  **Distributed Task Execution (Future Vision):**
+    -   The current `ThreadPoolExecutor` is a good starting point but limits execution to a single process. The architecture should pave the way for a true distributed task queue.
+    -   **Roadmap:** The orchestrator will eventually become a "producer" that places task execution jobs onto a Redis List (acting as a queue). Stateless "worker" processes (running on different machines) will consume jobs from this queue, execute them, and report back the results. This is the key to horizontal scaling.
+
+2.  **High Availability (HA) of the Orchestrator:**
+    -   The current model has a single orchestrator instance, which is a single point of failure. While persistence allows recovery, it doesn't provide high availability.
+    -   **Roadmap:** A future version could run multiple orchestrator instances in an active/passive setup using a leader election mechanism (e.g., using Redis). The persistence layer we are building is the foundation for this.
+
+3.  **Concurrency and Task Locking:**
+    -   To prevent multiple workers from executing the same task in a future distributed setup, we must implement a locking mechanism.
+    -   **Implementation:** When a task is ready to be executed, the persistence manager will acquire a lock on it in Redis (using a command like `SET key value NX EX seconds`). This lock will be short-lived and have a timeout to prevent deadlocks if a worker dies. The task is only executed if the lock is successfully acquired.
+
+4.  **Execution Guarantees (At-Least-Once):**
+    -   The system will be designed to provide an **at-least-once** execution guarantee. This means a task is guaranteed to be executed, but in rare failure scenarios (e.g., a crash after task completion but before the lock is released), it might be executed more than once.
+    -   **Guideline:** This is a standard and robust model for distributed systems. It implies that tasks should be designed to be **idempotent** whenever possible (i.e., running them multiple times has the same effect as running them once).
+
+## Implementation Steps
+
+### Phase 1: Core Components and Configuration
+1.  **Dependencies:** Add `redis` and `fakeredis` to `pyproject.toml`.
+2.  **Configuration (`highway_core/config.py`):**
+    -   Create a centralized configuration module to handle settings from environment variables (`.env` files).
+    -   Define settings for both the SQL database and Redis.
+    -   The config will detect test environments and use test-specific settings (in-memory SQLite, `fakeredis`).
+3.  **Hybrid Persistence Manager (`highway_core/persistence/hybrid_persistence.py`):**
+    -   Create the `HybridPersistenceManager` class, which will manage connections to both Redis and the SQL database.
+
+### Phase 2: Implementing the `HybridPersistenceManager`
+1.  **Connection Management:**
+    -   Implement `__init__` to establish connections to both backends.
+    -   Include a health check for Redis to allow for a graceful fallback to a SQL-only mode if Redis is unavailable.
+2.  **Workflow Lifecycle & State:**
+    -   `start_workflow`: Write to SQL, then hydrate Redis.
+    -   `load_workflow_state`: Implement the "Redis first, then SQL" logic. Re-hydrate Redis on a cache miss.
+    -   `complete_workflow` / `fail_workflow`: Update both stores. Schedule Redis data for eviction using a TTL.
+3.  **Task Execution with Locking:**
+    -   `start_task`: This method will now be responsible for **acquiring a lock** on the task in Redis. If the lock cannot be acquired, it means another worker is already processing it, and the method should signal this.
+    -   `complete_task` / `fail_task`: These methods will **release the lock** in addition to persisting the state. The result is written to Redis for speed and then durably to SQL.
+
+### Phase 3: Engine Integration
+1.  **Update `engine.py` and `orchestrator.py`:**
+    -   The `Orchestrator` will be modified to use the `HybridPersistenceManager` by default.
+    -   The orchestrator's task execution loop will be updated to handle the new locking mechanism. When it gets a list of ready tasks, it will attempt to call `start_task` on them, which will try to acquire a lock. The task will only be submitted to an executor if the lock is successful.
+
+### Phase 4: Environment and CI
+1.  **Environment Files:** Create `.env.example` and `test.env.example`.
+2.  **GitHub Actions:** Add a Redis service to the CI workflow.
+
+### Phase 5: Testing
+1.  **`tests/test_hybrid_persistence.py`:**
+    -   Create a dedicated test suite for the `HybridPersistenceManager`.
+    -   Test the locking mechanism (e.g., ensure a task can't be started twice).
+    -   Test the fallback behavior when Redis is down.
+    -   Test recovery from a cold state (empty Redis).
+2.  **Update Existing Tests:** Refactor `tests/test_db_workflows.py` to use the new hybrid manager and validate end-to-end functionality.
+
+### Phase 6: Documentation
+1.  **`README.md`:** Update to explain the new hybrid architecture and the required environment variables.
+2.  **Internal Documentation:** Add detailed comments in `hybrid_persistence.py` explaining the caching, fallback, and locking logic.

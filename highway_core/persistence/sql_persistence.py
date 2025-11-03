@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Optional, Set, Tuple
 
+from highway_core.config import settings
 from highway_core.engine.models import AnyOperatorModel, TaskOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.persistence.database_manager import DatabaseManager
@@ -27,10 +28,7 @@ class SQLPersistence(PersistenceManager):
             is_test: Whether this is running in test mode
         """
         if is_test:
-            # Use test database
-            test_db_path = Path("tests/data/highway.sqlite3")
-            test_db_path.parent.mkdir(parents=True, exist_ok=True)
-            self.db_manager = DatabaseManager(str(test_db_path))
+            self.db_manager = DatabaseManager(engine_url=settings.DATABASE_URL)
         elif db_path is not None:
             self.db_manager = DatabaseManager(db_path)
         else:

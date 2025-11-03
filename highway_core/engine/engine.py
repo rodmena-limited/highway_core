@@ -7,19 +7,16 @@
 
 import logging
 import uuid
-from typing import Any
+from typing import Any, Optional
 
 import yaml
 
-from highway_core.persistence.sql_persistence import (  # <--- New import
-    SQLPersistence,
-)
+from highway_core.persistence.hybrid_persistence import HybridPersistenceManager
 from highway_core.tools.bulkhead import BulkheadConfig, BulkheadManager
 from highway_core.tools.registry import ToolRegistry
 
 from .models import WorkflowModel
 from .orchestrator import Orchestrator
-from .state import WorkflowState
 
 # Configure root logging before importing other modules
 logging.basicConfig(
@@ -29,13 +26,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-from typing import Optional
-
-
 def run_workflow_from_yaml(
     yaml_path: str,
     workflow_run_id: str | None = None,
-    db_path: Optional[str] = None,
+    persistence_manager: Optional[HybridPersistenceManager] = None,
 ) -> None:
     """
     The main entry point for the Highway Execution Engine with bulkhead isolation.
@@ -43,7 +37,7 @@ def run_workflow_from_yaml(
     Args:
         yaml_path: Path to the workflow YAML file
         workflow_run_id: Optional workflow run ID (will be generated if not provided)
-        db_path: Optional path to database file (uses default if not provided)
+        persistence_manager: Optional persistence manager instance
     """
     logger.info("Engine: Loading workflow from: %s", yaml_path)
 
@@ -64,9 +58,7 @@ def run_workflow_from_yaml(
 
     # 3. Initialize Core Components
     registry = ToolRegistry()
-    persistence = SQLPersistence(
-        db_path=db_path
-    )  # <--- Use SQL persistence with optional path
+    persistence = persistence_manager or HybridPersistenceManager()
 
     # The Orchestrator will load or create its own state
     orchestrator = Orchestrator(

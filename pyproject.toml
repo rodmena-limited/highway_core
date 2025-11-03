@@ -7,7 +7,7 @@ include = ["highway_core*"]
 
 [project]
 name = "highway_core"
-version = "0.2.1"
+version = "0.2.2"
 authors = [
   { name = "Farseed Ashouri", email = "farseed.ashouri@gmail.com" },
 ]
@@ -39,6 +39,8 @@ dependencies = [
     "sqlalchemy>=2.0.15",
     "click>=8.0.0",
     "importlib-metadata>=4.0.0; python_version<'3.8'",
+    "redis>=5.0.0",
+    "python-dotenv>=1.0.0",
     ]
 # dev dependencies
 [project.optional-dependencies]
@@ -52,6 +54,8 @@ dev = [
     "pytest-asyncio>=0.20.0",
     "black>=23.1.0",
     "isort>=5.10.1",
+    "fakeredis[aioredis]>=2.20.0",
+    "pytest-env>=0.6.2",
 
 ]
 
@@ -71,14 +75,7 @@ strict = false
 [project.scripts]
 "highway-engine" = "highway_core.cli.engine_cli:cli"
 
-# pytest
-[tool.pytest.ini_options]
-minversion = "6.0"
-addopts = "--cov=highway_core --cov-report=term-missing -n auto --dist=loadfile -v"
-testpaths = ["tests/"]
-filterwarnings = [
-    "ignore::DeprecationWarning",
-]
+
 
 # black configuration
 [tool.black]
