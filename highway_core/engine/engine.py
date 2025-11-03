@@ -7,7 +7,7 @@
 
 import logging
 import uuid
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 import yaml
 
@@ -30,7 +30,7 @@ def run_workflow_from_yaml(
     yaml_path: str,
     workflow_run_id: str | None = None,
     persistence_manager: Optional[HybridPersistenceManager] = None,
-) -> None:
+) -> Dict[str, Any]:
     """
     The main entry point for the Highway Execution Engine with bulkhead isolation.
 
@@ -38,6 +38,9 @@ def run_workflow_from_yaml(
         yaml_path: Path to the workflow YAML file
         workflow_run_id: Optional workflow run ID (will be generated if not provided)
         persistence_manager: Optional persistence manager instance
+
+    Returns:
+        Dict containing workflow execution results including status and error information
     """
     logger.info("Engine: Loading workflow from: %s", yaml_path)
 
@@ -49,7 +52,7 @@ def run_workflow_from_yaml(
         workflow_model = WorkflowModel.model_validate(workflow_data)
     except Exception as e:
         logger.error("Engine: Failed to load or parse YAML: %s", e)
-        return
+        return {"status": "failed", "error": f"Failed to load or parse YAML: {str(e)}"}
 
     # 2. Generate Run ID if not provided
     if not workflow_run_id:
@@ -91,20 +94,47 @@ def run_workflow_from_yaml(
             e,
         )
         # Fallback: run directly without bulkhead
-        orchestrator.run()
-        return
+        try:
+            orchestrator.run()
+            # Get final workflow status
+            workflow_data = persistence.sql_persistence.db_manager.load_workflow(workflow_run_id)
+            return {
+                "status": workflow_data.get("status", "completed") if workflow_data else "completed",
+                "workflow_id": workflow_run_id,
+                "error": workflow_data.get("error_message") if workflow_data else None,
+            }
+        except Exception as e:
+            logger.error(
+                "Engine: Workflow %s failed with error: %s", workflow_model.name, e
+            )
+            return {"status": "failed", "workflow_id": workflow_run_id, "error": str(e)}
 
     # Execute the workflow run method in the bulkhead
     future = workflow_bulkhead.execute(_execute_workflow, orchestrator)
 
     try:
         # Wait for the result of the workflow execution
-        result = future.result()
+        future.result()
         logger.info("Engine: Workflow %s completed successfully.", workflow_model.name)
+        
+        # Get final workflow status
+        workflow_data = persistence.sql_persistence.db_manager.load_workflow(workflow_run_id)
+        return {
+            "status": workflow_data.get("status", "completed") if workflow_data else "completed",
+            "workflow_id": workflow_run_id,
+            "error": workflow_data.get("error_message") if workflow_data else None,
+        }
     except Exception as e:
         logger.error(
             "Engine: Workflow %s failed with error: %s", workflow_model.name, e
         )
+        # Get final workflow status even on failure
+        workflow_data = persistence.sql_persistence.db_manager.load_workflow(workflow_run_id)
+        return {
+            "status": workflow_data.get("status", "failed") if workflow_data else "failed",
+            "workflow_id": workflow_run_id,
+            "error": workflow_data.get("error_message", str(e)) if workflow_data else str(e),
+        }
     finally:
         bulkhead_manager.shutdown_all()
 

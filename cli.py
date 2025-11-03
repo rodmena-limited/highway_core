@@ -52,10 +52,50 @@ def main():
     print("-" * 50)
 
     try:
-        # Run the workflow
-        run_workflow_from_yaml(yaml_path=str(workflow_path), workflow_run_id=run_id)
+        # Run the workflow and get status information
+        result = run_workflow_from_yaml(yaml_path=str(workflow_path), workflow_run_id=run_id)
+        
         print("-" * 50)
-        print("✅ Workflow completed successfully!")
+        
+        # Check workflow status and report properly
+        if result["status"] == "completed":
+            print("✅ Workflow completed successfully!")
+        elif result["status"] == "failed":
+            print("❌ Workflow failed!")
+            if result.get("error"):
+                print(f"Error: {result['error']}")
+            sys.exit(1)
+        else:
+            print(f"⚠️  Workflow finished with status: {result['status']}")
+            if result.get("error"):
+                print(f"Error: {result['error']}")
+
+        # Get detailed task status from database
+        try:
+            from highway_core.persistence.database_manager import DatabaseManager
+            db_manager = DatabaseManager()
+            
+            # Get all tasks for this workflow
+            tasks = db_manager.get_tasks_by_workflow(result["workflow_id"])
+            
+            if tasks:
+                print("\n📋 Task Summary:")
+                completed_tasks = [task for task in tasks if task.get("status") == "completed"]
+                failed_tasks = [task for task in tasks if task.get("status") == "failed"]
+                
+                print(f"  ✅ Completed: {len(completed_tasks)}")
+                print(f"  ❌ Failed: {len(failed_tasks)}")
+                print(f"  📊 Total: {len(tasks)}")
+                
+                if failed_tasks:
+                    print("\n❌ Failed Tasks:")
+                    for task in failed_tasks:
+                        print(f"  - {task['task_id']}: {task.get('error_message', 'Unknown error')}")
+            
+            db_manager.close()
+            
+        except Exception as e:
+            print(f"\n⚠️  Could not retrieve detailed task information: {e}")
 
     except Exception as e:
         print(f"❌ Error running workflow: {e}", file=sys.stderr)
