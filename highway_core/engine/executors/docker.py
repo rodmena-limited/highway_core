@@ -1,8 +1,6 @@
 # highway_core/engine/executors/docker.py
 import logging
 from typing import Any, Optional, TYPE_CHECKING
-import docker
-from docker.errors import ImageNotFound, APIError
 
 from highway_core.engine.executors.base import BaseExecutor
 from highway_core.utils.docker_detector import is_running_in_docker
@@ -25,6 +23,7 @@ class DockerExecutor(BaseExecutor):
     """
 
     def __init__(self) -> None:
+        print("DEBUG: DockerExecutor.__init__ called")
         # Check if we're running inside Docker first
         if is_running_in_docker():
             logger.error(
@@ -33,6 +32,9 @@ class DockerExecutor(BaseExecutor):
             raise RuntimeError("Cannot initialize Docker executor inside a Docker container - would create nested containers.")
         else:
             try:
+                # Lazy import Docker only when needed
+                import docker
+                from docker.errors import APIError
                 self.client = docker.from_env()
                 self.client.ping()
                 logger.info("DockerExecutor: Connected to Docker daemon.")

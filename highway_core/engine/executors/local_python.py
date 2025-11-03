@@ -3,8 +3,6 @@ import logging
 import tempfile
 import os
 from typing import Any, Optional, TYPE_CHECKING
-import docker
-from docker.errors import ImageNotFound, APIError
 
 from highway_core.engine.executors.base import BaseExecutor
 from highway_core.tools.bulkhead import BulkheadConfig

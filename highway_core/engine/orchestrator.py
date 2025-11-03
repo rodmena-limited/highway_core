@@ -40,6 +40,8 @@ class Orchestrator:
         registry: ToolRegistry,
         use_sql_persistence: Optional[bool] = None,  # Changed to control the behavior
     ) -> None:
+        print("DEBUG: Orchestrator.__init__ called")
+        logger.info("Orchestrator: Initializing orchestrator instance")
         self.run_id = workflow_run_id
         self.workflow = workflow
         self.registry = registry
