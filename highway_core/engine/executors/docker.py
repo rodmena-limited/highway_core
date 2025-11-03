@@ -1,18 +1,17 @@
 # highway_core/engine/executors/docker.py
 import logging
-from typing import Any, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional
 
 from highway_core.engine.executors.base import BaseExecutor
 from highway_core.utils.docker_detector import is_running_in_docker
-
 from highway_core.utils.naming import generate_safe_container_name
 
 if TYPE_CHECKING:
     from highway_core.engine.models import TaskOperatorModel
-    from highway_core.engine.state import WorkflowState
-    from highway_core.tools.registry import ToolRegistry
-    from highway_core.tools.bulkhead import BulkheadManager
     from highway_core.engine.resource_manager import ContainerResourceManager
+    from highway_core.engine.state import WorkflowState
+    from highway_core.tools.bulkhead import BulkheadManager
+    from highway_core.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +57,7 @@ class DockerExecutor(BaseExecutor):
     ) -> Any:
         # Import Docker exceptions to handle them properly
         import docker
-        from docker.errors import ImageNotFound, APIError
+        from docker.errors import APIError, ImageNotFound
 
         # Check if we're already running inside Docker - prevent nested containers
         if is_running_in_docker():
@@ -98,7 +97,8 @@ class DockerExecutor(BaseExecutor):
 
             # 3. Run the container
             logger.info(
-                "DockerExecutor: Running container with command: %s", resolved_command
+                "DockerExecutor: Running container with command: %s",
+                resolved_command,
             )
             container = self.client.containers.run(
                 image=image_name,
@@ -122,7 +122,9 @@ class DockerExecutor(BaseExecutor):
             container.remove()
 
             logger.info(
-                "DockerExecutor: Task %s output (stripped):\n%s", task.task_id, output
+                "DockerExecutor: Task %s output (stripped):\n%s",
+                task.task_id,
+                output,
             )
 
             # Return the cleaned log output as the result

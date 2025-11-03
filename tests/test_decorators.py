@@ -1,5 +1,6 @@
 import pytest
-from highway_core.tools.decorators import tool, TOOL_REGISTRY
+
+from highway_core.tools.decorators import TOOL_REGISTRY, tool
 
 
 def test_tool_decorator_registration():

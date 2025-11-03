@@ -1,15 +1,15 @@
-import pytest
-from highway_core.engine.operator_handlers.foreach_handler import execute
-from highway_core.engine.models import ForEachOperatorModel, TaskOperatorModel
-from highway_core.engine.state import WorkflowState
-from highway_core.tools.registry import ToolRegistry
-from highway_core.tools.bulkhead import BulkheadManager
-from highway_core.engine.orchestrator import Orchestrator
-from unittest.mock import MagicMock
 import graphlib
+from unittest.mock import MagicMock
 
+import pytest
 
 import highway_core.tools.memory as memory_tools
+from highway_core.engine.models import ForEachOperatorModel, TaskOperatorModel
+from highway_core.engine.operator_handlers.foreach_handler import execute
+from highway_core.engine.orchestrator import Orchestrator
+from highway_core.engine.state import WorkflowState
+from highway_core.tools.bulkhead import BulkheadManager
+from highway_core.tools.registry import ToolRegistry
 
 
 @pytest.fixture

@@ -1,8 +1,9 @@
 """Unit tests for the memory tool functionality."""
 
 import pytest
-from highway_core.tools.memory import set_memory, increment_memory, add_memory
+
 from highway_core.engine.state import WorkflowState
+from highway_core.tools.memory import add_memory, increment_memory, set_memory
 
 
 def test_set_memory_basic():

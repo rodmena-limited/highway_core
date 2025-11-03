@@ -1,5 +1,8 @@
 import pytest
-from highway_core.engine.operator_handlers.base_handler import BaseOperatorHandler
+
+from highway_core.engine.operator_handlers.base_handler import (
+    BaseOperatorHandler,
+)
 
 
 def test_base_operator_handler_abstract_methods():

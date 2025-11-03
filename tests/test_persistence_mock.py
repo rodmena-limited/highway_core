@@ -1,9 +1,9 @@
-from highway_core.persistence.manager import PersistenceManager
-from highway_core.engine.models import TaskOperatorModel
-from typing import Optional, Dict, Any, Set
 from datetime import datetime
+from typing import Any, Dict, Optional, Set, Tuple
+
+from highway_core.engine.models import TaskOperatorModel
 from highway_core.engine.state import WorkflowState
-from typing import Tuple, Set, Dict, Any, Optional
+from highway_core.persistence.manager import PersistenceManager
 
 
 class MockPersistenceManager(PersistenceManager):
@@ -13,7 +13,10 @@ class MockPersistenceManager(PersistenceManager):
         self.workflow_store = {}  # Store workflow metadata
 
     def save_workflow_state(
-        self, workflow_run_id: str, state: WorkflowState, completed_tasks: Set[str]
+        self,
+        workflow_run_id: str,
+        state: WorkflowState,
+        completed_tasks: Set[str],
     ):
         """Mock save method"""
         self.state_store[workflow_run_id] = state

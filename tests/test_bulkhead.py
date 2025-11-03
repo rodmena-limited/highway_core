@@ -4,18 +4,18 @@ Complete example demonstrating the bulkhead pattern in action.
 This simulates a microservices architecture with different components.
 """
 
-import time
 import random
 import threading
-from concurrent.futures import Future, wait, as_completed
+import time
+from concurrent.futures import Future, as_completed, wait
 from typing import List, Optional
 
 # Import the bulkhead implementation
 from highway_core.tools.bulkhead import (
     BulkheadConfig,
     BulkheadManager,
-    with_bulkhead,
     ExecutionResult,
+    with_bulkhead,
 )
 
 
@@ -328,9 +328,7 @@ def simulate_high_traffic_scenario():
                     state_icon = (
                         "🟢"
                         if stat["state"] == "healthy"
-                        else "🟡"
-                        if stat["state"] == "degraded"
-                        else "🔴"
+                        else "🟡" if stat["state"] == "degraded" else "🔴"
                     )
                     print(
                         f"    {state_icon} {service:12} | State: {stat['state']:8} | "

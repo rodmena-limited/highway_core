@@ -1,7 +1,13 @@
 # highway_core/engine/models.py
-from pydantic import BaseModel, Field, ConfigDict
-from pydantic import field_validator, model_validator  # Import model_validator
-from typing import Any, List, Dict, Optional, Literal, Union
+from typing import Any, Dict, List, Literal, Optional, Union
+
+from pydantic import (  # Import model_validator
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 from typing_extensions import Annotated
 
 # Define the "kind" for each operator

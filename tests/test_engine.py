@@ -1,8 +1,13 @@
-import pytest
-import tempfile
 import os
-from unittest.mock import patch, MagicMock
-from highway_core.engine.engine import run_workflow_from_yaml, _execute_workflow
+import tempfile
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from highway_core.engine.engine import (
+    _execute_workflow,
+    run_workflow_from_yaml,
+)
 from highway_core.engine.models import WorkflowModel
 from highway_core.engine.orchestrator import Orchestrator
 
@@ -13,7 +18,8 @@ def test_run_workflow_from_yaml_valid_file():
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".yaml", delete=False
     ) as temp_file:
-        temp_file.write("""
+        temp_file.write(
+            """
 name: test_workflow
 version: 1.0.0
 description: Test workflow
@@ -29,7 +35,8 @@ tasks:
     function: tools.log.info
     args: ["Starting workflow..."]
     dependencies: []
-        """)
+        """
+        )
         temp_file_path = temp_file.name
 
     try:
@@ -47,7 +54,8 @@ def test_run_workflow_from_yaml_with_bulkhead_error():
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".yaml", delete=False
     ) as temp_file:
-        temp_file.write("""
+        temp_file.write(
+            """
 name: test_workflow
 version: 1.0.0
 description: Test workflow
@@ -63,7 +71,8 @@ tasks:
     function: tools.log.info
     args: ["Starting workflow..."]
     dependencies: []
-        """)
+        """
+        )
         temp_file_path = temp_file.name
 
     try:
@@ -111,7 +120,8 @@ def test_run_workflow_from_yaml_bulkhead_creation_failure():
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".yaml", delete=False
     ) as temp_file:
-        temp_file.write("""
+        temp_file.write(
+            """
 name: test_workflow
 version: 1.0.0
 description: Test workflow
@@ -127,7 +137,8 @@ tasks:
     function: tools.log.info
     args: ["Starting workflow..."]
     dependencies: []
-        """)
+        """
+        )
         temp_file_path = temp_file.name
 
     try:
@@ -157,7 +168,8 @@ def test_run_workflow_from_yaml_with_execution_error():
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".yaml", delete=False
     ) as temp_file:
-        temp_file.write("""
+        temp_file.write(
+            """
 name: test_workflow
 version: 1.0.0
 description: Test workflow
@@ -173,7 +185,8 @@ tasks:
     function: tools.log.info
     args: ["Starting workflow..."]
     dependencies: []
-        """)
+        """
+        )
         temp_file_path = temp_file.name
 
     try:

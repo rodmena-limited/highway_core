@@ -2,8 +2,9 @@
 # Implements 'tools.shell.run' for executing shell commands.
 
 import logging
-import subprocess
 import shlex
+import subprocess
+
 from .decorators import tool
 
 logger = logging.getLogger(__name__)

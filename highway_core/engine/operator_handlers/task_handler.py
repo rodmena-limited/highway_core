@@ -1,13 +1,14 @@
 import logging
+from typing import TYPE_CHECKING, List, Optional
+
 from highway_core.engine.models import TaskOperatorModel
 from highway_core.engine.state import WorkflowState
-from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager
-from typing import Optional, List, TYPE_CHECKING
+from highway_core.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
-    from highway_core.engine.orchestrator import Orchestrator
     from highway_core.engine.executors.base import BaseExecutor  # <-- NEW
+    from highway_core.engine.orchestrator import Orchestrator
     from highway_core.engine.resource_manager import ContainerResourceManager
 
 logger = logging.getLogger(__name__)
@@ -30,7 +31,8 @@ def execute(
 
     if not executor:
         logger.error(
-            "TaskHandler: Error - No executor provided for task %s", task.task_id
+            "TaskHandler: Error - No executor provided for task %s",
+            task.task_id,
         )
         raise ValueError(f"TaskHandler received no executor for task: {task.task_id}")
 

@@ -1,15 +1,17 @@
 import pytest
-from highway_core.engine.orchestrator import Orchestrator
+
 from highway_core.engine.models import (
-    WorkflowModel,
-    TaskOperatorModel,
+    AnyOperatorModel,
     ConditionOperatorModel,
     ParallelOperatorModel,
+    TaskOperatorModel,
     WaitOperatorModel,
-    AnyOperatorModel,
+    WorkflowModel,
 )
+from highway_core.engine.orchestrator import Orchestrator
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
+
 from .test_persistence_mock import MockPersistenceManager
 
 
@@ -25,7 +27,9 @@ def test_orchestrator_initialization():
     )
 
     workflow = WorkflowModel(
-        name="test_workflow", start_task="task1", tasks={"task1": task1.model_dump()}
+        name="test_workflow",
+        start_task="task1",
+        tasks={"task1": task1.model_dump()},
     )
 
     registry = ToolRegistry()
@@ -58,7 +62,9 @@ def test_orchestrator_run_method():
     )
 
     workflow = WorkflowModel(
-        name="test_workflow", start_task="task1", tasks={"task1": task1.model_dump()}
+        name="test_workflow",
+        start_task="task1",
+        tasks={"task1": task1.model_dump()},
     )
 
     registry = ToolRegistry()

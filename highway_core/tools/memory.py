@@ -3,8 +3,10 @@
 
 import logging
 import threading
-from highway_core.engine.state import WorkflowState
 from typing import Any, Dict
+
+from highway_core.engine.state import WorkflowState
+
 from .decorators import tool
 
 logger = logging.getLogger(__name__)

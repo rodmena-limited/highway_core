@@ -1,10 +1,12 @@
-import pytest
 from unittest.mock import MagicMock, patch
-from highway_core.engine.operator_handlers.wait_handler import execute
+
+import pytest
+
 from highway_core.engine.models import WaitOperatorModel
+from highway_core.engine.operator_handlers.wait_handler import execute
 from highway_core.engine.state import WorkflowState
-from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager
+from highway_core.tools.registry import ToolRegistry
 
 
 def test_execute_wait_with_integer_seconds():

@@ -1,8 +1,8 @@
 # highway_core/engine/executors/local_python.py
 import logging
-import tempfile
 import os
-from typing import Any, Optional, TYPE_CHECKING
+import tempfile
+from typing import TYPE_CHECKING, Any, Optional
 
 from highway_core.engine.executors.base import BaseExecutor
 from highway_core.tools.bulkhead import BulkheadConfig
@@ -11,10 +11,10 @@ from highway_core.utils.naming import generate_safe_container_name
 
 if TYPE_CHECKING:
     from highway_core.engine.models import TaskOperatorModel
-    from highway_core.engine.state import WorkflowState
-    from highway_core.tools.registry import ToolRegistry
-    from highway_core.tools.bulkhead import BulkheadManager
     from highway_core.engine.resource_manager import ContainerResourceManager
+    from highway_core.engine.state import WorkflowState
+    from highway_core.tools.bulkhead import BulkheadManager
+    from highway_core.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +141,9 @@ class LocalPythonExecutor(BaseExecutor):
         else:
             # Execute without bulkhead if not provided
             logger.info(
-                "LocalPythonExecutor: Calling %s with args=%s", tool_name, resolved_args
+                "LocalPythonExecutor: Calling %s with args=%s",
+                tool_name,
+                resolved_args,
             )
             result = tool_func(*resolved_args, **resolved_kwargs)
 
@@ -190,7 +192,7 @@ class LocalPythonExecutor(BaseExecutor):
         try:
             # Lazy import Docker only when needed
             import docker
-            from docker.errors import ImageNotFound, APIError
+            from docker.errors import APIError, ImageNotFound
 
             # Create a Docker client
             client = docker.from_env()
@@ -243,7 +245,7 @@ class LocalPythonExecutor(BaseExecutor):
             kwargs_repr = repr(resolved_kwargs)
 
             # Script that assumes highway_core is already available in the container
-            script_content = f'''
+            script_content = f"""
 import sys
 import json
 import os
@@ -287,7 +289,7 @@ try:
     print(json.dumps({{"success": True, "result": result}}))
 except Exception as e:
     print(json.dumps({{"success": False, "error": str(e), "traceback": __import__('traceback').format_exc()}}))
-'''
+"""
 
             # For highway_python_runtime:latest, highway_core is already installed in the image
             full_script = script_content

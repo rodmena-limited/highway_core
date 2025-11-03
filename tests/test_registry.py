@@ -1,7 +1,9 @@
-import pytest
 from unittest.mock import patch
-from highway_core.tools.registry import ToolRegistry
+
+import pytest
+
 from highway_core.tools.decorators import tool
+from highway_core.tools.registry import ToolRegistry
 
 
 def test_tool_registry_initialization():

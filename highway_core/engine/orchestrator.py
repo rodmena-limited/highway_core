@@ -1,32 +1,31 @@
 import graphlib
-from concurrent.futures import ThreadPoolExecutor, Future
-from highway_core.engine.models import (
-    WorkflowModel,
-    AnyOperatorModel,
-    TaskOperatorModel,
-)  # <-- NEW: Import TaskOperatorModel
-from highway_core.engine.state import WorkflowState
-from highway_core.persistence.manager import PersistenceManager
-from highway_core.persistence.sql_persistence import SQLPersistence
-from highway_core.tools.registry import ToolRegistry
-from highway_core.engine.operator_handlers import (
-    task_handler,
-    condition_handler,
-    parallel_handler,
-    wait_handler,
-    while_handler,
-    foreach_handler,
-)
-from highway_core.tools.bulkhead import BulkheadManager
-from typing import Dict, Set, Callable, Any, List, Optional
 import logging
+from concurrent.futures import Future, ThreadPoolExecutor
+from typing import Any, Callable, Dict, List, Optional, Set
 
 # NEW IMPORTS
 from highway_core.engine.executors.base import BaseExecutor
-from highway_core.engine.executors.local_python import LocalPythonExecutor
 from highway_core.engine.executors.docker import DockerExecutor  # <-- NEW
-
+from highway_core.engine.executors.local_python import LocalPythonExecutor
+from highway_core.engine.models import (  # <-- NEW: Import TaskOperatorModel
+    AnyOperatorModel,
+    TaskOperatorModel,
+    WorkflowModel,
+)
+from highway_core.engine.operator_handlers import (
+    condition_handler,
+    foreach_handler,
+    parallel_handler,
+    task_handler,
+    wait_handler,
+    while_handler,
+)
 from highway_core.engine.resource_manager import ContainerResourceManager
+from highway_core.engine.state import WorkflowState
+from highway_core.persistence.manager import PersistenceManager
+from highway_core.persistence.sql_persistence import SQLPersistence
+from highway_core.tools.bulkhead import BulkheadManager
+from highway_core.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +73,8 @@ class Orchestrator:
         }
         logger.info("Orchestrator: Built dependency graph: %s", self.graph)
         logger.info(
-            "Orchestrator: Completed tasks from persistence: %s", self.completed_tasks
+            "Orchestrator: Completed tasks from persistence: %s",
+            self.completed_tasks,
         )
 
         self.sorter = graphlib.TopologicalSorter(self.graph)
@@ -82,7 +82,8 @@ class Orchestrator:
         # Prepare the sorter
         self.sorter.prepare()
         logger.info(
-            "Orchestrator: Sorter prepared, is_active: %s", self.sorter.is_active()
+            "Orchestrator: Sorter prepared, is_active: %s",
+            self.sorter.is_active(),
         )
 
         # 2. Update handler map
@@ -236,7 +237,8 @@ class Orchestrator:
                                 # This function now just returns the task_id
                                 result_task_id = future.result()
                                 logger.info(
-                                    "Orchestrator: Task %s completed.", result_task_id
+                                    "Orchestrator: Task %s completed.",
+                                    result_task_id,
                                 )
                             except Exception as e:
                                 logger.error(
@@ -293,7 +295,9 @@ class Orchestrator:
             self.persistence.start_task(self.run_id, task_model)
         except Exception as e:
             logger.error(
-                "Orchestrator: Failed to persist start of task '%s': %s", task_id, e
+                "Orchestrator: Failed to persist start of task '%s': %s",
+                task_id,
+                e,
             )
             raise ValueError(
                 f"Failed to persist task '{task_id}' start state: {str(e)}"
@@ -338,7 +342,9 @@ class Orchestrator:
                     persistence_error,
                 )
             logger.error(
-                "Orchestrator: Handler function failed for task '%s': %s", task_id, e
+                "Orchestrator: Handler function failed for task '%s': %s",
+                task_id,
+                e,
             )
             raise e
 

@@ -4,12 +4,12 @@ Highway Core CLI - Run workflows from YAML files
 """
 
 import argparse
-import sys
-import uuid
-from pathlib import Path
 
 # Add the highway_core to the path
 import os
+import sys
+import uuid
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -35,7 +35,8 @@ def main():
     workflow_path = Path(args.workflow_path)
     if not workflow_path.exists():
         print(
-            f"Error: Workflow file '{workflow_path}' does not exist.", file=sys.stderr
+            f"Error: Workflow file '{workflow_path}' does not exist.",
+            file=sys.stderr,
         )
         sys.exit(1)
 

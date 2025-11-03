@@ -1,13 +1,15 @@
 """Additional unit tests for the bulkhead async functionality."""
 
 import asyncio
+
 import pytest
+
 from highway_core.tools.bulkhead import (
     Bulkhead,
     BulkheadConfig,
-    with_bulkhead_async,
-    BulkheadManager,
     BulkheadError,
+    BulkheadManager,
+    with_bulkhead_async,
 )
 
 

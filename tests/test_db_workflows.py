@@ -1,11 +1,13 @@
 import os
-import pytest
-import uuid
 import tempfile
+import time
+import uuid
 from pathlib import Path
+
+import pytest
+
 from highway_core.engine.engine import run_workflow_from_yaml
 from highway_core.persistence.database_manager import DatabaseManager
-import time
 
 
 def get_db_path():
@@ -58,15 +60,15 @@ def run_workflow_and_verify_db(workflow_path: str, expected_workflow_name: str):
         try:
             # Check workflow record exists and is completed
             workflow_data = db_manager.load_workflow(run_id)
-            assert workflow_data is not None, (
-                f"Workflow run {run_id} not found in database"
-            )
+            assert (
+                workflow_data is not None
+            ), f"Workflow run {run_id} not found in database"
 
             assert workflow_data["workflow_id"] == run_id
             assert workflow_data["name"] == expected_workflow_name
-            assert workflow_data["status"] == "completed", (
-                f"Expected workflow status 'completed' but got '{workflow_data['status']}'"
-            )
+            assert (
+                workflow_data["status"] == "completed"
+            ), f"Expected workflow status 'completed' but got '{workflow_data['status']}'"
 
             # Verify all tasks for this workflow are in the tasks table
             tasks = db_manager.get_tasks_by_workflow(run_id)
@@ -112,15 +114,15 @@ class TestPersistenceWorkflow:
 
         # The persistence test workflow should have these tasks
         expected_task_ids = {"log_start", "step_2", "log_end"}
-        assert expected_task_ids.issubset(task_ids), (
-            f"Missing tasks in database, expected: {expected_task_ids}, actual: {task_ids}"
-        )
+        assert expected_task_ids.issubset(
+            task_ids
+        ), f"Missing tasks in database, expected: {expected_task_ids}, actual: {task_ids}"
 
         # All tasks should be completed
         for task in tasks:
-            assert task["status"] == "completed", (
-                f"Task {task['task_id']} was not completed, status: {task['status']}"
-            )
+            assert (
+                task["status"] == "completed"
+            ), f"Task {task['task_id']} was not completed, status: {task['status']}"
 
         # The workflow should have completed successfully
         assert run_id is not None
@@ -188,9 +190,9 @@ class TestParallelWaitWorkflow:
         # while noting any missing wait operator
         if len(parallel_operators) == 0:
             # This should never happen - the parallel task must exist
-            assert False, (
-                f"Parallel task missing entirely. All tasks: {[(t['task_id'], t['operator_type']) for t in tasks]}"
-            )
+            assert (
+                False
+            ), f"Parallel task missing entirely. All tasks: {[(t['task_id'], t['operator_type']) for t in tasks]}"
 
         # For most environments, we expect both parallel and wait operators
         # However, in parallel execution environments, resource constraints may impact wait task persistence
@@ -214,17 +216,17 @@ class TestParallelWaitWorkflow:
                 # For parallel execution environments, we'll consider this acceptable if core functionality worked
             else:
                 # If workflow didn't complete or parallel task is missing, this is a real failure
-                assert len(wait_operators) >= 1, (
-                    f"Expected at least 1 wait task, but only found {len(wait_operators)}. Parallel task present: {len(parallel_operators) > 0}. Workflow completed: {'log_end' in all_task_ids}. All tasks: {[(t['task_id'], t['operator_type']) for t in tasks]}. This might be due to database resource constraints in parallel execution. Attempted {attempts} retries."
-                )
+                assert (
+                    len(wait_operators) >= 1
+                ), f"Expected at least 1 wait task, but only found {len(wait_operators)}. Parallel task present: {len(parallel_operators) > 0}. Workflow completed: {'log_end' in all_task_ids}. All tasks: {[(t['task_id'], t['operator_type']) for t in tasks]}. This might be due to database resource constraints in parallel execution. Attempted {attempts} retries."
         else:
             # Both operators present, which is the ideal case
             pass
 
         # Ensure that we have the parallel functionality working at minimum
-        assert len(parallel_operators) >= 1, (
-            f"Expected at least 1 parallel task, but only found {len(parallel_operators)}. All tasks: {[(t['task_id'], t['operator_type']) for t in tasks]}"
-        )
+        assert (
+            len(parallel_operators) >= 1
+        ), f"Expected at least 1 parallel task, but only found {len(parallel_operators)}. All tasks: {[(t['task_id'], t['operator_type']) for t in tasks]}"
 
         # Check that fetch tasks were completed (with potential retry due to parallel execution timing)
         fetch_tasks = [
@@ -273,9 +275,9 @@ class TestParallelWaitWorkflow:
                 f"DEBUG: All tasks overview: {[(t['task_id'], t['status']) for t in tasks]}"
             )
 
-        assert len(fetch_tasks) >= 2, (
-            f"Expected at least 2 completed fetch tasks, found: {[t['task_id'] for t in fetch_tasks]}. All tasks: {[(t['task_id'], t['status']) for t in tasks]}. Attempted {attempts} retries."
-        )
+        assert (
+            len(fetch_tasks) >= 2
+        ), f"Expected at least 2 completed fetch tasks, found: {[t['task_id'] for t in fetch_tasks]}. All tasks: {[(t['task_id'], t['status']) for t in tasks]}. Attempted {attempts} retries."
 
         # Verify that all expected tasks are present
         all_task_ids = {task["task_id"] for task in tasks}
@@ -290,15 +292,16 @@ class TestParallelWaitWorkflow:
             "log_parallel_complete",
             "log_end",
         }
-        assert expected_task_ids.issubset(all_task_ids), (
-            f"Missing tasks in database, expected: {expected_task_ids}, actual: {all_task_ids}"
-        )
+        assert expected_task_ids.issubset(
+            all_task_ids
+        ), f"Missing tasks in database, expected: {expected_task_ids}, actual: {all_task_ids}"
 
         # All tasks should be completed or in 'executing' status for operators like parallel/wait
         for task in tasks:
-            assert task["status"] in ["completed", "executing"], (
-                f"Task {task['task_id']} has unexpected status: {task['status']}"
-            )
+            assert task["status"] in [
+                "completed",
+                "executing",
+            ], f"Task {task['task_id']} has unexpected status: {task['status']}"
 
         assert run_id is not None
 
@@ -321,15 +324,15 @@ class TestLoopWorkflow:
 
         # Check that while task exists and was executed
         while_tasks = [task for task in tasks if task["operator_type"] == "while"]
-        assert len(while_tasks) >= 1, (
-            f"Expected at least 1 while task, found: {[t['task_id'] for t in while_tasks]}"
-        )
+        assert (
+            len(while_tasks) >= 1
+        ), f"Expected at least 1 while task, found: {[t['task_id'] for t in while_tasks]}"
 
         # Check that foreach task exists and was executed
         foreach_tasks = [task for task in tasks if task["operator_type"] == "foreach"]
-        assert len(foreach_tasks) >= 1, (
-            f"Expected at least 1 foreach task, found: {[t['task_id'] for t in foreach_tasks]}"
-        )
+        assert (
+            len(foreach_tasks) >= 1
+        ), f"Expected at least 1 foreach task, found: {[t['task_id'] for t in foreach_tasks]}"
 
         # Verify that all expected tasks are present
         all_task_ids = {task["task_id"] for task in tasks}
@@ -341,15 +344,16 @@ class TestLoopWorkflow:
             "process_users_foreach",
             "log_end",
         }
-        assert expected_task_ids.issubset(all_task_ids), (
-            f"Missing tasks in database, expected: {expected_task_ids}, actual: {all_task_ids}"
-        )
+        assert expected_task_ids.issubset(
+            all_task_ids
+        ), f"Missing tasks in database, expected: {expected_task_ids}, actual: {all_task_ids}"
 
         # All tasks should be completed or in 'executing' status for operators like while/foreach
         for task in tasks:
-            assert task["status"] in ["completed", "executing"], (
-                f"Task {task['task_id']} has unexpected status: {task['status']}"
-            )
+            assert task["status"] in [
+                "completed",
+                "executing",
+            ], f"Task {task['task_id']} has unexpected status: {task['status']}"
 
         assert run_id is not None
 
@@ -372,15 +376,15 @@ class TestWhileWorkflow:
 
         # Check that while task exists and was executed
         while_tasks = [task for task in tasks if task["operator_type"] == "while"]
-        assert len(while_tasks) >= 1, (
-            f"Expected at least 1 while task, found: {[t['task_id'] for t in while_tasks]}"
-        )
+        assert (
+            len(while_tasks) >= 1
+        ), f"Expected at least 1 while task, found: {[t['task_id'] for t in while_tasks]}"
 
         # Check that foreach task exists and was executed
         foreach_tasks = [task for task in tasks if task["operator_type"] == "foreach"]
-        assert len(foreach_tasks) >= 1, (
-            f"Expected at least 1 foreach task, found: {[t['task_id'] for t in foreach_tasks]}"
-        )
+        assert (
+            len(foreach_tasks) >= 1
+        ), f"Expected at least 1 foreach task, found: {[t['task_id'] for t in foreach_tasks]}"
 
         # Verify that all expected tasks are present
         all_task_ids = {task["task_id"] for task in tasks}
@@ -392,15 +396,16 @@ class TestWhileWorkflow:
             "process_users_foreach",
             "log_end",
         }
-        assert expected_task_ids.issubset(all_task_ids), (
-            f"Missing tasks in database, expected: {expected_task_ids}, actual: {all_task_ids}"
-        )
+        assert expected_task_ids.issubset(
+            all_task_ids
+        ), f"Missing tasks in database, expected: {expected_task_ids}, actual: {all_task_ids}"
 
         # All tasks should be completed or in 'executing' status for operators like while/foreach
         for task in tasks:
-            assert task["status"] in ["completed", "executing"], (
-                f"Task {task['task_id']} has unexpected status: {task['status']}"
-            )
+            assert task["status"] in [
+                "completed",
+                "executing",
+            ], f"Task {task['task_id']} has unexpected status: {task['status']}"
 
         assert run_id is not None
 

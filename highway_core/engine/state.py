@@ -1,7 +1,8 @@
 import logging
 import re
 from copy import deepcopy
-from typing import Any, Optional, Dict, Union, ClassVar
+from typing import Any, ClassVar, Dict, Optional, Union
+
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -94,7 +95,8 @@ class WorkflowState(BaseModel):
                     current_val = current_val.get(part)
                     if current_val is None:
                         logger.warning(
-                            "State: Warning - could not find variable path: %s", path
+                            "State: Warning - could not find variable path: %s",
+                            path,
                         )
                         return None
                 else:
@@ -154,7 +156,8 @@ class WorkflowState(BaseModel):
                     current_val = current_val.get(part)
                     if current_val is None:
                         logger.warning(
-                            "State: Warning - could not find memory path: %s", path
+                            "State: Warning - could not find memory path: %s",
+                            path,
                         )
                         return None
                 else:

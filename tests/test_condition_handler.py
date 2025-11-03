@@ -1,15 +1,17 @@
-import pytest
 from unittest.mock import MagicMock
-from highway_core.engine.operator_handlers.condition_handler import (
-    execute,
-    eval_condition,
-    _eval_node,
-)
-from highway_core.engine.models import ConditionOperatorModel
-from highway_core.engine.state import WorkflowState
-from highway_core.tools.registry import ToolRegistry
-from highway_core.tools.bulkhead import BulkheadManager
+
+import pytest
+
 from highway_core.engine.executors.base import BaseExecutor
+from highway_core.engine.models import ConditionOperatorModel
+from highway_core.engine.operator_handlers.condition_handler import (
+    _eval_node,
+    eval_condition,
+    execute,
+)
+from highway_core.engine.state import WorkflowState
+from highway_core.tools.bulkhead import BulkheadManager
+from highway_core.tools.registry import ToolRegistry
 
 
 def test_execute_condition_true():

@@ -1,26 +1,26 @@
-import threading
 import json
-import os
-from pathlib import Path
-from contextlib import contextmanager
-from typing import Optional, Dict, Any, List
 import logging
+import os
+import threading
+from contextlib import contextmanager
 from datetime import datetime
-from sqlalchemy import create_engine, text, Column, DateTime
-from sqlalchemy.orm import sessionmaker, Session
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy import Column, DateTime, create_engine, event, text
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
-from sqlalchemy import event
+
 from .models import (
     Base,
-    Workflow,
     Task,
-    TaskExecution,
-    WorkflowResult,
-    WorkflowMemory,
     TaskDependency,
+    TaskExecution,
+    Workflow,
+    WorkflowMemory,
+    WorkflowResult,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -168,7 +168,11 @@ class DatabaseManager:
         return result is not None
 
     def create_workflow(
-        self, workflow_id: str, name: str, start_task: str, variables: Dict[str, Any]
+        self,
+        workflow_id: str,
+        name: str,
+        start_task: str,
+        variables: Dict[str, Any],
     ) -> bool:
         """Create a new workflow record."""
         try:
@@ -321,7 +325,10 @@ class DatabaseManager:
             return False
 
     def update_task_with_result(
-        self, task_id: str, result: Any, completed_at: Optional[datetime] = None
+        self,
+        task_id: str,
+        result: Any,
+        completed_at: Optional[datetime] = None,
     ) -> bool:
         """Update task with result and completion status."""
         try:
@@ -452,7 +459,11 @@ class DatabaseManager:
         return {task.task_id for task in completed_tasks}
 
     def store_result(
-        self, workflow_id: str, task_id: str, result_key: str, result_value: Any
+        self,
+        workflow_id: str,
+        task_id: str,
+        result_key: str,
+        result_value: Any,
     ) -> bool:
         """Store a result value for a task in a workflow (matches original schema with FK to tasks)."""
         try:

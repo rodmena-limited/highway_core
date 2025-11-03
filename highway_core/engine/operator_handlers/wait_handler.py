@@ -4,18 +4,19 @@
 # - Pauses execution for a specified duration or until a specific time.
 
 import logging
+import re
 import time
 from datetime import datetime
-import re
-from typing import List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, List, Optional
+
 from highway_core.engine.models import WaitOperatorModel
 from highway_core.engine.state import WorkflowState
-from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager
+from highway_core.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
-    from highway_core.engine.orchestrator import Orchestrator
     from highway_core.engine.executors.base import BaseExecutor
+    from highway_core.engine.orchestrator import Orchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +109,8 @@ def execute(
     else:
         # For other types (datetime objects), we'll implement later
         logger.info(
-            "WaitHandler: STUB: Waiting for '%s'. Proceeding immediately.", wait_for
+            "WaitHandler: STUB: Waiting for '%s'. Proceeding immediately.",
+            wait_for,
         )
 
     return []

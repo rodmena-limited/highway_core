@@ -36,6 +36,14 @@ jobs:
       run: |
         python -m mypy .
 
+    - name: Run black check
+      run: |
+        python -m black --check .
+
+    - name: Run isort check
+      run: |
+        python -m isort --check-only .
+
   publish:
     needs: test
     runs-on: ubuntu-latest
@@ -62,6 +70,14 @@ jobs:
     - name: Run type checking
       run: |
         python -m mypy .
+
+    - name: Run black check
+      run: |
+        python -m black --check .
+
+    - name: Run isort check
+      run: |
+        python -m isort --check-only .
 
     - name: Build the package
       run: |

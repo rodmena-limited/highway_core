@@ -1,27 +1,28 @@
-import threading
-import queue
-import time
+import asyncio
+import concurrent.futures
+import functools
 import logging
+import queue
+import threading
+import time
+import uuid
+from concurrent.futures import Future
+from concurrent.futures import TimeoutError as FutureTimeoutError
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from enum import Enum
 from typing import (
-    Callable,
     Any,
-    Optional,
-    Dict,
-    List,
-    Union,
-    TypeVar,
-    Iterator,
+    Callable,
     ContextManager,
     Coroutine,
+    Dict,
+    Iterator,
+    List,
+    Optional,
+    TypeVar,
+    Union,
 )
-from enum import Enum
-from dataclasses import dataclass, field
-from concurrent.futures import Future, TimeoutError as FutureTimeoutError
-import functools
-import concurrent.futures
-from contextlib import contextmanager
-import uuid
-import asyncio
 
 # Type variable for generic return type
 T = TypeVar("T")
@@ -428,7 +429,10 @@ class Bulkhead:
 
     @contextmanager
     def _execute_with_timeout(
-        self, func: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any]
+        self,
+        func: Callable[..., Any],
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
     ) -> Iterator[Any]:
         """Execute function with timeout support"""
         if self.config.timeout_seconds:
@@ -554,7 +558,10 @@ class Bulkhead:
             )
 
     async def execute_async(
-        self, func: Callable[..., Coroutine[Any, Any, T]], *args: Any, **kwargs: Any
+        self,
+        func: Callable[..., Coroutine[Any, Any, T]],
+        *args: Any,
+        **kwargs: Any,
     ) -> T:
         """
         Asynchronously execute a function through the bulkhead.
@@ -728,7 +735,11 @@ class BulkheadManager:
             return self.create_bulkhead(config)
 
     def execute_in_bulkhead(
-        self, bulkhead_name: str, func: Callable[..., T], *args: Any, **kwargs: Any
+        self,
+        bulkhead_name: str,
+        func: Callable[..., T],
+        *args: Any,
+        **kwargs: Any,
     ) -> Future[ExecutionResult]:
         """Execute a function in a specific bulkhead"""
         bulkhead = self.get_bulkhead(bulkhead_name)
@@ -790,7 +801,9 @@ def with_bulkhead(
             return db.execute(query)
     """
 
-    def decorator(func: Callable[..., T]) -> Callable[..., Future[ExecutionResult]]:
+    def decorator(
+        func: Callable[..., T],
+    ) -> Callable[..., Future[ExecutionResult]]:
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Future[ExecutionResult]:
             # Add bulkhead metadata to kwargs
@@ -808,7 +821,8 @@ def with_bulkhead(
 def with_bulkhead_async(
     bulkhead_name: str, manager: BulkheadManager, **bulkhead_kwargs: Any
 ) -> Callable[
-    [Callable[..., Coroutine[Any, Any, T]]], Callable[..., Coroutine[Any, Any, T]]
+    [Callable[..., Coroutine[Any, Any, T]]],
+    Callable[..., Coroutine[Any, Any, T]],
 ]:
     """
     Async decorator for bulkhead execution.

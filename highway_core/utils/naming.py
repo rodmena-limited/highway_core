@@ -1,5 +1,5 @@
-import re
 import hashlib
+import re
 
 
 def generate_unique_identifier(base_name: str, workflow_id: str) -> str:

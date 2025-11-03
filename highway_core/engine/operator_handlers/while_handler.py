@@ -1,17 +1,20 @@
 # highway_core/engine/operator_handlers/while_handler.py
-import logging
 import graphlib
-from typing import List, Optional, TYPE_CHECKING
+import logging
+from typing import TYPE_CHECKING, List, Optional
+
 from highway_core.engine.models import WhileOperatorModel
+from highway_core.engine.operator_handlers.condition_handler import (
+    eval_condition,
+)
 from highway_core.engine.state import WorkflowState
 from highway_core.engine.sub_workflow_runner import _run_sub_workflow
-from highway_core.engine.operator_handlers.condition_handler import eval_condition
-from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager
+from highway_core.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
-    from highway_core.engine.orchestrator import Orchestrator
     from highway_core.engine.executors.base import BaseExecutor
+    from highway_core.engine.orchestrator import Orchestrator
     from highway_core.engine.resource_manager import ContainerResourceManager
 
 logger = logging.getLogger(__name__)

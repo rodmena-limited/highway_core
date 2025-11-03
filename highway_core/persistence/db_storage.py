@@ -5,10 +5,12 @@
 # - Serializes the WorkflowState to JSON and saves it.
 # - Deserializes JSON from the DB to restore a WorkflowState.
 
+import json
 import logging
 import os
-import json
+
 from highway_core.engine.state import WorkflowState
+
 from .manager import PersistenceManager
 
 logger = logging.getLogger(__name__)
@@ -24,12 +26,17 @@ class DatabasePersistence(PersistenceManager):
         return os.path.join(self.storage_path, f"{workflow_run_id}.json")
 
     def save_workflow_state(
-        self, workflow_run_id: str, state: WorkflowState, completed_tasks: set[str]
+        self,
+        workflow_run_id: str,
+        state: WorkflowState,
+        completed_tasks: set[str],
     ) -> None:
         """Saves the current state of a workflow execution to a JSON file."""
         state_file = self._get_state_file_path(workflow_run_id)
         logger.info(
-            "  [Persistence] Saving state for %s to %s", workflow_run_id, state_file
+            "  [Persistence] Saving state for %s to %s",
+            workflow_run_id,
+            state_file,
         )
 
         try:
@@ -56,7 +63,9 @@ class DatabasePersistence(PersistenceManager):
             return None, set()
 
         logger.info(
-            "  [Persistence] Loading state for %s from %s", workflow_run_id, state_file
+            "  [Persistence] Loading state for %s from %s",
+            workflow_run_id,
+            state_file,
         )
         try:
             with open(state_file, "r") as f:
@@ -68,6 +77,7 @@ class DatabasePersistence(PersistenceManager):
             return state, completed_tasks
         except Exception as e:
             logger.error(
-                "  [Persistence] FAILED to load state: %s. Starting new run.", e
+                "  [Persistence] FAILED to load state: %s. Starting new run.",
+                e,
             )
             return None, set()

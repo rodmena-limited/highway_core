@@ -1,10 +1,12 @@
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
+
+from highway_core.engine.models import TaskOperatorModel, WorkflowModel
 from highway_core.engine.orchestrator import Orchestrator
-from highway_core.engine.models import WorkflowModel
-from highway_core.engine.models import TaskOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
+
 from .test_persistence_mock import MockPersistenceManager
 
 
@@ -91,7 +93,8 @@ def test_run_method_with_missing_task():
     """Test the run method with a missing task in the dependency graph.
 
     This test checks cases where a task references a dependency that doesn't exist in the workflow.
-    The orchestrator should handle this gracefully by detecting the missing dependency."""
+    The orchestrator should handle this gracefully by detecting the missing dependency.
+    """
     # Create a workflow with only start_task
     start_task = TaskOperatorModel(
         task_id="start_task",

@@ -1,9 +1,12 @@
-import pytest
-from unittest.mock import patch, MagicMock
 import subprocess
+from unittest.mock import MagicMock, patch
+
+import pytest
 import requests
+
 from highway_core.tools.command import run as command_run
-from highway_core.tools.fetch import get as fetch_get, post as fetch_post
+from highway_core.tools.fetch import get as fetch_get
+from highway_core.tools.fetch import post as fetch_post
 from highway_core.tools.memory import set_memory as memory_set_memory
 
 

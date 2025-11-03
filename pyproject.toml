@@ -7,7 +7,7 @@ include = ["highway_core*"]
 
 [project]
 name = "highway_core"
-version = "0.1.5"
+version = "0.1.6"
 authors = [
   { name = "Farseed Ashouri", email = "farseed.ashouri@gmail.com" },
 ]
@@ -50,6 +50,9 @@ dev = [
     "pytest-cov>=2.12.1",
     "pytest-xdist>=3.0.0",
     "pytest-asyncio>=0.20.0",
+    "black>=23.1.0",
+    "isort>=5.10.1",
+
 ]
 
 [project.urls]
@@ -76,3 +79,41 @@ testpaths = ["tests"]
 filterwarnings = [
     "ignore::DeprecationWarning",
 ]
+
+# black configuration
+[tool.black]
+line-length = 88
+target-version = ['py310']
+include = '\.pyi?$'
+exclude = '''
+/(\.
+|build
+|dist
+|\.eggs
+|\.git
+|\.hg
+|\.mypy_cache
+|\.tox
+|\.venv
+|_build
+|buck-out
+|build
+|dist
+)/
+'''
+
+# isort configuration
+[tool.isort]
+profile = "black"
+line_length = 88
+known_first_party = "highway_core"
+skip = ["build", "dist", ".eggs", ".venv"]
+include_trailing_comma = true
+multi_line_output = 3
+
+# flake8 configuration
+[tool.flake8]
+max-line-length = 120
+extend-ignore = ["E203", "W503"]
+exclude = [".git", "__pycache__", "build", "dist", ".venv", ".eggs", "tests"]
+max-complexity = 10

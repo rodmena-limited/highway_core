@@ -1,9 +1,9 @@
-import logging
 import json
-from typing import Optional, Tuple, Dict, Any, Set
+import logging
 from pathlib import Path
+from typing import Any, Dict, Optional, Set, Tuple
 
-from highway_core.engine.models import TaskOperatorModel, AnyOperatorModel
+from highway_core.engine.models import AnyOperatorModel, TaskOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.persistence.database_manager import DatabaseManager
 from highway_core.persistence.manager import PersistenceManager
@@ -106,7 +106,10 @@ class SQLPersistence(PersistenceManager):
         self.db_manager.update_task_status(task_id, "failed")
 
     def save_workflow_state(
-        self, workflow_run_id: str, state: WorkflowState, completed_tasks: Set[str]
+        self,
+        workflow_run_id: str,
+        state: WorkflowState,
+        completed_tasks: Set[str],
     ) -> None:
         """
         Save the workflow state to the database.

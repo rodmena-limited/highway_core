@@ -5,20 +5,21 @@
 # - Evaluates the condition.
 # - Updates orchestrator state to handle conditional flow.
 
+import ast
 import logging
-from typing import Any, Optional, TYPE_CHECKING
+import operator
+import warnings
+from typing import TYPE_CHECKING, Any, Optional
 
 from highway_core.engine.models import ConditionOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
 
-import ast
-import operator
-import warnings
-
 if TYPE_CHECKING:
+    from highway_core.engine.executors.base import (  # <-- Add this import
+        BaseExecutor,
+    )
     from highway_core.engine.orchestrator import Orchestrator
-    from highway_core.engine.executors.base import BaseExecutor  # <-- Add this import
     from highway_core.tools.bulkhead import BulkheadManager
 
 logger = logging.getLogger(__name__)
@@ -46,7 +47,9 @@ def execute(
     resolved_condition_str = str(resolved_condition_value)
     result = eval_condition(resolved_condition_str)
     logger.info(
-        "ConditionHandler: Resolved to '%s'. Result: %s", resolved_condition_str, result
+        "ConditionHandler: Resolved to '%s'. Result: %s",
+        resolved_condition_str,
+        result,
     )
 
     # 2. Determine which path to take and mark the other as conceptually completed
@@ -65,7 +68,8 @@ def execute(
     # This is needed for tasks that depend on both conditional branches (like log_end in the test)
     if skipped_task_id:
         logger.info(
-            "ConditionHandler: Marking '%s' as conceptually completed.", skipped_task_id
+            "ConditionHandler: Marking '%s' as conceptually completed.",
+            skipped_task_id,
         )
         # Mark the skipped task as done in the sorter so that tasks
         # depending on BOTH conditional branches can proceed
@@ -86,7 +90,9 @@ def eval_condition(condition_str: str) -> bool:
         return bool(result)
     except Exception as e:
         logger.error(
-            "ConditionHandler: Error evaluating condition '%s': %s", condition_str, e
+            "ConditionHandler: Error evaluating condition '%s': %s",
+            condition_str,
+            e,
         )
         return False
 

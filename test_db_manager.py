@@ -3,10 +3,11 @@
 Test script for the new SQLAlchemy-based DatabaseManager
 """
 
-import tempfile
 import os
-from pathlib import Path
+import tempfile
 from datetime import datetime
+from pathlib import Path
+
 from highway_core.persistence.database_manager import DatabaseManager
 
 

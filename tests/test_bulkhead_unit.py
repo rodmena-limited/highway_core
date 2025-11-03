@@ -1,27 +1,29 @@
 """Unit tests for the bulkhead pattern implementation."""
 
-import time
 import threading
-import pytest
-from unittest.mock import Mock, patch
+import time
 from concurrent.futures import Future, TimeoutError
+from unittest.mock import Mock, patch
+
+import pytest
+
 from highway_core.tools.bulkhead import (
     Bulkhead,
-    BulkheadConfig,
-    BulkheadState,
-    ExecutionResult,
-    BulkheadError,
-    BulkheadIsolationError,
-    BulkheadTimeoutError,
-    BulkheadFullError,
     BulkheadCircuitOpenError,
-    CircuitBreaker,
+    BulkheadConfig,
+    BulkheadError,
+    BulkheadFullError,
+    BulkheadIsolationError,
     BulkheadManager,
-    with_bulkhead,
-    with_bulkhead_async,
+    BulkheadState,
+    BulkheadTimeoutError,
+    CircuitBreaker,
+    ExecutionResult,
     get_default_manager,
     set_default_manager,
     shutdown_default_manager,
+    with_bulkhead,
+    with_bulkhead_async,
 )
 
 

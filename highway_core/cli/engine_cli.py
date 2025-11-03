@@ -1,18 +1,18 @@
 """Highway Engine CLI - Command line interface for running highway workflows."""
 
-import sys
+import logging
 import os
-import uuid
+import sys
 import time
+import uuid
 from pathlib import Path
 from typing import Optional
-import logging
 
 try:
-    from importlib.metadata import version
+    from importlib.metadata import version as get_package_version
 except ImportError:
     # Python < 3.8
-    from importlib_metadata import version
+    from importlib_metadata import version as get_package_version
 
 import click
 import psutil
@@ -62,7 +62,7 @@ def format_system_info(info):
 
 
 @click.group()
-@click.version_option(version=version("highway_core"))
+@click.version_option(version=get_package_version("highway_core"))
 def cli():
     """Highway Engine CLI - Run highway workflows with optimized performance."""
     pass
@@ -72,12 +72,17 @@ def cli():
 @click.argument("workflow_path", type=click.Path(exists=True))
 @click.option("--db-path", default=None, help="Path to database file")
 @click.option(
-    "--run-id", default=None, help="Specific run ID (generates random if not provided)"
+    "--run-id",
+    default=None,
+    help="Specific run ID (generates random if not provided)",
 )
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 @click.option("--show-system-info", "-s", is_flag=True, help="Show system information")
 @click.option(
-    "--timeout", default=120.0, type=float, help="Workflow execution timeout in seconds"
+    "--timeout",
+    default=120.0,
+    type=float,
+    help="Workflow execution timeout in seconds",
 )
 def start(
     workflow_path: str,
@@ -91,7 +96,8 @@ def start(
     # Set up logging
     log_level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
-        level=log_level, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        level=log_level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
     logger = logging.getLogger("highway-engine")

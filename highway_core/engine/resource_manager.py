@@ -1,8 +1,8 @@
 import logging
-from typing import Set, Optional, Any
+from typing import Any, Optional, Set
 
-from highway_core.utils.naming import generate_safe_container_name
 from highway_core.utils.docker_detector import is_running_in_docker
+from highway_core.utils.naming import generate_safe_container_name
 
 logger = logging.getLogger(__name__)
 
@@ -54,18 +54,21 @@ class ContainerResourceManager:
 
     def create_isolated_network(self, base_name: str) -> str:
         """Create workflow-specific network"""
+        network_name = generate_safe_container_name(base_name, self.workflow_id)
+
         # Only proceed if we're not in Docker
         if self._is_docker_env:
-            logger.warning("Cannot create isolated network inside Docker container")
-            return "host"  # Use host networking instead
+            logger.warning(
+                "Cannot create isolated network inside Docker container, using default network"
+            )
+            return "default"  # Use default Docker network instead
 
-        network_name = generate_safe_container_name(base_name, self.workflow_id)
         try:
             self.docker_client.networks.create(network_name, check_duplicate=True)
             self.register_network(network_name, network_name)
             logger.info(f"Created isolated network: {network_name}")
         except Exception as e:
-            if "already exists" in str(e):
+            if "already exists" in str(e).lower():
                 logger.warning(f"Network {network_name} already exists.")
             else:
                 logger.error(f"Error creating network {network_name}: {e}")

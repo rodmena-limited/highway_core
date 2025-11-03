@@ -6,19 +6,25 @@
 # - Starts the workflow execution with bulkhead isolation.
 
 import logging
-import yaml
 import uuid
 from typing import Any
-from .models import WorkflowModel
-from .state import WorkflowState
-from .orchestrator import Orchestrator
+
+import yaml
+
+from highway_core.persistence.sql_persistence import (  # <--- New import
+    SQLPersistence,
+)
+from highway_core.tools.bulkhead import BulkheadConfig, BulkheadManager
 from highway_core.tools.registry import ToolRegistry
-from highway_core.tools.bulkhead import BulkheadManager, BulkheadConfig
-from highway_core.persistence.sql_persistence import SQLPersistence  # <--- New import
+
+from .models import WorkflowModel
+from .orchestrator import Orchestrator
+from .state import WorkflowState
 
 # Configure root logging before importing other modules
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
@@ -27,7 +33,9 @@ from typing import Optional
 
 
 def run_workflow_from_yaml(
-    yaml_path: str, workflow_run_id: str | None = None, db_path: Optional[str] = None
+    yaml_path: str,
+    workflow_run_id: str | None = None,
+    db_path: Optional[str] = None,
 ) -> None:
     """
     The main entry point for the Highway Execution Engine with bulkhead isolation.

@@ -1,4 +1,5 @@
 import pytest
+
 from highway_core.engine.state import WorkflowState
 
 
@@ -161,7 +162,10 @@ def test_resolve_templating_nested_dict():
 
     # Resolve templating in nested dictionaries
     input_dict = {
-        "outer": {"inner": "{{variables.outer_var.inner_var}}", "static": "value"},
+        "outer": {
+            "inner": "{{variables.outer_var.inner_var}}",
+            "static": "value",
+        },
         "result": "{{results.nested_result.level1.level2}}",
     }
     result = state.resolve_templating(input_dict)

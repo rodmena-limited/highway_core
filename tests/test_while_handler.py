@@ -1,15 +1,15 @@
-import pytest
-from highway_core.engine.operator_handlers.while_handler import execute
-from highway_core.engine.models import WhileOperatorModel, TaskOperatorModel
-from highway_core.engine.state import WorkflowState
-from highway_core.tools.registry import ToolRegistry
-from highway_core.tools.bulkhead import BulkheadManager
-from highway_core.engine.orchestrator import Orchestrator
-from unittest.mock import MagicMock
 import graphlib
+from unittest.mock import MagicMock
 
+import pytest
 
 import highway_core.tools.memory as memory_tools
+from highway_core.engine.models import TaskOperatorModel, WhileOperatorModel
+from highway_core.engine.operator_handlers.while_handler import execute
+from highway_core.engine.orchestrator import Orchestrator
+from highway_core.engine.state import WorkflowState
+from highway_core.tools.bulkhead import BulkheadManager
+from highway_core.tools.registry import ToolRegistry
 
 
 @pytest.fixture
@@ -69,7 +69,13 @@ def test_while_handler_execute_cond_true(
     )
 
     # Execute the while handler
-    execute(task, mock_state, mock_orchestrator, mock_registry, mock_bulkhead_manager)
+    execute(
+        task,
+        mock_state,
+        mock_orchestrator,
+        mock_registry,
+        mock_bulkhead_manager,
+    )
 
 
 def test_while_handler_execute_cond_false(
@@ -98,7 +104,13 @@ def test_while_handler_execute_cond_false(
     )
 
     # Execute the while handler
-    execute(task, mock_state, mock_orchestrator, mock_registry, mock_bulkhead_manager)
+    execute(
+        task,
+        mock_state,
+        mock_orchestrator,
+        mock_registry,
+        mock_bulkhead_manager,
+    )
 
 
 def test_while_handler_execute_with_templating(
@@ -127,4 +139,10 @@ def test_while_handler_execute_with_templating(
     )
 
     # Execute the while handler
-    execute(task, mock_state, mock_orchestrator, mock_registry, mock_bulkhead_manager)
+    execute(
+        task,
+        mock_state,
+        mock_orchestrator,
+        mock_registry,
+        mock_bulkhead_manager,
+    )

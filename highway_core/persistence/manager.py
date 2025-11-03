@@ -4,16 +4,20 @@
 # - Provides a standard interface for saving/loading workflow state.
 
 from abc import ABC, abstractmethod
-from highway_core.engine.state import WorkflowState
-from highway_core.engine.models import TaskOperatorModel, AnyOperatorModel
-from typing import Tuple, Set, Dict, Any, Optional
 from datetime import datetime
+from typing import Any, Dict, Optional, Set, Tuple
+
+from highway_core.engine.models import AnyOperatorModel, TaskOperatorModel
+from highway_core.engine.state import WorkflowState
 
 
 class PersistenceManager(ABC):
     @abstractmethod
     def save_workflow_state(
-        self, workflow_run_id: str, state: WorkflowState, completed_tasks: Set[str]
+        self,
+        workflow_run_id: str,
+        state: WorkflowState,
+        completed_tasks: Set[str],
     ) -> None:
         """Saves the current state of a workflow execution."""
         pass

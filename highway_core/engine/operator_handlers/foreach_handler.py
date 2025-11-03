@@ -1,17 +1,18 @@
 # highway_core/engine/operator_handlers/foreach_handler.py
-import logging
 import graphlib
+import logging
 from concurrent.futures import ThreadPoolExecutor
-from typing import List, Dict, Any, Optional, TYPE_CHECKING
-from highway_core.engine.models import ForEachOperatorModel, AnyOperatorModel
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+from highway_core.engine.models import AnyOperatorModel, ForEachOperatorModel
 from highway_core.engine.state import WorkflowState
 from highway_core.engine.sub_workflow_runner import _run_sub_workflow
-from highway_core.tools.registry import ToolRegistry
 from highway_core.tools.bulkhead import BulkheadManager
+from highway_core.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
-    from highway_core.engine.orchestrator import Orchestrator
     from highway_core.engine.executors.base import BaseExecutor
+    from highway_core.engine.orchestrator import Orchestrator
     from highway_core.engine.resource_manager import ContainerResourceManager
 
 logger = logging.getLogger(__name__)

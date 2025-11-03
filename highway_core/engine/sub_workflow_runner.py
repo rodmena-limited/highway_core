@@ -1,13 +1,12 @@
-import logging
 import graphlib
-from typing import Dict, Set, Optional
-from highway_core.engine.models import AnyOperatorModel, TaskOperatorModel
-from highway_core.engine.state import WorkflowState
-from highway_core.tools.registry import ToolRegistry
-from highway_core.tools.bulkhead import BulkheadManager
-from highway_core.engine.operator_handlers import task_handler
+import logging
+from typing import TYPE_CHECKING, Dict, Optional, Set
 
-from typing import TYPE_CHECKING
+from highway_core.engine.models import AnyOperatorModel, TaskOperatorModel
+from highway_core.engine.operator_handlers import task_handler
+from highway_core.engine.state import WorkflowState
+from highway_core.tools.bulkhead import BulkheadManager
+from highway_core.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
     from highway_core.engine.executors.base import BaseExecutor

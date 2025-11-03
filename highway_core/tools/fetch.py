@@ -2,8 +2,10 @@
 # Implements 'tools.fetch.*' functions.
 
 import logging
+from typing import Any, Dict, Optional
+
 import requests
-from typing import Optional, Dict, Any
+
 from .decorators import tool
 
 logger = logging.getLogger(__name__)
