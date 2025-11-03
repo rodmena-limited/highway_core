@@ -5,6 +5,7 @@ import docker
 from docker.errors import ImageNotFound, APIError
 
 from highway_core.engine.executors.base import BaseExecutor
+from highway_core.utils.docker_detector import is_running_in_docker
 
 from highway_core.utils.naming import generate_safe_container_name
 
@@ -41,6 +42,17 @@ class DockerExecutor(BaseExecutor):
         resource_manager: Optional["ContainerResourceManager"],
         workflow_run_id: Optional[str],
     ) -> Any:
+        # Check if we're already running inside Docker - prevent nested containers
+        if is_running_in_docker():
+            logger.error(
+                "DockerExecutor: Cannot run Docker executor inside a Docker container."
+            )
+            raise RuntimeError("Cannot run Docker executor inside a Docker container.")
+
+        logger.info(
+            "DockerExecutor: Running in non-containerized environment, proceeding with Docker execution."
+        )
+
         if not task.image:
             raise ValueError(f"Docker task {task.task_id} is missing 'image'.")
 

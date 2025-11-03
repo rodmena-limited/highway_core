@@ -76,7 +76,7 @@ def run_workflow_from_yaml(
         name=f"workflow-{workflow_model.name}",
         max_concurrent_calls=5,  # Reasonable default for workflow tasks
         max_queue_size=20,  # Reasonable default queue size
-        timeout_seconds=30.0,  # Prevent indefinite hangs
+        timeout_seconds=120.0,  # Increased for Docker execution overhead
         failure_threshold=3,  # Allow some failures before isolation
         success_threshold=2,  # Number of successes to exit degraded state
         isolation_duration=10.0,  # Duration to isolate after failures

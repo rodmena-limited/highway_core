@@ -144,25 +144,28 @@ class Orchestrator:
                             "This may indicate a potential circular dependency or unmet dependencies. "
                             "Checking remaining dependencies..."
                         )
-                        
+
                         # Log remaining dependencies for debugging
                         remaining_tasks = set(self.graph.keys()) - self.completed_tasks
                         if remaining_tasks:
                             logger.warning(
                                 "Orchestrator: Remaining tasks: %s. "
-                                "Their dependencies: %s", 
-                                remaining_tasks, 
-                                {task_id: self.graph[task_id] for task_id in remaining_tasks}
+                                "Their dependencies: %s",
+                                remaining_tasks,
+                                {
+                                    task_id: self.graph[task_id]
+                                    for task_id in remaining_tasks
+                                },
                             )
-                        
+
                         # Instead of breaking, let's see if dependencies can eventually be resolved
                         # For now, just log the issue and continue
                         logger.info(
                             "Orchestrator: Stopping workflow execution due to unmet dependencies."
                         )
                         self.persistence.fail_workflow(
-                            self.run_id, 
-                            "Workflow stopped due to unmet dependencies - possible circular dependency"
+                            self.run_id,
+                            "Workflow stopped due to unmet dependencies - possible circular dependency",
                         )
                         break
 
@@ -198,11 +201,12 @@ class Orchestrator:
                             except Exception as e:
                                 logger.error(
                                     "Orchestrator: Failed to submit task '%s' to executor: %s",
-                                    task_id, e
+                                    task_id,
+                                    e,
                                 )
                                 self.persistence.fail_workflow(
-                                    self.run_id, 
-                                    f"Failed to submit task '{task_id}': {str(e)}"
+                                    self.run_id,
+                                    f"Failed to submit task '{task_id}': {str(e)}",
                                 )
                                 raise e
 
@@ -230,8 +234,8 @@ class Orchestrator:
                                     # If we can't mark the task as done, the workflow may hang
                                     logger.error(
                                         "Orchestrator: Could not mark failed task %s as done. "
-                                        "This may cause workflow to hang.", 
-                                        task_id
+                                        "This may cause workflow to hang.",
+                                        task_id,
                                     )
                                 raise e
                     else:
@@ -265,15 +269,16 @@ class Orchestrator:
             task_id,
             task_model.operator_type,
         )
-        
+
         try:
             self.persistence.start_task(self.run_id, task_model)
         except Exception as e:
             logger.error(
-                "Orchestrator: Failed to persist start of task '%s': %s",
-                task_id, e
+                "Orchestrator: Failed to persist start of task '%s': %s", task_id, e
             )
-            raise ValueError(f"Failed to persist task '{task_id}' start state: {str(e)}")
+            raise ValueError(
+                f"Failed to persist task '{task_id}' start state: {str(e)}"
+            )
 
         handler_func = self.handler_map.get(task_model.operator_type)
         if not handler_func:
@@ -306,19 +311,15 @@ class Orchestrator:
         except Exception as e:
             # Mark the task as failed in persistence before re-raising
             try:
-                self.persistence.fail_task(
-                    self.run_id, 
-                    task_id, 
-                    str(e)
-                )
+                self.persistence.fail_task(self.run_id, task_id, str(e))
             except Exception as persistence_error:
                 logger.error(
                     "Orchestrator: Error persisting task failure for '%s': %s",
-                    task_id, persistence_error
+                    task_id,
+                    persistence_error,
                 )
             logger.error(
-                "Orchestrator: Handler function failed for task '%s': %s",
-                task_id, e
+                "Orchestrator: Handler function failed for task '%s': %s", task_id, e
             )
             raise e
 
@@ -330,7 +331,8 @@ class Orchestrator:
         except Exception as e:
             logger.error(
                 "Orchestrator: Failed to mark task '%s' as done in sorter: %s",
-                task_id, e
+                task_id,
+                e,
             )
             raise e
 

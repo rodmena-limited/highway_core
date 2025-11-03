@@ -2,6 +2,9 @@
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+include = ["highway_core*"]
+
 [project]
 name = "highway_core"
 version = "0.1.0"
@@ -34,6 +37,8 @@ dependencies = [
     "pydantic>=2.0.1",
     "docker>=7.1.0",
     "sqlalchemy>=2.0.15",
+    "click>=8.0.0",
+    "importlib-metadata>=4.0.0; python_version<'3.8'",
     ]
 # dev dependencies
 [project.optional-dependencies]
@@ -58,6 +63,10 @@ files = "highway_core"
 exclude = 'tests/|examples/'
 ignore_missing_imports = true
 strict = false
+
+# console scripts
+[project.scripts]
+"highway-engine" = "highway_core.cli.engine_cli:cli"
 
 # pytest
 [tool.pytest.ini_options]
