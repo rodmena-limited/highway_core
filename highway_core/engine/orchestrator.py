@@ -93,12 +93,29 @@ class Orchestrator:
             "foreach": foreach_handler.execute,
         }
 
-        # 3. Initialize Executors
-        #    This is now a map of runtime:executor
+        # 3. Initialize Executors based on environment
+        #    Check if running inside Docker to avoid nested container issues
+        from highway_core.utils.docker_detector import is_running_in_docker
+        
         self.executors: Dict[str, BaseExecutor] = {
             "python": LocalPythonExecutor(),
-            "docker": DockerExecutor(),
         }
+        
+        # Only add Docker executor if not running inside Docker
+        if not is_running_in_docker():
+            self.executors["docker"] = DockerExecutor()
+            logger.info(
+                "Orchestrator: Initialized executors for: %s",
+                list(self.executors.keys()),
+            )
+        else:
+            logger.info(
+                "Orchestrator: Running inside Docker, only initializing Python executor (Docker executor skipped to prevent nested containers)"
+            )
+            logger.info(
+                "Orchestrator: Initialized executors for: %s",
+                list(self.executors.keys()),
+            )
 
         self.bulkhead_manager = BulkheadManager()
         self.executor_pool = ThreadPoolExecutor(

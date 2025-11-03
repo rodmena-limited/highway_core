@@ -25,13 +25,20 @@ class DockerExecutor(BaseExecutor):
     """
 
     def __init__(self) -> None:
-        try:
-            self.client = docker.from_env()
-            self.client.ping()
-            logger.info("DockerExecutor: Connected to Docker daemon.")
-        except Exception as e:
-            logger.error("DockerExecutor: Failed to connect to Docker daemon: %s", e)
-            raise ConnectionError(f"Failed to connect to Docker daemon: {e}")
+        # Check if we're running inside Docker first
+        if is_running_in_docker():
+            logger.error(
+                "DockerExecutor: Cannot initialize Docker executor inside a Docker container - would create nested containers."
+            )
+            raise RuntimeError("Cannot initialize Docker executor inside a Docker container - would create nested containers.")
+        else:
+            try:
+                self.client = docker.from_env()
+                self.client.ping()
+                logger.info("DockerExecutor: Connected to Docker daemon.")
+            except Exception as e:
+                logger.error("DockerExecutor: Failed to connect to Docker daemon: %s", e)
+                raise ConnectionError(f"Failed to connect to Docker daemon: {e}")
 
     def execute(
         self,
