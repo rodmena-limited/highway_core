@@ -185,100 +185,67 @@ class LocalPythonExecutor(BaseExecutor):
         resolved_args = state.resolve_templating(task.args)
         resolved_kwargs = state.resolve_templating(task.kwargs)
 
-        # Check if we're running inside Docker first, before trying to connect to Docker daemon
-        is_docker = is_running_in_docker()
-        if is_docker:
-            # If we're already in Docker, execute the Python code directly
-            logger.info("LocalPythonExecutor: Running inside Docker, executing task %s directly", task.task_id)
+        # We're already confirmed NOT in Docker (checked in execute() method)
+        # Proceed directly with Docker execution
+        try:
+            # Lazy import Docker only when needed
+            import docker
+            from docker.errors import ImageNotFound, APIError
             
-            # Execute the function directly in the current environment
-            from highway_core.tools.registry import ToolRegistry
-            registry = ToolRegistry()
-            
-            try:
-                tool_func = registry.get_function(task.function)
-                
-                # Handle special functions that need state injection
-                if task.function in ["tools.memory.set", "tools.memory.increment"]:
-                    # Create a minimal state-like object for the execution
-                    class MockState:
-                        def __init__(self):
-                            self.variables = {}
-                            self.results = {}
-                            self.memory = {}  # Add memory attribute for memory functions
-                        
-                        def set_result(self, key, value):
-                            self.results[key] = value
-                            
-                        def set_variable(self, key, value):
-                            self.variables[key] = value
-                    
-                    mock_state = MockState()
-                    resolved_args = [mock_state] + resolved_args
-                
-                # Execute and return result
-                result = tool_func(*resolved_args, **resolved_kwargs)
-                return result
-            except Exception as e:
-                logger.error("LocalPythonExecutor: Error executing task %s directly: %s", task.task_id, e)
-                raise RuntimeError(f"Error executing task {task.task_id} directly: {e}")
-        else:
-            # Not in Docker, so run in a container as before
-            try:
-                # Create a Docker client
-                client = docker.from_env()
-                client.ping()  # Verify connection
+            # Create a Docker client
+            client = docker.from_env()
+            client.ping()  # Verify connection
 
-                # Prepare container name
-                safe_workflow_id = (
-                    workflow_run_id if workflow_run_id is not None else "unknown-workflow"
-                )
-                container_name = generate_safe_container_name(
-                    task.task_id + "_docker", safe_workflow_id
-                )
+            # Prepare container name
+            safe_workflow_id = (
+                workflow_run_id if workflow_run_id is not None else "unknown-workflow"
+            )
+            container_name = generate_safe_container_name(
+                task.task_id + "_docker", safe_workflow_id
+            )
 
-                # Run the Python script in a Docker container with highway_core mounted
+            # Run the Python script in a Docker container with highway_core mounted
+            logger.info(
+                "LocalPythonExecutor: Running task %s in Docker container %s with highway_core mounted",
+                task.task_id,
+                container_name,
+            )
+
+            # Check if highway_python_runtime:latest exists locally, if not, build it
+            try:
+                client.images.get("highway_python_runtime:latest")
+                logger.info("Found existing highway_python_runtime:latest image")
+                image_name = "highway_python_runtime:latest"
+            except:
+                # Image doesn't exist, build it
+                logger.info("Building highway_python_runtime:latest image...")
+                dockerfile_path = os.path.join(
+                    os.path.dirname(
+                        os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                    ),
+                    "containers",
+                    "Dockerfile",
+                )
+                client.images.build(
+                    path=os.path.dirname(dockerfile_path),
+                    dockerfile="Dockerfile",
+                    tag="highway_python_runtime:latest",
+                )
                 logger.info(
-                    "LocalPythonExecutor: Running task %s in Docker container %s with highway_core mounted",
-                    task.task_id,
-                    container_name,
+                    "Built highway_python_runtime:latest image successfully"
                 )
+                image_name = "highway_python_runtime:latest"
 
-                # Check if highway_python_runtime:latest exists locally, if not, build it
-                try:
-                    client.images.get("highway_python_runtime:latest")
-                    logger.info("Found existing highway_python_runtime:latest image")
-                    image_name = "highway_python_runtime:latest"
-                except:
-                    # Image doesn't exist, build it
-                    logger.info("Building highway_python_runtime:latest image...")
-                    dockerfile_path = os.path.join(
-                        os.path.dirname(
-                            os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-                        ),
-                        "containers",
-                        "Dockerfile",
-                    )
-                    client.images.build(
-                        path=os.path.dirname(dockerfile_path),
-                        dockerfile="Dockerfile",
-                        tag="highway_python_runtime:latest",
-                    )
-                    logger.info(
-                        "Built highway_python_runtime:latest image successfully"
-                    )
-                    image_name = "highway_python_runtime:latest"
+            logger.info(f"Using Python runtime image: {image_name}")
 
-                logger.info(f"Using Python runtime image: {image_name}")
+            # Create a Python script that calls the function
+            # Instead of trying to install highway_core in the container at runtime,
+            # we'll create a script that assumes highway_core is available (e.g. in a custom image)
+            args_repr = repr(resolved_args)
+            kwargs_repr = repr(resolved_kwargs)
 
-                # Create a Python script that calls the function
-                # Instead of trying to install highway_core in the container at runtime,
-                # we'll create a script that assumes highway_core is available (e.g. in a custom image)
-                args_repr = repr(resolved_args)
-                kwargs_repr = repr(resolved_kwargs)
-
-                # Script that assumes highway_core is already available in the container
-                script_content = f'''
+            # Script that assumes highway_core is already available in the container
+            script_content = f'''
 import sys
 import json
 import os
@@ -324,85 +291,85 @@ except Exception as e:
     print(json.dumps({{"success": False, "error": str(e), "traceback": __import__('traceback').format_exc()}}))
 '''
 
-                # For highway_python_runtime:latest, highway_core is already installed in the image
-                full_script = script_content
+            # For highway_python_runtime:latest, highway_core is already installed in the image
+            full_script = script_content
 
-                # Run the script in the runtime image
-                result_bytes = client.containers.run(
-                    image=image_name,
-                    command=["python", "-c", full_script],
-                    remove=True,  # Remove container after execution
-                    stdout=True,
-                    stderr=True,
-                    detach=False,
-                )
+            # Run the script in the runtime image
+            result_bytes = client.containers.run(
+                image=image_name,
+                command=["python", "-c", full_script],
+                remove=True,  # Remove container after execution
+                stdout=True,
+                stderr=True,
+                detach=False,
+            )
 
-                # Decode the output
-                output_str = result_bytes.decode("utf-8").strip()
-                logger.info(
-                    "LocalPythonExecutor: Task %s Docker execution output: %s",
-                    task.task_id,
-                    output_str,
-                )
+            # Decode the output
+            output_str = result_bytes.decode("utf-8").strip()
+            logger.info(
+                "LocalPythonExecutor: Task %s Docker execution output: %s",
+                task.task_id,
+                output_str,
+            )
 
-                # Extract the JSON result from the output (pip logs may precede the result)
-                try:
-                    # Find the JSON part in the output
-                    import json
+            # Extract the JSON result from the output (pip logs may precede the result)
+            try:
+                # Find the JSON part in the output
+                import json
 
-                    lines = output_str.strip().split("\n")
+                lines = output_str.strip().split("\n")
 
-                    # Look for the last line that is valid JSON (likely the result)
-                    json_line = None
-                    for line in reversed(lines):
-                        line = line.strip()
-                        if line.startswith("{") and line.endswith("}"):
-                            try:
-                                json_obj = json.loads(line)
-                                if isinstance(json_obj, dict):  # Valid JSON object
-                                    json_line = line
-                                    break
-                            except json.JSONDecodeError:
-                                continue
+                # Look for the last line that is valid JSON (likely the result)
+                json_line = None
+                for line in reversed(lines):
+                    line = line.strip()
+                    if line.startswith("{") and line.endswith("}"):
+                        try:
+                            json_obj = json.loads(line)
+                            if isinstance(json_obj, dict):  # Valid JSON object
+                                json_line = line
+                                break
+                        except json.JSONDecodeError:
+                            continue
 
-                    if json_line:
-                        result_obj = json.loads(json_line)
-                        if result_obj.get("success"):
-                            return result_obj["result"]
-                        else:
-                            error_msg = result_obj.get(
-                                "error", "Unknown error in Docker container"
-                            )
-                            traceback_info = result_obj.get("traceback", "")
-                            logger.error(
-                                "LocalPythonExecutor: Error from Docker execution: %s. Traceback: %s",
-                                error_msg,
-                                traceback_info,
-                            )
-                            raise RuntimeError(f"Docker execution failed: {error_msg}")
+                if json_line:
+                    result_obj = json.loads(json_line)
+                    if result_obj.get("success"):
+                        return result_obj["result"]
                     else:
+                        error_msg = result_obj.get(
+                            "error", "Unknown error in Docker container"
+                        )
+                        traceback_info = result_obj.get("traceback", "")
                         logger.error(
-                            "LocalPythonExecutor: Could not find JSON result in output: %s",
-                            output_str,
+                            "LocalPythonExecutor: Error from Docker execution: %s. Traceback: %s",
+                            error_msg,
+                            traceback_info,
                         )
-                        raise RuntimeError(
-                            f"Could not parse result from Docker execution: {output_str}"
-                        )
-                except json.JSONDecodeError as e:
-                    # If it's not JSON, it might be raw output or an error
-                    logger.warning(
-                        "LocalPythonExecutor: Non-JSON output from Docker container: %s. Error: %s",
+                        raise RuntimeError(f"Docker execution failed: {error_msg}")
+                else:
+                    logger.error(
+                        "LocalPythonExecutor: Could not find JSON result in output: %s",
                         output_str,
-                        e,
                     )
-                    return output_str
+                    raise RuntimeError(
+                        f"Could not parse result from Docker execution: {output_str}"
+                    )
+            except json.JSONDecodeError as e:
+                # If it's not JSON, it might be raw output or an error
+                logger.warning(
+                    "LocalPythonExecutor: Non-JSON output from Docker container: %s. Error: %s",
+                    output_str,
+                    e,
+                )
+                return output_str
 
-            except ImageNotFound:
-                logger.error("LocalPythonExecutor: Python Docker image not found")
-                raise
-            except APIError as e:
-                logger.error("LocalPythonExecutor: Docker API error - %s", e)
-                raise
-            except Exception as e:
-                logger.error("LocalPythonExecutor: Error running in Docker - %s", e)
-                raise
+        except ImageNotFound:
+            logger.error("LocalPythonExecutor: Python Docker image not found")
+            raise
+        except APIError as e:
+            logger.error("LocalPythonExecutor: Docker API error - %s", e)
+            raise
+        except Exception as e:
+            logger.error("LocalPythonExecutor: Error running in Docker - %s", e)
+            raise
