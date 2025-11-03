@@ -5,9 +5,9 @@ import os
 import sys
 import time
 import uuid
+from importlib.metadata import version as get_package_version
 from pathlib import Path
 from typing import Optional
-from importlib.metadata import version as get_package_version
 
 import click
 import psutil
