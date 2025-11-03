@@ -10,6 +10,7 @@ from sqlalchemy import create_engine, text, Column, DateTime
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.pool import StaticPool
+from sqlalchemy import event
 from .models import (
     Base,
     Workflow,
@@ -34,20 +35,14 @@ class DatabaseManager:
     def __init__(self, db_path: Optional[str] = None, engine_url: Optional[str] = None):
         """
         Initialize the database manager.
-
-        Args:
-            db_path: Path to the SQLite database file. If None, uses ~/.highway.sqlite3
-            engine_url: Database engine URL. If None, defaults to SQLite with db_path
         """
+        # ... (URL setup code remains the same) ...
         if engine_url is None:
             if db_path is None:
-                # Default to user's home directory
                 home = Path.home()
                 db_path = str(home / ".highway.sqlite3")
 
-            # Ensure the directory exists
             Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-
             self.engine_url = f"sqlite:///{db_path}"
         else:
             self.engine_url = engine_url
@@ -56,18 +51,23 @@ class DatabaseManager:
         if self.engine_url.startswith("sqlite://"):
             self.engine = create_engine(
                 self.engine_url,
-                poolclass=StaticPool,  # Use StaticPool for SQLite to avoid issues with multiple threads
+                poolclass=StaticPool,
                 connect_args={
                     "check_same_thread": False,
-                    "timeout": 30.0,  # Increase timeout for busy operations
+                    "timeout": 30.0,
+                    "isolation_level": "EXCLUSIVE",
+                    # Enable WAL mode via URI parameter for initial connection (not always reliable)
+                    "uri": True,
                 },
-                echo=False,  # Set to True for SQL debugging
+                echo=False,
             )
+            # --> Add the call to the optimization function here <--
+            self._optimize_sqlite_connection()
         else:
             # For other database engines
             self.engine = create_engine(
                 self.engine_url,
-                echo=False,  # Set to True for SQL debugging
+                echo=False,
             )
 
         # Create session factory
@@ -78,6 +78,27 @@ class DatabaseManager:
 
         # Create schema
         self._initialize_schema()
+
+    def _optimize_sqlite_connection(self) -> None:
+        """
+        Applies PRAGMA statements for performance optimization and safety (WAL, cache, etc.).
+        This is a class method that must be registered as an event listener.
+        """
+        if not self.engine_url.startswith("sqlite://"):
+            return  # Only apply for SQLite
+
+        @event.listens_for(self.engine, "connect")
+        def set_sqlite_pragma(dbapi_connection, connection_record):
+            cursor = dbapi_connection.cursor()
+            # Enable WAL mode (the safest and most performant journal mode)
+            cursor.execute("PRAGMA journal_mode=WAL")
+            # Set synchronous to NORMAL (good balance of speed and safety)
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            # Increase the in-memory cache size (e.g., 10MB per connection)
+            cursor.execute("PRAGMA cache_size=10000")
+            # Ensure foreign key constraints are enforced
+            cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.close()
 
     def _get_session(self) -> Session:
         """Get a thread-local database session."""

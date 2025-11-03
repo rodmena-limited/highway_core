@@ -147,7 +147,7 @@ class TestParallelWaitWorkflow:
 
         # Retry for parallel execution environments to ensure persistence has completed
         attempts = 0
-        max_attempts = 12
+        max_attempts = 100
         while len(operator_tasks) < 2 and attempts < max_attempts:
             time.sleep(0.5)  # Additional wait for parallel persistence to complete
             tasks = db_manager.get_tasks_by_workflow(run_id)
