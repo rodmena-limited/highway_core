@@ -59,7 +59,12 @@ def format_system_info(info):
 @click.group()
 @click.version_option(version=get_package_version("highway_core"))
 def cli():
-    """Highway Engine CLI - Run highway workflows with optimized performance."""
+    r"""
+    -------------------------------------------------
+
+    Highway Engine CLI - Optimized Workflow Execution
+    -------------------------------------------------
+    """
     pass
 
 

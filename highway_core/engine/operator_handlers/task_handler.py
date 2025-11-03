@@ -52,18 +52,7 @@ def execute(
         if task.result_key:
             state.set_result(task.result_key, result)
 
-        # 3. Mark the task as completed in persistence
-        if orchestrator and hasattr(orchestrator.persistence, "complete_task"):
-            orchestrator.persistence.complete_task(
-                orchestrator.run_id, task.task_id, result
-            )
-
         return []  # Return an empty list of new tasks
     except Exception as e:
         logger.error(f"TaskHandler: Error executing task {task.task_id}: {e}")
-        # Mark the task as failed in persistence
-        if orchestrator and hasattr(orchestrator.persistence, "fail_task"):
-            orchestrator.persistence.fail_task(
-                orchestrator.run_id, task.task_id, str(e)
-            )
         raise

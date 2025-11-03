@@ -39,7 +39,7 @@ class Orchestrator:
         registry: ToolRegistry,
         use_sql_persistence: Optional[bool] = None,  # Changed to control the behavior
     ) -> None:
-        print("DEBUG: Orchestrator.__init__ called")
+        logger.debug("Orchestrator.__init__ called")
         logger.info("Orchestrator: Initializing orchestrator instance")
         self.run_id = workflow_run_id
         self.workflow = workflow
@@ -274,8 +274,17 @@ class Orchestrator:
             finally:
                 self.executor_pool.shutdown(wait=True)  # <-- Use executor_pool
                 self.bulkhead_manager.shutdown_all()
+                self.close()  # Call the new close method
 
         logger.info("Orchestrator: Workflow '%s' finished.", self.workflow.name)
+
+    def close(self) -> None:
+        """
+        Closes any open resources, such as database connections.
+        """
+        logger.info("Orchestrator: Closing resources.")
+        if self.persistence:
+            self.persistence.close()
 
     def _execute_task(self, task_id: str) -> str:
         """Runs a single task and returns its task_id."""
@@ -331,16 +340,14 @@ class Orchestrator:
                 resource_manager=self.resource_manager,
                 workflow_run_id=self.run_id,
             )
+            # After successful execution, mark as complete in persistence
+            actual_result = None
+            if isinstance(task_model, TaskOperatorModel) and task_model.result_key:
+                actual_result = self.state.get_result(task_model.result_key)
+            self.persistence.complete_task(self.run_id, task_id, actual_result)
         except Exception as e:
-            # Mark the task as failed in persistence before re-raising
-            try:
-                self.persistence.fail_task(self.run_id, task_id, str(e))
-            except Exception as persistence_error:
-                logger.error(
-                    "Orchestrator: Error persisting task failure for '%s': %s",
-                    task_id,
-                    persistence_error,
-                )
+            # Mark the task as failed in persistence
+            self.persistence.fail_task(self.run_id, task_id, str(e))
             logger.error(
                 "Orchestrator: Handler function failed for task '%s': %s",
                 task_id,

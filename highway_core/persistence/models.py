@@ -124,7 +124,10 @@ class Task(Base):  # type: ignore
 
     @command.setter
     def command(self, value):
-        self.command_json = json.dumps(value)
+        if value is None or (isinstance(value, list) and not value):
+            self.command_json = None
+        else:
+            self.command_json = json.dumps(value)
 
     @property
     def args(self):
@@ -134,7 +137,10 @@ class Task(Base):  # type: ignore
 
     @args.setter
     def args(self, value):
-        self.args_json = json.dumps(value)
+        if value is None or (isinstance(value, list) and not value):
+            self.args_json = None
+        else:
+            self.args_json = json.dumps(value)
 
     @property
     def kwargs(self):
@@ -144,7 +150,10 @@ class Task(Base):  # type: ignore
 
     @kwargs.setter
     def kwargs(self, value):
-        self.kwargs_json = json.dumps(value)
+        if value is None or (isinstance(value, dict) and not value):
+            self.kwargs_json = None
+        else:
+            self.kwargs_json = json.dumps(value)
 
     @property
     def dependencies_list(self):
@@ -154,7 +163,10 @@ class Task(Base):  # type: ignore
 
     @dependencies_list.setter
     def dependencies_list(self, value):
-        self.dependencies_json = json.dumps(value)
+        if value is None or (isinstance(value, list) and not value):
+            self.dependencies_json = None
+        else:
+            self.dependencies_json = json.dumps(value)
 
     @property
     def result_value(self):
@@ -164,7 +176,10 @@ class Task(Base):  # type: ignore
 
     @result_value.setter
     def result_value(self, value):
-        self.result_value_json = json.dumps(value)
+        if value is None:
+            self.result_value_json = None
+        else:
+            self.result_value_json = json.dumps(value)
 
 
 class TaskExecution(Base):  # type: ignore

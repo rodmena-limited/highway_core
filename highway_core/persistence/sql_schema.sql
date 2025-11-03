@@ -6,7 +6,9 @@ CREATE TABLE IF NOT EXISTS workflows (
     end_time TIMESTAMP,
     status TEXT DEFAULT 'running', -- running, completed, failed
     error_message TEXT,
-    variables_json TEXT -- Store initial workflow variables
+    variables_json TEXT, -- Store initial workflow variables
+    start_task TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Tasks table: Track individual task executions

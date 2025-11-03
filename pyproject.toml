@@ -74,7 +74,7 @@ strict = false
 # pytest
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "--cov=highway_core --cov-report=term-missing"
+addopts = "--cov=highway_core --cov-report=term-missing -n auto --dist=loadfile"
 testpaths = ["tests"]
 filterwarnings = [
     "ignore::DeprecationWarning",

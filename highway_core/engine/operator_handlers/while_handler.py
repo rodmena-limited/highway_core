@@ -61,17 +61,28 @@ def execute(
 
         logger.info("WhileHandler: Condition True, executing loop body...")
 
-        # 2. Run the sub-workflow
+        # 2. Create an isolated state for this iteration
+        from copy import deepcopy
+
+        iteration_state = deepcopy(
+            state
+        )  # Create a deep copy of the current state to ensure complete isolation
+        iteration_state.loop_context["iteration"] = iteration
+
+        # 3. Run the sub-workflow with the isolated state
         try:
             _run_sub_workflow(
                 sub_graph_tasks=loop_body_tasks,
                 sub_graph=loop_graph,
-                state=state,  # Use the *main* state
+                state=iteration_state,  # Use the isolated state
                 registry=registry,  # type: ignore
                 bulkhead_manager=bulkhead_manager,  # type: ignore
                 executor=executor,  # Pass the executor to the sub-workflow
                 available_executors=orchestrator.executors,  # Pass available executors from orchestrator
             )
+            # Merge relevant changes back to the main state
+            state.memory.update(iteration_state.memory)
+            state.results.update(iteration_state.results)
         except Exception as e:
             logger.error("WhileHandler: Sub-workflow failed: %s", e)
             raise  # Propagate failure to the main orchestrator

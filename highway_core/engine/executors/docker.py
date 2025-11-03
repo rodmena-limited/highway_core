@@ -22,7 +22,7 @@ class DockerExecutor(BaseExecutor):
     """
 
     def __init__(self) -> None:
-        print("DEBUG: DockerExecutor.__init__ called")
+        logger.debug("DockerExecutor.__init__ called")
         # Check if we're running inside Docker first
         if is_running_in_docker():
             logger.error(

@@ -53,11 +53,9 @@ class DatabaseManager:
                 self.engine_url,
                 poolclass=StaticPool,
                 connect_args={
-                    "check_same_thread": False,
+                    "check_same_thread": False,  # Allow connections across threads, alternatively use a connection pool
                     "timeout": 30.0,
-                    "isolation_level": "EXCLUSIVE",
-                    # Enable WAL mode via URI parameter for initial connection (not always reliable)
-                    "uri": True,
+                    "isolation_level": "DEFERRED",
                 },
                 echo=False,
             )
@@ -91,13 +89,28 @@ class DatabaseManager:
         def set_sqlite_pragma(dbapi_connection, connection_record):
             cursor = dbapi_connection.cursor()
             # Enable WAL mode (the safest and most performant journal mode)
-            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA journal_mode=WAL")  # Use WAL for better concurrency
             # Set synchronous to NORMAL (good balance of speed and safety)
-            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.execute(
+                "PRAGMA synchronous=off"
+            )  # Use OFF for maximum speed; change to NORMAL if safety is a concern
             # Increase the in-memory cache size (e.g., 10MB per connection)
-            cursor.execute("PRAGMA cache_size=10000")
+            cursor.execute("PRAGMA cache_size=32000")
             # Ensure foreign key constraints are enforced
             cursor.execute("PRAGMA foreign_keys=ON")
+            # EXCLUSIVE locking mode for better concurrency
+            cursor.execute(
+                "PRAGMA locking_mode=DEFERRED"
+            )  # Use DEFERRED for better concurrency, change to EXCLUSIVE if needed
+            # Temporary storage in memory
+            cursor.execute(
+                "PRAGMA temp_store=MEMORY"
+            )  # Use MEMORY for temp storage, will be used for sorting and temp tables
+            # Set a busy timeout to avoid immediate failures on database locks
+            cursor.execute("PRAGMA busy_timeout=30000")  # 30 seconds
+            # speed up by reducing the size of the journal
+            cursor.execute("PRAGMA journal_size_limit=1048576")  # 1MB
+            logger.debug("Applied SQLite PRAGMA settings for optimization.")
             cursor.close()
 
     def _get_session(self) -> Session:
@@ -194,7 +207,9 @@ class DatabaseManager:
             logger.error(f"Error creating workflow {workflow_id}: {e}")
             return False
 
-    def update_workflow_status(self, workflow_id: str, status: str) -> bool:
+    def update_workflow_status(
+        self, workflow_id: str, status: str, error_message: Optional[str] = None
+    ) -> bool:
         """Update workflow status."""
         try:
             with self.transaction() as session:
@@ -206,6 +221,8 @@ class DatabaseManager:
                 if workflow:
                     workflow.status = status
                     workflow.updated_at = datetime.utcnow()
+                    if error_message:
+                        workflow.error_message = error_message
                     return True
                 return False
         except Exception as e:
@@ -228,6 +245,7 @@ class DatabaseManager:
                 "created_at": workflow.start_time,  # Use start_time which matches original schema
                 "updated_at": workflow.updated_at,  # Now this field exists
                 "status": workflow.status,
+                "error_message": workflow.error_message,
             }
         return None
 
@@ -293,7 +311,11 @@ class DatabaseManager:
             return False
 
     def update_task_status(
-        self, task_id: str, status: str, started_at: Optional[datetime] = None
+        self,
+        task_id: str,
+        status: str,
+        started_at: Optional[datetime] = None,
+        error_message: Optional[str] = None,
     ) -> bool:
         """Update task status."""
         try:
@@ -304,6 +326,8 @@ class DatabaseManager:
                     task.updated_at = datetime.utcnow()
                     if started_at:
                         task.started_at = started_at
+                    if error_message:
+                        task.error_message = error_message
                     return True
                 return False
         except Exception as e:
@@ -489,6 +513,7 @@ class DatabaseManager:
                         result_value=result_value,
                     )
                     session.add(result_obj)
+                    session.flush()  # Explicitly flush to ensure ID is generated
             return True
         except Exception as e:
             logger.error(

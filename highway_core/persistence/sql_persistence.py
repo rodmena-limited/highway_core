@@ -45,7 +45,7 @@ class SQLPersistence(PersistenceManager):
         self.db_manager.create_workflow(
             workflow_id=workflow_id,
             name=workflow_name,
-            start_task="",
+            start_task="",  # start_task is not directly available here, it's part of WorkflowModel
             variables=variables,
         )
 
@@ -55,11 +55,9 @@ class SQLPersistence(PersistenceManager):
 
     def fail_workflow(self, workflow_id: str, error_message: str) -> None:
         """Mark workflow as failed with error details"""
-        # For now, we'll just update the status since the original DB manager didn't have error_message for workflows
-        # The db_manager might need an update to support error_message
-        self.db_manager.update_workflow_status(workflow_id, "failed")
-        # Store the error message using the memory system or another approach
-        # For now, we'll use update_workflow_status as is and potentially enhance later
+        self.db_manager.update_workflow_status(
+            workflow_id, "failed", error_message=error_message
+        )
 
     def start_task(self, workflow_id: str, task: AnyOperatorModel) -> None:
         """Record task start"""
@@ -101,9 +99,9 @@ class SQLPersistence(PersistenceManager):
 
     def fail_task(self, workflow_id: str, task_id: str, error_message: str) -> None:
         """Record task failure with error details"""
-        # Update task status to failed and set error message
-        # For now, I'll update the status and use memory or another mechanism for error message
-        self.db_manager.update_task_status(task_id, "failed")
+        self.db_manager.update_task_status(
+            task_id, "failed", error_message=error_message
+        )
 
     def save_workflow_state(
         self,
