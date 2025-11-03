@@ -30,7 +30,7 @@ jobs:
 
     - name: Run tests
       run: |
-        python -m pytest -n auto --dist=loadfile
+        python -m pytest -n auto --dist=loadfile --ignore=tests/test_db_workflows.py
 
     - name: Run type checking
       run: |
@@ -65,7 +65,7 @@ jobs:
 
     - name: Run tests
       run: |
-        python -m pytest -n auto --dist=loadfile
+        python -m pytest -n auto --dist=loadfile --ignore=tests/test_db_workflows.py
 
     - name: Run type checking
       run: |

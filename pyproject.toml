@@ -7,7 +7,7 @@ include = ["highway_core*"]
 
 [project]
 name = "highway_core"
-version = "0.1.8"
+version = "0.2.1"
 authors = [
   { name = "Farseed Ashouri", email = "farseed.ashouri@gmail.com" },
 ]
@@ -74,8 +74,8 @@ strict = false
 # pytest
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "--cov=highway_core --cov-report=term-missing -n auto --dist=loadfile"
-testpaths = ["tests"]
+addopts = "--cov=highway_core --cov-report=term-missing -n auto --dist=loadfile -v"
+testpaths = ["tests/"]
 filterwarnings = [
     "ignore::DeprecationWarning",
 ]

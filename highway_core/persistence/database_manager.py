@@ -5,11 +5,11 @@ import threading
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Generator
 
 from sqlalchemy import Column, DateTime, create_engine, event, text
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.orm import Session, sessionmaker, scoped_session
 from sqlalchemy.pool import StaticPool
 
 from .models import (
@@ -28,15 +28,19 @@ logger = logging.getLogger(__name__)
 class DatabaseManager:
     """
     Thread-safe database manager for Highway Core workflow persistence using SQLAlchemy.
-    Manages connections, transactions, and provides a clean interface
-    for all database operations with abstracted database engine.
+    Provides proper connection pooling, transaction management, and resource cleanup.
     """
 
     def __init__(self, db_path: Optional[str] = None, engine_url: Optional[str] = None):
         """
-        Initialize the database manager.
+        Initialize the database manager with proper connection handling.
         """
-        # ... (URL setup code remains the same) ...
+        self._lock = threading.RLock()  # For thread safety
+        self._sessions_created = 0
+        self._sessions_closed = 0
+        self._active_sessions = set()
+        self._initialized = False
+        
         if engine_url is None:
             if db_path is None:
                 home = Path.home()
@@ -47,138 +51,161 @@ class DatabaseManager:
         else:
             self.engine_url = engine_url
 
-        # Create SQLAlchemy engine with proper configuration for thread safety
+        # Create SQLAlchemy engine with proper configuration
         if self.engine_url.startswith("sqlite://"):
             self.engine = create_engine(
                 self.engine_url,
                 poolclass=StaticPool,
                 connect_args={
-                    "check_same_thread": False,  # Allow connections across threads, alternatively use a connection pool
+                    "check_same_thread": False,
                     "timeout": 30.0,
-                    "isolation_level": "DEFERRED",
                 },
                 echo=False,
+                echo_pool=False,
             )
-            # --> Add the call to the optimization function here <--
             self._optimize_sqlite_connection()
         else:
-            # For other database engines
+            # For other database engines, use connection pooling
             self.engine = create_engine(
                 self.engine_url,
+                pool_size=16,
+                max_overflow=4,
+                pool_pre_ping=True,  # Verify connections before use
                 echo=False,
             )
 
-        # Create session factory
-        self.SessionLocal = sessionmaker(bind=self.engine, expire_on_commit=False)
-
-        # Thread-local storage for sessions
-        self._local = threading.local()
+        # Create scoped session factory with proper cleanup
+        self.SessionLocal = scoped_session(
+            sessionmaker(
+                bind=self.engine,
+                expire_on_commit=False,
+                autocommit=False,
+                autoflush=False,
+                class_=Session
+            )
+        )
 
         # Create schema
         self._initialize_schema()
+        
+        logger.info(f"DatabaseManager initialized with URL: {self.engine_url}")
 
     def _optimize_sqlite_connection(self) -> None:
         """
-        Applies PRAGMA statements for performance optimization and safety (WAL, cache, etc.).
-        This is a class method that must be registered as an event listener.
+        Applies PRAGMA statements for performance optimization and safety.
         """
         if not self.engine_url.startswith("sqlite://"):
-            return  # Only apply for SQLite
+            return
 
         @event.listens_for(self.engine, "connect")
         def set_sqlite_pragma(dbapi_connection, connection_record):
             cursor = dbapi_connection.cursor()
-            # Enable WAL mode (the safest and most performant journal mode)
-            cursor.execute("PRAGMA journal_mode=WAL")  # Use WAL for better concurrency
-            # Set synchronous to NORMAL (good balance of speed and safety)
-            cursor.execute(
-                "PRAGMA synchronous=off"
-            )  # Use OFF for maximum speed; change to NORMAL if safety is a concern
-            # Increase the in-memory cache size (e.g., 10MB per connection)
-            cursor.execute("PRAGMA cache_size=32000")
-            # Ensure foreign key constraints are enforced
-            cursor.execute("PRAGMA foreign_keys=ON")
-            # EXCLUSIVE locking mode for better concurrency
-            cursor.execute(
-                "PRAGMA locking_mode=DEFERRED"
-            )  # Use DEFERRED for better concurrency, change to EXCLUSIVE if needed
-            # Temporary storage in memory
-            cursor.execute(
-                "PRAGMA temp_store=MEMORY"
-            )  # Use MEMORY for temp storage, will be used for sorting and temp tables
-            # Set a busy timeout to avoid immediate failures on database locks
-            cursor.execute("PRAGMA busy_timeout=30000")  # 30 seconds
-            # speed up by reducing the size of the journal
-            cursor.execute("PRAGMA journal_size_limit=1048576")  # 1MB
-            logger.debug("Applied SQLite PRAGMA settings for optimization.")
-            cursor.close()
-
-    def _get_session(self) -> Session:
-        """Get a thread-local database session."""
-        if not hasattr(self._local, "session"):
-            self._local.session = self.SessionLocal()
-        return self._local.session
+            try:
+                cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.execute("PRAGMA synchronous=NORMAL")  # Better safety than OFF
+                cursor.execute("PRAGMA cache_size=32000")
+                cursor.execute("PRAGMA foreign_keys=OFF")
+                cursor.execute("PRAGMA locking_mode=DEFFERED")
+                cursor.execute("PRAGMA temp_store=MEMORY")
+                cursor.execute("PRAGMA busy_timeout=30000")
+                cursor.execute("PRAGMA journal_size_limit=1048576")
+                logger.debug("Applied SQLite PRAGMA settings for optimization.")
+            except Exception as e:
+                logger.warning(f"Failed to apply SQLite PRAGMA settings: {e}")
+            finally:
+                cursor.close()
 
     def _initialize_schema(self) -> None:
         """Initialize the database schema using SQLAlchemy metadata."""
-        Base.metadata.create_all(bind=self.engine)
-
-        # Add missing columns if needed for backward compatibility (as much as possible with SQLAlchemy)
-        # For SQLite, we need to use raw SQL for column additions since SQLAlchemy doesn't handle this well
-        if self.engine_url.startswith("sqlite://"):
-            with self.engine.connect() as conn:
-                # Check if tasks table has updated_at column
-                result = conn.execute(text("PRAGMA table_info(tasks)"))
-                columns = [row[1] for row in result.fetchall()]
-
-                if "updated_at" not in columns:
-                    try:
-                        # Add updated_at column to tasks table
-                        conn.execute(
-                            text(
-                                "ALTER TABLE tasks ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
-                            )
-                        )
-                        conn.commit()
-                    except Exception:
-                        # Column might already exist
-                        pass
+        with self._lock:
+            if self._initialized:
+                return
+                
+            try:
+                Base.metadata.create_all(bind=self.engine)
+                self._initialized = True
+                logger.info("Database schema initialized successfully")
+            except Exception as e:
+                logger.error(f"Failed to initialize database schema: {e}")
+                raise
 
     @contextmanager
-    def transaction(self):
-        """Context manager for database transactions."""
+    def session_scope(self) -> Generator[Session, None, None]:
+        """
+        Provide a transactional scope around a series of operations.
+        This is the primary method for database access.
+        """
         session = self._get_session()
+        session_id = id(session)
+        
+        with self._lock:
+            self._active_sessions.add(session_id)
+        
         try:
             yield session
             session.commit()
-        except Exception:
+            logger.debug(f"Session {session_id} committed successfully")
+        except Exception as e:
             session.rollback()
+            logger.error(f"Session {session_id} rolled back due to error: {e}")
             raise
+        finally:
+            self._close_session(session)
+            with self._lock:
+                self._active_sessions.discard(session_id)
 
     @contextmanager
-    def database_transaction(self):
-        """Context manager for database transactions (for backward compatibility)."""
-        # For SQLAlchemy, both methods do the same thing
-        with self.transaction() as session:
+    def transaction(self) -> Generator[Session, None, None]:
+        """Context manager for database transactions (alias for session_scope)."""
+        with self.session_scope() as session:
             yield session
 
+    @contextmanager
+    def database_transaction(self) -> Generator[Session, None, None]:
+        """Context manager for database transactions (backward compatibility)."""
+        with self.session_scope() as session:
+            yield session
+
+    def _get_session(self) -> Session:
+        """Get a thread-local database session with proper initialization."""
+        with self._lock:
+            session = self.SessionLocal()
+            self._sessions_created += 1
+            logger.debug(f"Session created (total: {self._sessions_created})")
+            return session
+
+    def _close_session(self, session: Optional[Session] = None) -> None:
+        """Close a session and remove it from the registry."""
+        with self._lock:
+            try:
+                if session is None:
+                    session = self.SessionLocal()
+                
+                session.close()
+                self.SessionLocal.remove()
+                self._sessions_closed += 1
+                logger.debug(f"Session closed (total: {self._sessions_closed})")
+            except Exception as e:
+                logger.warning(f"Error closing session: {e}")
+
     def execute_raw_sql(self, sql: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        """Execute raw SQL for cases where SQLAlchemy ORM is not suitable."""
-        with self.engine.connect() as conn:
+        """Execute raw SQL with proper connection management."""
+        with self.session_scope() as session:
             if params:
-                result = conn.execute(text(sql), params)
+                result = session.execute(text(sql), params)
             else:
-                result = conn.execute(text(sql))
-            conn.commit()
+                result = session.execute(text(sql))
             return result
 
     def workflow_exists(self, workflow_id: str) -> bool:
         """Check if a workflow exists."""
-        session = self._get_session()
-        result = (
-            session.query(Workflow).filter(Workflow.workflow_id == workflow_id).first()
-        )
-        return result is not None
+        with self.session_scope() as session:
+            result = (
+                session.query(Workflow)
+                .filter(Workflow.workflow_id == workflow_id)
+                .first()
+            )
+            return result is not None
 
     def create_workflow(
         self,
@@ -189,19 +216,20 @@ class DatabaseManager:
     ) -> bool:
         """Create a new workflow record."""
         try:
-            with self.transaction() as session:
+            with self.session_scope() as session:
                 workflow = Workflow(
                     workflow_id=workflow_id,
-                    workflow_name=name,  # Use workflow_name field that matches the schema
+                    workflow_name=name,
                     start_task=start_task,
                     variables=variables,
                     start_time=datetime.utcnow(),
                     updated_at=datetime.utcnow(),
                 )
                 session.add(workflow)
+                logger.info(f"Created workflow: {workflow_id}")
             return True
         except IntegrityError:
-            logger.error(f"Workflow with ID {workflow_id} already exists")
+            logger.warning(f"Workflow with ID {workflow_id} already exists")
             return False
         except Exception as e:
             logger.error(f"Error creating workflow {workflow_id}: {e}")
@@ -212,10 +240,11 @@ class DatabaseManager:
     ) -> bool:
         """Update workflow status."""
         try:
-            with self.transaction() as session:
+            with self.session_scope() as session:
                 workflow = (
                     session.query(Workflow)
                     .filter(Workflow.workflow_id == workflow_id)
+                    .with_for_update()  # Lock the row for update
                     .first()
                 )
                 if workflow:
@@ -223,7 +252,9 @@ class DatabaseManager:
                     workflow.updated_at = datetime.utcnow()
                     if error_message:
                         workflow.error_message = error_message
+                    logger.debug(f"Updated workflow {workflow_id} status to {status}")
                     return True
+                logger.warning(f"Workflow {workflow_id} not found for status update")
                 return False
         except Exception as e:
             logger.error(f"Error updating workflow {workflow_id} status: {e}")
@@ -231,23 +262,25 @@ class DatabaseManager:
 
     def load_workflow(self, workflow_id: str) -> Optional[Dict[str, Any]]:
         """Load a workflow by ID."""
-        session = self._get_session()
-        workflow = (
-            session.query(Workflow).filter(Workflow.workflow_id == workflow_id).first()
-        )
+        with self.session_scope() as session:
+            workflow = (
+                session.query(Workflow)
+                .filter(Workflow.workflow_id == workflow_id)
+                .first()
+            )
 
-        if workflow:
-            return {
-                "workflow_id": workflow.workflow_id,
-                "name": workflow.name,  # Using the property alias
-                "start_task": workflow.start_task or "",  # Use the field we added
-                "variables": workflow.variables,
-                "created_at": workflow.start_time,  # Use start_time which matches original schema
-                "updated_at": workflow.updated_at,  # Now this field exists
-                "status": workflow.status,
-                "error_message": workflow.error_message,
-            }
-        return None
+            if workflow:
+                return {
+                    "workflow_id": workflow.workflow_id,
+                    "name": workflow.name,
+                    "start_task": workflow.start_task or "",
+                    "variables": workflow.variables,
+                    "created_at": workflow.start_time,
+                    "updated_at": workflow.updated_at,
+                    "status": workflow.status,
+                    "error_message": workflow.error_message,
+                }
+            return None
 
     def create_task(
         self,
@@ -262,25 +295,23 @@ class DatabaseManager:
         kwargs: Optional[Dict[str, Any]] = None,
         result_key: Optional[str] = None,
         dependencies: Optional[List[str]] = None,
-        status: str = "pending",  # Add status parameter with default value
+        status: str = "pending",
         error_message: Optional[str] = None,
         started_at: Optional[datetime] = None,
         completed_at: Optional[datetime] = None,
     ) -> bool:
         """Create a new task record."""
         try:
-            # First check if workflow exists, create it if not
-            workflow_exists = self.workflow_exists(workflow_id)
-            if not workflow_exists:
-                # Create a minimal workflow record
+            # Check if workflow exists, create it if not
+            if not self.workflow_exists(workflow_id):
                 self.create_workflow(
                     workflow_id=workflow_id,
-                    name=workflow_id,  # Use workflow_id as name
-                    start_task="",  # Empty for now
-                    variables={},  # Empty variables
+                    name=workflow_id,
+                    start_task="",
+                    variables={},
                 )
 
-            with self.transaction() as session:
+            with self.session_scope() as session:
                 task = Task(
                     task_id=task_id,
                     workflow_id=workflow_id,
@@ -300,11 +331,10 @@ class DatabaseManager:
                     updated_at=datetime.utcnow(),
                 )
                 session.add(task)
+                logger.debug(f"Created task: {task_id} in workflow: {workflow_id}")
             return True
         except IntegrityError as e:
-            logger.error(
-                f"Error creating task {task_id} in workflow {workflow_id}: {e}"
-            )
+            logger.error(f"Integrity error creating task {task_id}: {e}")
             return False
         except Exception as e:
             logger.error(f"Unexpected error creating task {task_id}: {e}")
@@ -319,8 +349,13 @@ class DatabaseManager:
     ) -> bool:
         """Update task status."""
         try:
-            with self.transaction() as session:
-                task = session.query(Task).filter(Task.task_id == task_id).first()
+            with self.session_scope() as session:
+                task = (
+                    session.query(Task)
+                    .filter(Task.task_id == task_id)
+                    .with_for_update()
+                    .first()
+                )
                 if task:
                     task.status = status
                     task.updated_at = datetime.utcnow()
@@ -328,6 +363,7 @@ class DatabaseManager:
                         task.started_at = started_at
                     if error_message:
                         task.error_message = error_message
+                    logger.debug(f"Updated task {task_id} status to {status}")
                     return True
                 return False
         except Exception as e:
@@ -337,8 +373,13 @@ class DatabaseManager:
     def update_task_completion(self, task_id: str, completed_at: datetime) -> bool:
         """Update task completion timestamp."""
         try:
-            with self.transaction() as session:
-                task = session.query(Task).filter(Task.task_id == task_id).first()
+            with self.session_scope() as session:
+                task = (
+                    session.query(Task)
+                    .filter(Task.task_id == task_id)
+                    .with_for_update()
+                    .first()
+                )
                 if task:
                     task.completed_at = completed_at
                     task.status = "completed"
@@ -356,15 +397,17 @@ class DatabaseManager:
     ) -> bool:
         """Update task with result and completion status."""
         try:
-            with self.transaction() as session:
-                task = session.query(Task).filter(Task.task_id == task_id).first()
+            with self.session_scope() as session:
+                task = (
+                    session.query(Task)
+                    .filter(Task.task_id == task_id)
+                    .with_for_update()
+                    .first()
+                )
                 if task:
                     task.result_value = result
                     task.status = "completed"
-                    if completed_at:
-                        task.completed_at = completed_at
-                    else:
-                        task.completed_at = datetime.utcnow()
+                    task.completed_at = completed_at or datetime.utcnow()
                     return True
                 return False
         except Exception as e:
@@ -387,9 +430,9 @@ class DatabaseManager:
     ) -> bool:
         """Create a task execution record."""
         try:
-            with self.transaction() as session:
+            with self.session_scope() as session:
                 execution = TaskExecution(
-                    execution_id=f"{task_id}_exec_{int(datetime.utcnow().timestamp())}",  # Generate unique ID
+                    execution_id=f"{task_id}_exec_{int(datetime.utcnow().timestamp())}",
                     task_id=task_id,
                     workflow_id=workflow_id,
                     executor_runtime=executor_runtime,
@@ -410,77 +453,77 @@ class DatabaseManager:
 
     def get_tasks_by_workflow(self, workflow_id: str) -> List[Dict[str, Any]]:
         """Get all tasks for a workflow."""
-        session = self._get_session()
-        tasks = (
-            session.query(Task)
-            .filter(Task.workflow_id == workflow_id)
-            .order_by(Task.created_at)
-            .all()
-        )
+        with self.session_scope() as session:
+            tasks = (
+                session.query(Task)
+                .filter(Task.workflow_id == workflow_id)
+                .order_by(Task.created_at)
+                .all()
+            )
 
-        task_list = []
-        for task in tasks:
-            task_dict = {
-                "task_id": task.task_id,
-                "workflow_id": task.workflow_id,
-                "operator_type": task.operator_type,
-                "runtime": task.runtime,
-                "function": task.function,
-                "image": task.image,
-                "command": task.command,
-                "args": task.args,
-                "kwargs": task.kwargs,
-                "result_key": task.result_key,
-                "dependencies": task.dependencies_list,
-                "created_at": task.created_at,
-                "started_at": task.started_at,
-                "completed_at": task.completed_at,
-                "status": task.status,
-            }
-            task_list.append(task_dict)
+            task_list = []
+            for task in tasks:
+                task_dict = {
+                    "task_id": task.task_id,
+                    "workflow_id": task.workflow_id,
+                    "operator_type": task.operator_type,
+                    "runtime": task.runtime,
+                    "function": task.function,
+                    "image": task.image,
+                    "command": task.command,
+                    "args": task.args,
+                    "kwargs": task.kwargs,
+                    "result_key": task.result_key,
+                    "dependencies": task.dependencies_list,
+                    "created_at": task.created_at,
+                    "started_at": task.started_at,
+                    "completed_at": task.completed_at,
+                    "status": task.status,
+                }
+                task_list.append(task_dict)
 
-        return task_list
+            return task_list
 
     def get_task_executions(self, task_id: str) -> List[Dict[str, Any]]:
         """Get all executions for a task."""
-        session = self._get_session()
-        executions = (
-            session.query(TaskExecution)
-            .filter(TaskExecution.task_id == task_id)
-            .order_by(TaskExecution.created_at.desc())
-            .all()
-        )
+        with self.session_scope() as session:
+            executions = (
+                session.query(TaskExecution)
+                .filter(TaskExecution.task_id == task_id)
+                .order_by(TaskExecution.created_at.desc())
+                .all()
+            )
 
-        execution_list = []
-        for execution in executions:
-            execution_dict = {
-                "execution_id": execution.execution_id,
-                "task_id": execution.task_id,
-                "workflow_id": execution.workflow_id,
-                "executor_runtime": execution.executor_runtime,
-                "execution_args": execution.execution_args,
-                "execution_kwargs": execution.execution_kwargs,
-                "result": execution.result,
-                "error_message": execution.error_message,
-                "started_at": execution.started_at,
-                "completed_at": execution.completed_at,
-                "duration_ms": execution.duration_ms,
-                "status": execution.status,
-            }
-            execution_list.append(execution_dict)
+            execution_list = []
+            for execution in executions:
+                execution_dict = {
+                    "execution_id": execution.execution_id,
+                    "task_id": execution.task_id,
+                    "workflow_id": execution.workflow_id,
+                    "executor_runtime": execution.executor_runtime,
+                    "execution_args": execution.execution_args,
+                    "execution_kwargs": execution.execution_kwargs,
+                    "result": execution.result,
+                    "error_message": execution.error_message,
+                    "started_at": execution.started_at,
+                    "completed_at": execution.completed_at,
+                    "duration_ms": execution.duration_ms,
+                    "status": execution.status,
+                }
+                execution_list.append(execution_dict)
 
-        return execution_list
+            return execution_list
 
     def get_completed_tasks(self, workflow_id: str) -> set:
         """Get set of completed task IDs for a workflow."""
-        session = self._get_session()
-        completed_tasks = (
-            session.query(Task.task_id)
-            .filter(Task.workflow_id == workflow_id, Task.status == "completed")
-            .all()
-        )
+        with self.session_scope() as session:
+            completed_tasks = (
+                session.query(Task.task_id)
+                .filter(Task.workflow_id == workflow_id, Task.status == "completed")
+                .all()
+            )
 
-        return {task.task_id for task in completed_tasks}
+            return {task.task_id for task in completed_tasks}
 
     def store_result(
         self,
@@ -489,10 +532,9 @@ class DatabaseManager:
         result_key: str,
         result_value: Any,
     ) -> bool:
-        """Store a result value for a task in a workflow (matches original schema with FK to tasks)."""
+        """Store a result value for a task in a workflow."""
         try:
-            with self.transaction() as session:
-                # Check if result already exists, if so, update it, otherwise create new
+            with self.session_scope() as session:
                 result_obj = (
                     session.query(WorkflowResult)
                     .filter(
@@ -513,32 +555,28 @@ class DatabaseManager:
                         result_value=result_value,
                     )
                     session.add(result_obj)
-                    session.flush()  # Explicitly flush to ensure ID is generated
             return True
         except Exception as e:
-            logger.error(
-                f"Error storing result {result_key} for task {task_id} in workflow {workflow_id}: {e}"
-            )
+            logger.error(f"Error storing result {result_key} for task {task_id}: {e}")
             return False
 
     def load_results(self, workflow_id: str) -> Dict[str, Any]:
         """Load all results for a workflow."""
-        session = self._get_session()
-        results = (
-            session.query(WorkflowResult)
-            .filter(WorkflowResult.workflow_id == workflow_id)
-            .all()
-        )
+        with self.session_scope() as session:
+            results = (
+                session.query(WorkflowResult)
+                .filter(WorkflowResult.workflow_id == workflow_id)
+                .all()
+            )
 
-        return {result.result_key: result.result_value for result in results}  # type: ignore
+            return {result.result_key: result.result_value for result in results}
 
     def store_memory(
         self, workflow_id: str, memory_key: str, memory_value: Any
     ) -> bool:
         """Store a memory value for a workflow."""
         try:
-            with self.transaction() as session:
-                # Check if memory already exists, if so, update it, otherwise create new
+            with self.session_scope() as session:
                 memory_obj = (
                     session.query(WorkflowMemory)
                     .filter(
@@ -560,35 +598,31 @@ class DatabaseManager:
                     session.add(memory_obj)
             return True
         except Exception as e:
-            logger.error(
-                f"Error storing memory {memory_key} for workflow {workflow_id}: {e}"
-            )
+            logger.error(f"Error storing memory {memory_key} for workflow {workflow_id}: {e}")
             return False
 
     def load_memory(self, workflow_id: str) -> Dict[str, Any]:
         """Load all memory for a workflow."""
-        session = self._get_session()
-        memory_entries = (
-            session.query(WorkflowMemory)
-            .filter(WorkflowMemory.workflow_id == workflow_id)
-            .all()
-        )
+        with self.session_scope() as session:
+            memory_entries = (
+                session.query(WorkflowMemory)
+                .filter(WorkflowMemory.workflow_id == workflow_id)
+                .all()
+            )
 
-        return {memory.memory_key: memory.memory_value for memory in memory_entries}  # type: ignore
+            return {memory.memory_key: memory.memory_value for memory in memory_entries}
 
     def store_dependencies(
         self, workflow_id: str, task_id: str, dependencies: List[str]
     ) -> bool:
         """Store task dependencies."""
         try:
-            with self.transaction() as session:
-                # First, remove existing dependencies for this task
+            with self.session_scope() as session:
                 session.query(TaskDependency).filter(
                     TaskDependency.task_id == task_id,
                     TaskDependency.workflow_id == workflow_id,
                 ).delete()
 
-                # Add new dependencies
                 for dep_task_id in dependencies:
                     dependency = TaskDependency(
                         task_id=task_id,
@@ -603,32 +637,98 @@ class DatabaseManager:
 
     def get_dependencies(self, task_id: str) -> List[str]:
         """Get dependencies for a task."""
-        session = self._get_session()
-        dependencies = (
-            session.query(TaskDependency.depends_on_task_id)
-            .filter(TaskDependency.task_id == task_id)
-            .all()
-        )
+        with self.session_scope() as session:
+            dependencies = (
+                session.query(TaskDependency.depends_on_task_id)
+                .filter(TaskDependency.task_id == task_id)
+                .all()
+            )
 
-        return [dep.depends_on_task_id for dep in dependencies]
+            return [dep.depends_on_task_id for dep in dependencies]
 
     def get_dependents(self, task_id: str) -> List[str]:
         """Get tasks that depend on this task."""
-        session = self._get_session()
-        dependents = (
-            session.query(TaskDependency.task_id)
-            .filter(TaskDependency.depends_on_task_id == task_id)
-            .all()
-        )
+        with self.session_scope() as session:
+            dependents = (
+                session.query(TaskDependency.task_id)
+                .filter(TaskDependency.depends_on_task_id == task_id)
+                .all()
+            )
 
-        return [dep.task_id for dep in dependents]
+            return [dep.task_id for dep in dependents]
+
+    def get_session_stats(self) -> Dict[str, Any]:
+        """Get session statistics for monitoring."""
+        with self._lock:
+            return {
+                "sessions_created": self._sessions_created,
+                "sessions_closed": self._sessions_closed,
+                "active_sessions": len(self._active_sessions),
+                "engine_url": self.engine_url,
+            }
+
+    def health_check(self) -> bool:
+        """Perform a health check on the database connection."""
+        try:
+            with self.session_scope() as session:
+                session.execute(text("SELECT 1"))
+            return True
+        except Exception as e:
+            logger.error(f"Database health check failed: {e}")
+            return False
 
     def close(self) -> None:
-        """Close the database session for the current thread."""
-        if hasattr(self._local, "session"):
-            self._local.session.close()
-            delattr(self._local, "session")
+        """Close the current thread's session."""
+        self._close_session()
 
     def close_all_connections(self) -> None:
-        """Close all connections (call this on application shutdown)."""
-        self.engine.dispose()
+        """Close all connections and cleanup resources."""
+        with self._lock:
+            try:
+                # Close any remaining active sessions
+                active_count = len(self._active_sessions)
+                if active_count > 0:
+                    logger.warning(f"Force closing {active_count} active sessions")
+                
+                # Remove all sessions from the registry
+                self.SessionLocal.remove()
+                
+                # Dispose of the engine
+                self.engine.dispose()
+                
+                logger.info("All database connections closed successfully")
+                logger.info(f"Session statistics: {self.get_session_stats()}")
+            except Exception as e:
+                logger.error(f"Error closing all connections: {e}")
+
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit with proper cleanup."""
+        self.close_all_connections()
+
+
+# Usage example
+def main():
+    """Example usage with proper resource management."""
+    
+    # Recommended usage pattern 1: Context manager
+    with DatabaseManager() as db:
+        db.create_workflow("wf1", "Test Workflow", "task1", {})
+        stats = db.get_session_stats()
+        print(f"Database stats: {stats}")
+    
+    # Recommended usage pattern 2: Manual management
+    db = DatabaseManager()
+    try:
+        db.create_task("wf1", "task1", "python_operator")
+        results = db.load_results("wf1")
+        print(f"Results: {results}")
+    finally:
+        db.close_all_connections()
+
+
+if __name__ == "__main__":
+    main()
