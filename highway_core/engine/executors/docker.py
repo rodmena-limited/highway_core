@@ -29,17 +29,22 @@ class DockerExecutor(BaseExecutor):
             logger.error(
                 "DockerExecutor: Cannot initialize Docker executor inside a Docker container - would create nested containers."
             )
-            raise RuntimeError("Cannot initialize Docker executor inside a Docker container - would create nested containers.")
+            raise RuntimeError(
+                "Cannot initialize Docker executor inside a Docker container - would create nested containers."
+            )
         else:
             try:
                 # Lazy import Docker only when needed
                 import docker
                 from docker.errors import APIError
+
                 self.client = docker.from_env()
                 self.client.ping()
                 logger.info("DockerExecutor: Connected to Docker daemon.")
             except Exception as e:
-                logger.error("DockerExecutor: Failed to connect to Docker daemon: %s", e)
+                logger.error(
+                    "DockerExecutor: Failed to connect to Docker daemon: %s", e
+                )
                 raise ConnectionError(f"Failed to connect to Docker daemon: {e}")
 
     def execute(
@@ -51,6 +56,10 @@ class DockerExecutor(BaseExecutor):
         resource_manager: Optional["ContainerResourceManager"],
         workflow_run_id: Optional[str],
     ) -> Any:
+        # Import Docker exceptions to handle them properly
+        import docker
+        from docker.errors import ImageNotFound, APIError
+
         # Check if we're already running inside Docker - prevent nested containers
         if is_running_in_docker():
             logger.error(

@@ -191,7 +191,7 @@ class LocalPythonExecutor(BaseExecutor):
             # Lazy import Docker only when needed
             import docker
             from docker.errors import ImageNotFound, APIError
-            
+
             # Create a Docker client
             client = docker.from_env()
             client.ping()  # Verify connection
@@ -231,9 +231,7 @@ class LocalPythonExecutor(BaseExecutor):
                     dockerfile="Dockerfile",
                     tag="highway_python_runtime:latest",
                 )
-                logger.info(
-                    "Built highway_python_runtime:latest image successfully"
-                )
+                logger.info("Built highway_python_runtime:latest image successfully")
                 image_name = "highway_python_runtime:latest"
 
             logger.info(f"Using Python runtime image: {image_name}")

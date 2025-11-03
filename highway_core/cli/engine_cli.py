@@ -95,9 +95,10 @@ def start(
     )
 
     logger = logging.getLogger("highway-engine")
-    
+
     # Show Docker detection status
     from highway_core.utils.docker_detector import is_running_in_docker
+
     is_docker = is_running_in_docker()
     click.echo(f"Docker Environment Detected: {is_docker}")
     click.echo()  # Add a blank line
