@@ -5,11 +5,11 @@ import threading
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Generator
+from typing import Any, Dict, Generator, List, Optional
 
 from sqlalchemy import Column, DateTime, create_engine, event, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy.orm import Session, sessionmaker, scoped_session
+from sqlalchemy.orm import Session, scoped_session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from .models import (
@@ -38,9 +38,9 @@ class DatabaseManager:
         self._lock = threading.RLock()  # For thread safety
         self._sessions_created = 0
         self._sessions_closed = 0
-        self._active_sessions = set()
+        self._active_sessions: set[int] = set()
         self._initialized = False
-        
+
         if engine_url is None:
             if db_path is None:
                 home = Path.home()
@@ -81,13 +81,13 @@ class DatabaseManager:
                 expire_on_commit=False,
                 autocommit=False,
                 autoflush=False,
-                class_=Session
+                class_=Session,
             )
         )
 
         # Create schema
         self._initialize_schema()
-        
+
         logger.info(f"DatabaseManager initialized with URL: {self.engine_url}")
 
     def _optimize_sqlite_connection(self) -> None:
@@ -120,7 +120,7 @@ class DatabaseManager:
         with self._lock:
             if self._initialized:
                 return
-                
+
             try:
                 Base.metadata.create_all(bind=self.engine)
                 self._initialized = True
@@ -137,10 +137,10 @@ class DatabaseManager:
         """
         session = self._get_session()
         session_id = id(session)
-        
+
         with self._lock:
             self._active_sessions.add(session_id)
-        
+
         try:
             yield session
             session.commit()
@@ -180,7 +180,7 @@ class DatabaseManager:
             try:
                 if session is None:
                     session = self.SessionLocal()
-                
+
                 session.close()
                 self.SessionLocal.remove()
                 self._sessions_closed += 1
@@ -248,10 +248,10 @@ class DatabaseManager:
                     .first()
                 )
                 if workflow:
-                    workflow.status = status
-                    workflow.updated_at = datetime.utcnow()
+                    workflow.status = status  # type: ignore
+                    workflow.updated_at = datetime.utcnow()  # type: ignore
                     if error_message:
-                        workflow.error_message = error_message
+                        workflow.error_message = error_message  # type: ignore
                     logger.debug(f"Updated workflow {workflow_id} status to {status}")
                     return True
                 logger.warning(f"Workflow {workflow_id} not found for status update")
@@ -357,12 +357,12 @@ class DatabaseManager:
                     .first()
                 )
                 if task:
-                    task.status = status
-                    task.updated_at = datetime.utcnow()
+                    task.status = status  # type: ignore
+                    task.updated_at = datetime.utcnow()  # type: ignore
                     if started_at:
-                        task.started_at = started_at
+                        task.started_at = started_at  # type: ignore
                     if error_message:
-                        task.error_message = error_message
+                        task.error_message = error_message  # type: ignore
                     logger.debug(f"Updated task {task_id} status to {status}")
                     return True
                 return False
@@ -381,8 +381,8 @@ class DatabaseManager:
                     .first()
                 )
                 if task:
-                    task.completed_at = completed_at
-                    task.status = "completed"
+                    task.completed_at = completed_at  # type: ignore
+                    task.status = "completed"  # type: ignore
                     return True
                 return False
         except Exception as e:
@@ -406,8 +406,8 @@ class DatabaseManager:
                 )
                 if task:
                     task.result_value = result
-                    task.status = "completed"
-                    task.completed_at = completed_at or datetime.utcnow()
+                    task.status = "completed"  # type: ignore
+                    task.completed_at = completed_at or datetime.utcnow()  # type: ignore
                     return True
                 return False
         except Exception as e:
@@ -551,7 +551,7 @@ class DatabaseManager:
                     result_obj = WorkflowResult(
                         workflow_id=workflow_id,
                         task_id=task_id,
-                        result_key=result_key,
+                        result_key=result_key,  # type: ignore
                         result_value=result_value,
                     )
                     session.add(result_obj)
@@ -569,7 +569,7 @@ class DatabaseManager:
                 .all()
             )
 
-            return {result.result_key: result.result_value for result in results}
+            return {result.result_key: result.result_value for result in results}  # type: ignore
 
     def store_memory(
         self, workflow_id: str, memory_key: str, memory_value: Any
@@ -588,17 +588,19 @@ class DatabaseManager:
 
                 if memory_obj:
                     memory_obj.memory_value = memory_value
-                    memory_obj.updated_at = datetime.utcnow()
+                    memory_obj.updated_at = datetime.utcnow()  # type: ignore
                 else:
                     memory_obj = WorkflowMemory(
                         workflow_id=workflow_id,
-                        memory_key=memory_key,
+                        memory_key=memory_key,  # type: ignore
                         memory_value=memory_value,
                     )
                     session.add(memory_obj)
             return True
         except Exception as e:
-            logger.error(f"Error storing memory {memory_key} for workflow {workflow_id}: {e}")
+            logger.error(
+                f"Error storing memory {memory_key} for workflow {workflow_id}: {e}"
+            )
             return False
 
     def load_memory(self, workflow_id: str) -> Dict[str, Any]:
@@ -610,7 +612,7 @@ class DatabaseManager:
                 .all()
             )
 
-            return {memory.memory_key: memory.memory_value for memory in memory_entries}
+            return {memory.memory_key: memory.memory_value for memory in memory_entries}  # type: ignore
 
     def store_dependencies(
         self, workflow_id: str, task_id: str, dependencies: List[str]
@@ -689,13 +691,13 @@ class DatabaseManager:
                 active_count = len(self._active_sessions)
                 if active_count > 0:
                     logger.warning(f"Force closing {active_count} active sessions")
-                
+
                 # Remove all sessions from the registry
                 self.SessionLocal.remove()
-                
+
                 # Dispose of the engine
                 self.engine.dispose()
-                
+
                 logger.info("All database connections closed successfully")
                 logger.info(f"Session statistics: {self.get_session_stats()}")
             except Exception as e:
@@ -713,13 +715,13 @@ class DatabaseManager:
 # Usage example
 def main():
     """Example usage with proper resource management."""
-    
+
     # Recommended usage pattern 1: Context manager
     with DatabaseManager() as db:
         db.create_workflow("wf1", "Test Workflow", "task1", {})
         stats = db.get_session_stats()
         print(f"Database stats: {stats}")
-    
+
     # Recommended usage pattern 2: Manual management
     db = DatabaseManager()
     try:
