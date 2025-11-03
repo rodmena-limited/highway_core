@@ -90,8 +90,8 @@ class Orchestrator:
 
         # 3. Initialize Executors based on environment
         #    Check if running inside Docker to avoid nested container issues
-        from highway_core.utils.docker_detector import is_running_in_docker
         from highway_core.config import settings
+        from highway_core.utils.docker_detector import is_running_in_docker
 
         self.executors: Dict[str, BaseExecutor] = {
             "python": LocalPythonExecutor(),
@@ -308,7 +308,9 @@ class Orchestrator:
 
         # Attempt to start the task and acquire a lock
         if not self.persistence.start_task(self.run_id, task_model):
-            logger.info("Orchestrator: Task %s is locked by another worker, skipping.", task_id)
+            logger.info(
+                "Orchestrator: Task %s is locked by another worker, skipping.", task_id
+            )
             return None  # Task is locked, so we don't execute it
 
         logger.info(

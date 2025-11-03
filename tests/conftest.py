@@ -1,7 +1,9 @@
 import os
+
 import pytest
 
 DB_PATH = "/tmp/highway_test.sqlite3"
+
 
 def pytest_sessionstart(session):
     """

@@ -41,9 +41,13 @@ tasks:
 
     try:
         # Mock the Orchestrator and HybridPersistenceManager
-        with patch("highway_core.engine.engine.Orchestrator") as mock_orchestrator_class, \
-             patch("highway_core.engine.engine.HybridPersistenceManager") as mock_persistence_class:
-            
+        with (
+            patch("highway_core.engine.engine.Orchestrator") as mock_orchestrator_class,
+            patch(
+                "highway_core.engine.engine.HybridPersistenceManager"
+            ) as mock_persistence_class,
+        ):
+
             mock_orchestrator_instance = MagicMock()
             mock_orchestrator_class.return_value = mock_orchestrator_instance
 
@@ -87,8 +91,14 @@ tasks:
 
     try:
         # Mock the bulkhead's future.result() to raise an exception
-        with patch("highway_core.engine.engine.BulkheadManager") as mock_bulkhead_manager_class, \
-             patch("highway_core.engine.engine.HybridPersistenceManager") as mock_persistence_class:
+        with (
+            patch(
+                "highway_core.engine.engine.BulkheadManager"
+            ) as mock_bulkhead_manager_class,
+            patch(
+                "highway_core.engine.engine.HybridPersistenceManager"
+            ) as mock_persistence_class,
+        ):
             mock_persistence_instance = MagicMock()
             mock_persistence_instance.load_workflow_state.return_value = (None, set())
             mock_persistence_class.return_value = mock_persistence_instance
@@ -116,7 +126,9 @@ def test_run_workflow_from_yaml_invalid_file():
         temp_file_path = temp_file.name
 
     try:
-        with patch("highway_core.engine.engine.HybridPersistenceManager") as mock_persistence_class:
+        with patch(
+            "highway_core.engine.engine.HybridPersistenceManager"
+        ) as mock_persistence_class:
             run_workflow_from_yaml(temp_file_path)
     finally:
         # Clean up the temporary file
@@ -125,7 +137,9 @@ def test_run_workflow_from_yaml_invalid_file():
 
 def test_run_workflow_from_yaml_nonexistent_file():
     """Test running a workflow from a non-existent file."""
-    with patch("highway_core.engine.engine.HybridPersistenceManager") as mock_persistence_class:
+    with patch(
+        "highway_core.engine.engine.HybridPersistenceManager"
+    ) as mock_persistence_class:
         run_workflow_from_yaml("/nonexistent/path.yaml")
 
 
@@ -158,8 +172,14 @@ tasks:
 
     try:
         # Mock the BulkheadManager.create_bulkhead to raise a ValueError
-        with patch("highway_core.engine.engine.BulkheadManager") as mock_bulkhead_manager_class, \
-             patch("highway_core.engine.engine.HybridPersistenceManager") as mock_persistence_class:
+        with (
+            patch(
+                "highway_core.engine.engine.BulkheadManager"
+            ) as mock_bulkhead_manager_class,
+            patch(
+                "highway_core.engine.engine.HybridPersistenceManager"
+            ) as mock_persistence_class,
+        ):
             mock_persistence_instance = MagicMock()
             mock_persistence_instance.load_workflow_state.return_value = (None, set())
             mock_persistence_class.return_value = mock_persistence_instance
@@ -209,8 +229,14 @@ tasks:
 
     try:
         # Mock the bulkhead's future.result() to raise an exception
-        with patch("highway_core.engine.engine.BulkheadManager") as mock_bulkhead_manager_class, \
-             patch("highway_core.engine.engine.HybridPersistenceManager") as mock_persistence_class:
+        with (
+            patch(
+                "highway_core.engine.engine.BulkheadManager"
+            ) as mock_bulkhead_manager_class,
+            patch(
+                "highway_core.engine.engine.HybridPersistenceManager"
+            ) as mock_persistence_class,
+        ):
             mock_persistence_instance = MagicMock()
             mock_persistence_instance.load_workflow_state.return_value = (None, set())
             mock_persistence_class.return_value = mock_persistence_instance
@@ -240,8 +266,12 @@ def test_run_workflow_from_yaml_exception():
 
     try:
         # Mock the yaml.safe_load to raise an exception
-        with patch("highway_core.engine.engine.yaml.safe_load") as mock_safe_load, \
-             patch("highway_core.engine.engine.HybridPersistenceManager") as mock_persistence_class:
+        with (
+            patch("highway_core.engine.engine.yaml.safe_load") as mock_safe_load,
+            patch(
+                "highway_core.engine.engine.HybridPersistenceManager"
+            ) as mock_persistence_class,
+        ):
             mock_safe_load.side_effect = Exception("YAML load error")
             run_workflow_from_yaml(temp_file_path)
     finally:

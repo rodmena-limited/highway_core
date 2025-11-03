@@ -10,9 +10,8 @@ from highway_core.engine.models import (
 )
 from highway_core.engine.orchestrator import Orchestrator
 from highway_core.engine.state import WorkflowState
-from highway_core.tools.registry import ToolRegistry
-
 from highway_core.persistence.hybrid_persistence import HybridPersistenceManager
+from highway_core.tools.registry import ToolRegistry
 
 
 def test_orchestrator_initialization():

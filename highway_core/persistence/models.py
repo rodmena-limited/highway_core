@@ -19,6 +19,7 @@ def utc_now():
     """Function to return timezone-aware current datetime."""
     return datetime.now(timezone.utc)
 
+
 Base = declarative_base()  # type: ignore
 
 

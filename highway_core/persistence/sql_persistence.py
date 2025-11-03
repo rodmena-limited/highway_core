@@ -82,7 +82,9 @@ class SQLPersistence(PersistenceManager):
         from datetime import datetime
 
         # Update the task with result and completion status
-        self.db_manager.update_task_with_result(task_id, result, datetime.now(timezone.utc))
+        self.db_manager.update_task_with_result(
+            task_id, result, datetime.now(timezone.utc)
+        )
 
         # Find the task's result_key to store in workflow results
         all_tasks = self.db_manager.get_tasks_by_workflow(workflow_id)
@@ -168,20 +170,24 @@ class SQLPersistence(PersistenceManager):
         state = None
         completed_tasks = set()
 
-        # Load workflow
-        workflow_data = self.db_manager.load_workflow(workflow_id)
-        if workflow_data:
-            variables = workflow_data.get("variables", {})
-            state = WorkflowState(variables)
+        try:
+            # Load workflow
+            workflow_data = self.db_manager.load_workflow(workflow_id)
+            if workflow_data:
+                variables = workflow_data.get("variables", {})
+                state = WorkflowState(variables)
 
-            # Load results
-            results = self.db_manager.load_results(workflow_id)
-            state.results = results
+                # Load results
+                results = self.db_manager.load_results(workflow_id)
+                state.results = results
 
-            # Get completed tasks
-            completed_tasks = self.db_manager.get_completed_tasks(workflow_id)
+                # Get completed tasks
+                completed_tasks = self.db_manager.get_completed_tasks(workflow_id)
 
-        return state, completed_tasks
+            return state, completed_tasks
+        except Exception as e:
+            logger.error(f"Error getting workflow state for {workflow_id}: {e}")
+            return None, set()
 
     def save_task_result(self, workflow_run_id: str, task_id: str, result: Any) -> bool:
         """

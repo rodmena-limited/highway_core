@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Set, Tuple
 
 import redis
+
 from highway_core.config import settings
 from highway_core.engine.models import AnyOperatorModel
 from highway_core.engine.state import WorkflowState
@@ -35,11 +36,17 @@ class HybridPersistenceManager(PersistenceManager):
             self.redis_enabled = True
             logger.info("Redis connection successful.")
         except redis.exceptions.ConnectionError as e:
-            logger.warning(f"Redis connection failed: {e}. Falling back to SQL-only mode.")
+            logger.warning(
+                f"Redis connection failed: {e}. Falling back to SQL-only mode."
+            )
         except redis.exceptions.TimeoutError as e:
-            logger.warning(f"Redis connection timed out: {e}. Falling back to SQL-only mode.")
+            logger.warning(
+                f"Redis connection timed out: {e}. Falling back to SQL-only mode."
+            )
         except Exception as e:
-            logger.warning(f"Redis connection failed with unexpected error: {e}. Falling back to SQL-only mode.")
+            logger.warning(
+                f"Redis connection failed with unexpected error: {e}. Falling back to SQL-only mode."
+            )
 
     def _get_workflow_key(self, workflow_run_id: str) -> str:
         return f"workflow:{workflow_run_id}"
@@ -47,16 +54,21 @@ class HybridPersistenceManager(PersistenceManager):
     def _get_completed_tasks_key(self, workflow_run_id: str) -> str:
         return f"workflow:{workflow_run_id}:completed_tasks"
 
-    def start_workflow(self, workflow_id: str, workflow_name: str, variables: Dict[str, Any]) -> None:
+    def start_workflow(
+        self, workflow_id: str, workflow_name: str, variables: Dict[str, Any]
+    ) -> None:
         self.sql_persistence.start_workflow(workflow_id, workflow_name, variables)
         if self.redis_enabled:
             try:
                 workflow_key = self._get_workflow_key(workflow_id)
-                self.redis_client.hset(workflow_key, mapping={
-                    "name": workflow_name,
-                    "status": "running",
-                    "start_time": datetime.now(timezone.utc).isoformat(),
-                })
+                self.redis_client.hset(
+                    workflow_key,
+                    mapping={
+                        "name": workflow_name,
+                        "status": "running",
+                        "start_time": datetime.now(timezone.utc).isoformat(),
+                    },
+                )
             except Exception as e:
                 logger.warning(f"Failed to store workflow start in Redis: {e}")
                 self.redis_enabled = False
@@ -77,31 +89,42 @@ class HybridPersistenceManager(PersistenceManager):
         if self.redis_enabled:
             try:
                 workflow_key = self._get_workflow_key(workflow_id)
-                self.redis_client.hset(workflow_key, mapping={
-                    "status": "failed",
-                    "error_message": error_message,
-                })
+                self.redis_client.hset(
+                    workflow_key,
+                    mapping={
+                        "status": "failed",
+                        "error_message": error_message,
+                    },
+                )
                 self.redis_client.expire(workflow_key, 3600)  # Expire in 1 hour
             except Exception as e:
                 logger.warning(f"Failed to store workflow failure in Redis: {e}")
                 self.redis_enabled = False
 
-    def save_workflow_state(self, workflow_run_id: str, state: WorkflowState, completed_tasks: Set[str]) -> None:
+    def save_workflow_state(
+        self, workflow_run_id: str, state: WorkflowState, completed_tasks: Set[str]
+    ) -> None:
         if self.redis_enabled:
             try:
                 workflow_key = self._get_workflow_key(workflow_run_id)
                 self.redis_client.hset(workflow_key, "state", state.model_dump_json())
                 completed_tasks_key = self._get_completed_tasks_key(workflow_run_id)
                 if completed_tasks:
-                    self.redis_client.delete(completed_tasks_key) # Clear existing tasks
-                    self.redis_client.sadd(completed_tasks_key, *[str(t) for t in completed_tasks])
+                    self.redis_client.delete(
+                        completed_tasks_key
+                    )  # Clear existing tasks
+                    self.redis_client.sadd(
+                        completed_tasks_key, *[str(t) for t in completed_tasks]
+                    )
                 else:
                     self.redis_client.delete(completed_tasks_key)
             except Exception as e:
                 logger.warning(f"Failed to save workflow state to Redis: {e}")
                 self.redis_enabled = False
 
-    def load_workflow_state(self, workflow_run_id: str) -> Tuple[WorkflowState | None, Set[str]]:
+    def load_workflow_state(
+        self, workflow_run_id: str
+    ) -> Tuple[WorkflowState | None, Set[str]]:
         if self.redis_enabled:
             try:
                 workflow_key = self._get_workflow_key(workflow_run_id)
@@ -117,7 +140,9 @@ class HybridPersistenceManager(PersistenceManager):
 
         # Fallback to SQL if Redis is disabled or state not in Redis
         try:
-            state, completed_tasks = self.sql_persistence.load_workflow_state(workflow_run_id)
+            state, completed_tasks = self.sql_persistence.load_workflow_state(
+                workflow_run_id
+            )
             if state and self.redis_enabled:
                 # Re-hydrate Redis
                 self.save_workflow_state(workflow_run_id, state, completed_tasks)
@@ -134,7 +159,9 @@ class HybridPersistenceManager(PersistenceManager):
         if self.redis_enabled:
             try:
                 lock_key = self._get_task_lock_key(workflow_id, task.task_id)
-                if self.redis_client.set(lock_key, "locked", nx=True, ex=3600):  # Lock for 1 hour
+                if self.redis_client.set(
+                    lock_key, "locked", nx=True, ex=3600
+                ):  # Lock for 1 hour
                     self.sql_persistence.start_task(workflow_id, task)
                     return True
                 else:
@@ -176,17 +203,29 @@ class HybridPersistenceManager(PersistenceManager):
     def save_task_result(self, workflow_run_id: str, task_id: str, result: Any) -> bool:
         return self.sql_persistence.save_task_result(workflow_run_id, task_id, result)
 
-    def save_task_execution(self, workflow_run_id: str, task_id: str, executor_runtime: str, **kwargs) -> bool:
-        return self.sql_persistence.save_task_execution(workflow_run_id, task_id, executor_runtime, **kwargs)
+    def save_task_execution(
+        self, workflow_run_id: str, task_id: str, executor_runtime: str, **kwargs
+    ) -> bool:
+        return self.sql_persistence.save_task_execution(
+            workflow_run_id, task_id, executor_runtime, **kwargs
+        )
 
     def mark_task_completed(self, workflow_run_id: str, task_id: str) -> bool:
         return self.sql_persistence.mark_task_completed(workflow_run_id, task_id)
 
-    def save_task(self, workflow_run_id: str, task_id: str, operator_type: str, **kwargs) -> bool:
-        return self.sql_persistence.save_task(workflow_run_id, task_id, operator_type, **kwargs)
+    def save_task(
+        self, workflow_run_id: str, task_id: str, operator_type: str, **kwargs
+    ) -> bool:
+        return self.sql_persistence.save_task(
+            workflow_run_id, task_id, operator_type, **kwargs
+        )
 
-    def save_task_if_not_exists(self, workflow_run_id: str, task_id: str, operator_type: str, **kwargs) -> bool:
-        return self.sql_persistence.save_task_if_not_exists(workflow_run_id, task_id, operator_type, **kwargs)
+    def save_task_if_not_exists(
+        self, workflow_run_id: str, task_id: str, operator_type: str, **kwargs
+    ) -> bool:
+        return self.sql_persistence.save_task_if_not_exists(
+            workflow_run_id, task_id, operator_type, **kwargs
+        )
 
     def close(self) -> None:
         self.sql_persistence.close()

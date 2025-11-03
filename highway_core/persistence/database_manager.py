@@ -122,12 +122,35 @@ class DatabaseManager:
                 return
 
             try:
-                Base.metadata.create_all(bind=self.engine)
+                # First check if tables already exist
+                with self.session_scope() as session:
+                    try:
+                        # Try to query a table to see if it exists
+                        session.execute(text("SELECT 1 FROM workflows LIMIT 1"))
+                        # If we get here, tables exist
+                        self._initialized = True
+                        logger.info("Database schema already exists")
+                        return
+                    except Exception:
+                        # Tables don't exist, create them
+                        pass
+
+                # Create tables with checkfirst=True to avoid race conditions
+                Base.metadata.create_all(bind=self.engine, checkfirst=True)
                 self._initialized = True
                 logger.info("Database schema initialized successfully")
             except Exception as e:
-                logger.error(f"Failed to initialize database schema: {e}")
-                raise
+                logger.warning(f"Schema initialization may have race condition: {e}")
+                # If there's a race condition, assume schema is already created
+                try:
+                    with self.session_scope() as session:
+                        session.execute(text("SELECT 1 FROM workflows LIMIT 1"))
+                    self._initialized = True
+                    logger.info("Schema exists despite initialization error")
+                except Exception:
+                    # Schema really doesn't exist, this is a real error
+                    logger.error(f"Failed to initialize database schema: {e}")
+                    raise
 
     @contextmanager
     def session_scope(self) -> Generator[Session, None, None]:
@@ -262,24 +285,28 @@ class DatabaseManager:
 
     def load_workflow(self, workflow_id: str) -> Optional[Dict[str, Any]]:
         """Load a workflow by ID."""
-        with self.session_scope() as session:
-            workflow = (
-                session.query(Workflow)
-                .filter(Workflow.workflow_id == workflow_id)
-                .first()
-            )
+        try:
+            with self.session_scope() as session:
+                workflow = (
+                    session.query(Workflow)
+                    .filter(Workflow.workflow_id == workflow_id)
+                    .first()
+                )
 
-            if workflow:
-                return {
-                    "workflow_id": workflow.workflow_id,
-                    "name": workflow.name,
-                    "start_task": workflow.start_task or "",
-                    "variables": workflow.variables,
-                    "created_at": workflow.start_time,
-                    "updated_at": workflow.updated_at,
-                    "status": workflow.status,
-                    "error_message": workflow.error_message,
-                }
+                if workflow:
+                    return {
+                        "workflow_id": workflow.workflow_id,
+                        "name": workflow.name,
+                        "start_task": workflow.start_task or "",
+                        "variables": workflow.variables,
+                        "created_at": workflow.start_time,
+                        "updated_at": workflow.updated_at,
+                        "status": workflow.status,
+                        "error_message": workflow.error_message,
+                    }
+                return None
+        except Exception as e:
+            logger.warning(f"Error loading workflow {workflow_id}: {e}")
             return None
 
     def create_task(
@@ -304,7 +331,12 @@ class DatabaseManager:
         try:
             with self.session_scope() as session:
                 # Check if workflow exists and create if not, handling race conditions
-                workflow_exists = session.query(Workflow).filter(Workflow.workflow_id == workflow_id).first() is not None
+                workflow_exists = (
+                    session.query(Workflow)
+                    .filter(Workflow.workflow_id == workflow_id)
+                    .first()
+                    is not None
+                )
                 if not workflow_exists:
                     workflow = Workflow(
                         workflow_id=workflow_id,
@@ -527,14 +559,20 @@ class DatabaseManager:
 
     def get_completed_tasks(self, workflow_id: str) -> set:
         """Get set of completed task IDs for a workflow."""
-        with self.session_scope() as session:
-            completed_tasks = (
-                session.query(Task.task_id)
-                .filter(Task.workflow_id == workflow_id, Task.status == "completed")
-                .all()
-            )
+        try:
+            with self.session_scope() as session:
+                completed_tasks = (
+                    session.query(Task.task_id)
+                    .filter(Task.workflow_id == workflow_id, Task.status == "completed")
+                    .all()
+                )
 
-            return {task.task_id for task in completed_tasks}
+                return {task.task_id for task in completed_tasks}
+        except Exception as e:
+            logger.warning(
+                f"Error getting completed tasks for workflow {workflow_id}: {e}"
+            )
+            return set()
 
     def store_result(
         self,

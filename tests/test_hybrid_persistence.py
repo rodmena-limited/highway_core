@@ -1,18 +1,21 @@
 import os
 import unittest
 import uuid
-from unittest.mock import patch
 from pathlib import Path
+from unittest.mock import patch
+
 import redis
 
 os.environ["HIGHWAY_ENV"] = "test"
 os.environ["REDIS_DB"] = "1"  # Use Redis DB 1 for tests
 os.environ["NO_DOCKER_USE"] = "true"
-os.environ["DATABASE_URL"] = "sqlite:///tests/test_db.sqlite3"  # Use same DB as other tests
+os.environ["DATABASE_URL"] = (
+    "sqlite:///tests/test_db.sqlite3"  # Use same DB as other tests
+)
 
-from highway_core.persistence.hybrid_persistence import HybridPersistenceManager
-from highway_core.engine.state import WorkflowState
 from highway_core.engine.models import TaskOperatorModel
+from highway_core.engine.state import WorkflowState
+from highway_core.persistence.hybrid_persistence import HybridPersistenceManager
 
 
 class TestHybridPersistenceManager(unittest.TestCase):
@@ -22,7 +25,9 @@ class TestHybridPersistenceManager(unittest.TestCase):
         os.environ["HIGHWAY_ENV"] = "test"
         os.environ["REDIS_DB"] = "1"  # Use Redis DB 1 for tests
         os.environ["NO_DOCKER_USE"] = "true"
-        os.environ["DATABASE_URL"] = "sqlite:///tests/test_db.sqlite3"  # Use same DB as other tests
+        os.environ["DATABASE_URL"] = (
+            "sqlite:///tests/test_db.sqlite3"  # Use same DB as other tests
+        )
         self.workflow_id = f"test_workflow_{uuid.uuid4().hex[:12]}"
 
         # Ensure a clean database for each test
@@ -32,7 +37,7 @@ class TestHybridPersistenceManager(unittest.TestCase):
 
         # Flush Redis DB 1 for a clean state
         try:
-            r = redis.Redis(host='localhost', port=6379, db=1)
+            r = redis.Redis(host="localhost", port=6379, db=1)
             r.flushdb()
             r.close()
         except redis.exceptions.ConnectionError:
@@ -54,8 +59,12 @@ class TestHybridPersistenceManager(unittest.TestCase):
     def test_load_state_redis_miss_sql_hit(self):
         manager = HybridPersistenceManager(is_test=True)
         # Save directly to SQL to simulate Redis miss
-        manager.sql_persistence.start_workflow(self.workflow_id, "test_workflow", {"var2": "value2"})
-        task = TaskOperatorModel(task_id="task2", operator_type="task", function="test.func")
+        manager.sql_persistence.start_workflow(
+            self.workflow_id, "test_workflow", {"var2": "value2"}
+        )
+        task = TaskOperatorModel(
+            task_id="task2", operator_type="task", function="test.func"
+        )
         manager.sql_persistence.start_task(self.workflow_id, task)
         manager.sql_persistence.complete_task(self.workflow_id, "task2", "result")
 
@@ -67,7 +76,9 @@ class TestHybridPersistenceManager(unittest.TestCase):
         self.assertIn("task2", loaded_tasks)
 
         # Check that Redis is re-hydrated
-        redis_state_json = manager.redis_client.hget(f"workflow:{self.workflow_id}", "state")
+        redis_state_json = manager.redis_client.hget(
+            f"workflow:{self.workflow_id}", "state"
+        )
         self.assertIsNotNone(redis_state_json)
         redis_state = WorkflowState.model_validate_json(redis_state_json)
         self.assertEqual(redis_state.variables, loaded_state.variables)
@@ -75,7 +86,9 @@ class TestHybridPersistenceManager(unittest.TestCase):
 
     def test_task_locking(self):
         manager = HybridPersistenceManager()
-        task = TaskOperatorModel(task_id="test_task", operator_type="task", function="test.func")
+        task = TaskOperatorModel(
+            task_id="test_task", operator_type="task", function="test.func"
+        )
 
         # First attempt to start task should succeed
         self.assertTrue(manager.start_task(self.workflow_id, task))
