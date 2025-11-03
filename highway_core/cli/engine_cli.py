@@ -7,12 +7,7 @@ import time
 import uuid
 from pathlib import Path
 from typing import Optional
-
-try:
-    from importlib.metadata import version as get_package_version
-except ImportError:
-    # Python < 3.8
-    from importlib_metadata import version as get_package_version
+from importlib.metadata import version as get_package_version
 
 import click
 import psutil

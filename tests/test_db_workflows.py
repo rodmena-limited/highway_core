@@ -48,7 +48,7 @@ def run_workflow_and_verify_db(workflow_path: str, expected_workflow_name: str):
     )
 
     # Add a small delay to ensure all database operations are completed
-    time.sleep(0.1)
+    time.sleep(0.5)
 
     # Create database manager instance to verify the contents
     db_manager = DatabaseManager(db_path=get_db_path())
@@ -151,7 +151,7 @@ class TestParallelWaitWorkflow:
         attempts = 0
         max_attempts = 100
         while len(operator_tasks) < 2 and attempts < max_attempts:
-            time.sleep(0.5)  # Additional wait for parallel persistence to complete
+            time.sleep(1)  # Additional wait for parallel persistence to complete
             tasks = db_manager.get_tasks_by_workflow(run_id)
             operator_tasks = [
                 task for task in tasks if task["operator_type"] in ("parallel", "wait")
@@ -238,7 +238,7 @@ class TestParallelWaitWorkflow:
         attempts = 0
         max_attempts = 15  # Increase max attempts for parallel execution
         while len(fetch_tasks) < 2 and attempts < max_attempts:
-            time.sleep(0.5)  # Additional wait for parallel tasks to complete
+            time.sleep(1)  # Additional wait for parallel tasks to complete
             tasks = db_manager.get_tasks_by_workflow(run_id)
             fetch_tasks = [
                 task
