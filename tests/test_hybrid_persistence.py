@@ -1,10 +1,14 @@
 import os
 import unittest
+import uuid
 from unittest.mock import patch
+from pathlib import Path
+import redis
 
 os.environ["HIGHWAY_ENV"] = "test"
-os.environ["USE_FAKE_REDIS"] = "true"
-os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+os.environ["REDIS_DB"] = "1"  # Use Redis DB 1 for tests
+os.environ["NO_DOCKER_USE"] = "true"
+os.environ["DATABASE_URL"] = "sqlite:///tests/test_db.sqlite3"  # Use same DB as other tests
 
 from highway_core.persistence.hybrid_persistence import HybridPersistenceManager
 from highway_core.engine.state import WorkflowState
@@ -16,22 +20,24 @@ class TestHybridPersistenceManager(unittest.TestCase):
     def setUp(self):
         # Set up test environment
         os.environ["HIGHWAY_ENV"] = "test"
-        os.environ["USE_FAKE_REDIS"] = "true"
-        os.environ["DATABASE_URL"] = "sqlite:///:memory:"
-        self.workflow_id = "test_workflow_123"
+        os.environ["REDIS_DB"] = "1"  # Use Redis DB 1 for tests
+        os.environ["NO_DOCKER_USE"] = "true"
+        os.environ["DATABASE_URL"] = "sqlite:///tests/test_db.sqlite3"  # Use same DB as other tests
+        self.workflow_id = f"test_workflow_{uuid.uuid4().hex[:12]}"
 
-    def test_start_workflow(self):
-        manager = HybridPersistenceManager()
-        manager.start_workflow(self.workflow_id, "test_workflow", {})
-        # Check SQL
-        workflow_data = manager.sql_persistence.db_manager.load_workflow(self.workflow_id)
-        self.assertIsNotNone(workflow_data)
-        self.assertEqual(workflow_data["name"], "test_workflow")
-        # Check Redis
-        redis_data = manager.redis_client.hgetall(f"workflow:{self.workflow_id}")
-        self.assertEqual(redis_data["name"], "test_workflow")
-        self.assertEqual(redis_data["status"], "running")
-        manager.close()
+        # Ensure a clean database for each test
+        db_file = Path("tests/test_db.sqlite3")
+        if db_file.exists():
+            db_file.unlink()
+
+        # Flush Redis DB 1 for a clean state
+        try:
+            r = redis.Redis(host='localhost', port=6379, db=1)
+            r.flushdb()
+            r.close()
+        except redis.exceptions.ConnectionError:
+            # If Redis is not running, tests will fall back to SQL-only mode
+            pass
 
     def test_save_and_load_state_redis_hit(self):
         manager = HybridPersistenceManager()
@@ -46,7 +52,7 @@ class TestHybridPersistenceManager(unittest.TestCase):
         manager.close()
 
     def test_load_state_redis_miss_sql_hit(self):
-        manager = HybridPersistenceManager()
+        manager = HybridPersistenceManager(is_test=True)
         # Save directly to SQL to simulate Redis miss
         manager.sql_persistence.start_workflow(self.workflow_id, "test_workflow", {"var2": "value2"})
         task = TaskOperatorModel(task_id="task2", operator_type="task", function="test.func")

@@ -6,6 +6,8 @@ PYTHON_SCRIPT="cli.py"
 WORKFLOW_FILE="tests/data/container_checksum_test_workflow.yaml"
 SEARCH_TERM="5746"
 
+rm -f "$DB_FILE"
+
 # Execute the python script
 python "$PYTHON_SCRIPT" "$WORKFLOW_FILE"
 

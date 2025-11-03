@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Set, Tuple
 
@@ -81,7 +82,7 @@ class SQLPersistence(PersistenceManager):
         from datetime import datetime
 
         # Update the task with result and completion status
-        self.db_manager.update_task_with_result(task_id, result, datetime.utcnow())
+        self.db_manager.update_task_with_result(task_id, result, datetime.now(timezone.utc))
 
         # Find the task's result_key to store in workflow results
         all_tasks = self.db_manager.get_tasks_by_workflow(workflow_id)

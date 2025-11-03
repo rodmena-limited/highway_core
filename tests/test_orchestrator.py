@@ -7,7 +7,7 @@ from highway_core.engine.orchestrator import Orchestrator
 from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
 
-from .test_persistence_mock import MockPersistenceManager
+from highway_core.persistence.hybrid_persistence import HybridPersistenceManager
 
 
 def test_orchestrator_initialization():
@@ -33,8 +33,8 @@ def test_orchestrator_initialization():
     # Create a registry
     registry = ToolRegistry()
 
-    # Create a mock persistence manager
-    persistence_manager = MockPersistenceManager()
+    # Create a real persistence manager for test
+    persistence_manager = HybridPersistenceManager(is_test=True)
 
     # Create an orchestrator
     orchestrator = Orchestrator("test_run_id", workflow, persistence_manager, registry)
@@ -76,8 +76,8 @@ def test_run_method():
     # Create a registry - tools should be auto-discovered
     registry = ToolRegistry()
 
-    # Create a mock persistence manager
-    persistence_manager = MockPersistenceManager()
+    # Create a real persistence manager for test
+    persistence_manager = HybridPersistenceManager(is_test=True)
 
     # Create an orchestrator
     orchestrator = Orchestrator("test_run_id2", workflow, persistence_manager, registry)
@@ -119,8 +119,8 @@ def test_run_method_with_missing_task():
     # Create a registry
     registry = ToolRegistry()
 
-    # Create a mock persistence manager
-    persistence_manager = MockPersistenceManager()
+    # Create a real persistence manager for test
+    persistence_manager = HybridPersistenceManager(is_test=True)
 
     # Create an orchestrator
     orchestrator = Orchestrator("test_run_id3", workflow, persistence_manager, registry)
@@ -165,8 +165,8 @@ def test_run_method_with_invalid_operator_type():
     # Create a registry
     registry = ToolRegistry()
 
-    # Create a mock persistence manager
-    persistence_manager = MockPersistenceManager()
+    # Create a real persistence manager for test
+    persistence_manager = HybridPersistenceManager(is_test=True)
 
     # Create an orchestrator
     orchestrator = Orchestrator("test_run_id4", workflow, persistence_manager, registry)

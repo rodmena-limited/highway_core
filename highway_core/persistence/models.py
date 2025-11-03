@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     Boolean,
@@ -14,6 +14,11 @@ from sqlalchemy import (
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.orm.decl_api import DeclarativeMeta
 
+
+def utc_now():
+    """Function to return timezone-aware current datetime."""
+    return datetime.now(timezone.utc)
+
 Base = declarative_base()  # type: ignore
 
 
@@ -27,7 +32,7 @@ class Workflow(Base):  # type: ignore
 
     workflow_id = Column(String, primary_key=True)
     workflow_name = Column(String(255), nullable=False)  # Match original schema
-    start_time = Column(DateTime, default=datetime.utcnow)  # Match original schema
+    start_time = Column(DateTime, default=utc_now)  # Match original schema
     end_time = Column(DateTime)  # Match original schema
     status = Column(String(50), default="running")  # running, completed, failed
     error_message = Column(Text)  # Match original schema
@@ -37,7 +42,7 @@ class Workflow(Base):  # type: ignore
         String(255)
     )  # Added to maintain compatibility with existing code
     updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime, default=utc_now, onupdate=utc_now
     )  # Added for compatibility
 
     # Relationship
@@ -88,11 +93,11 @@ class Task(Base):  # type: ignore
     kwargs_json = Column(Text)
     result_key = Column(String(255))
     dependencies_json = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
     started_at = Column(DateTime)
     completed_at = Column(DateTime)
     updated_at = Column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime, default=utc_now, onupdate=utc_now
     )  # Added after schema creation
     status = Column(
         String(50), default="pending"
@@ -206,7 +211,7 @@ class TaskExecution(Base):  # type: ignore
     status = Column(
         String(50), default="pending"
     )  # pending, running, completed, failed
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     # Composite foreign key constraint handled via application logic
     # Foreign key to task (workflow_id, task_id)
@@ -257,7 +262,7 @@ class WorkflowResult(Base):  # type: ignore
     task_id = Column(String, nullable=False)  # Part of FK to tasks table
     result_key = Column(String(255), nullable=False)
     result_value_json = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     @property
     def result_value(self):
@@ -284,8 +289,8 @@ class WorkflowMemory(Base):  # type: ignore
     )  # Add proper FK
     memory_key = Column(String(255), nullable=False)
     memory_value_json = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     # Relationship removed to avoid join condition issues
 
@@ -312,7 +317,7 @@ class TaskDependency(Base):  # type: ignore
     task_id = Column(String, nullable=False)
     depends_on_task_id = Column(String, nullable=False)
     workflow_id = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     # Create indexes for better performance
     __table_args__ = (

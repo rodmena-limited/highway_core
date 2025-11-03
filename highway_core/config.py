@@ -30,9 +30,15 @@ class Settings:
 
     # Test settings
     USE_FAKE_REDIS: bool = os.getenv("USE_FAKE_REDIS", "false").lower() in ("true", "1", "t")
+    
+    # Docker settings for tests
+    NO_DOCKER_USE: bool = os.getenv("NO_DOCKER_USE", "false").lower() in ("true", "1", "t")
 
 
 settings = Settings()
 
+# In test environment, use the DATABASE_URL from environment variable if set, 
+# otherwise use a default test database file
 if ENV == "test":
-    settings.DATABASE_URL = "sqlite:///:memory:"
+    if os.getenv("DATABASE_URL") is None:
+        settings.DATABASE_URL = "sqlite:///tests/test_db.sqlite3"

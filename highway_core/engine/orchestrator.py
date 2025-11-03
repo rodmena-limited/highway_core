@@ -91,22 +91,28 @@ class Orchestrator:
         # 3. Initialize Executors based on environment
         #    Check if running inside Docker to avoid nested container issues
         from highway_core.utils.docker_detector import is_running_in_docker
+        from highway_core.config import settings
 
         self.executors: Dict[str, BaseExecutor] = {
             "python": LocalPythonExecutor(),
         }
 
-        # Only add Docker executor if not running inside Docker
-        if not is_running_in_docker():
+        # Only add Docker executor if not running inside Docker AND Docker usage is not disabled
+        if not is_running_in_docker() and not settings.NO_DOCKER_USE:
             self.executors["docker"] = DockerExecutor()
             logger.info(
                 "Orchestrator: Initialized executors for: %s",
                 list(self.executors.keys()),
             )
         else:
-            logger.info(
-                "Orchestrator: Running inside Docker, only initializing Python executor (Docker executor skipped to prevent nested containers)"
-            )
+            if settings.NO_DOCKER_USE:
+                logger.info(
+                    "Orchestrator: NO_DOCKER_USE is set to True, only initializing Python executor (Docker executor skipped)"
+                )
+            else:
+                logger.info(
+                    "Orchestrator: Running inside Docker, only initializing Python executor (Docker executor skipped to prevent nested containers)"
+                )
             logger.info(
                 "Orchestrator: Initialized executors for: %s",
                 list(self.executors.keys()),

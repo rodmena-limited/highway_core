@@ -11,5 +11,6 @@ def pytest_sessionstart(session):
     if os.path.exists(DB_PATH):
         os.remove(DB_PATH)
     os.environ["HIGHWAY_ENV"] = "test"
-    os.environ["USE_FAKE_REDIS"] = "true"
+    os.environ["REDIS_DB"] = "1"  # Use Redis DB 1 for tests
+    os.environ["NO_DOCKER_USE"] = "true"
     os.environ["DATABASE_URL"] = f"sqlite:///{DB_PATH}"

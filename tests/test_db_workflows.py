@@ -1,12 +1,18 @@
 import os
 import time
 import uuid
+from pathlib import Path
 
 import pytest
 
+# Clean up test database before starting
+test_db_path = Path("tests/test_db.sqlite3")
+if test_db_path.exists():
+    test_db_path.unlink()  # Remove the file if it exists
+
 os.environ["HIGHWAY_ENV"] = "test"
-os.environ["USE_FAKE_REDIS"] = "true"
-os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+os.environ["REDIS_DB"] = "1"  # Use Redis DB 1 for tests
+os.environ["NO_DOCKER_USE"] = "true"
 
 from highway_core.engine.engine import run_workflow_from_yaml
 from highway_core.persistence.hybrid_persistence import HybridPersistenceManager
@@ -19,25 +25,37 @@ def run_workflow_and_verify_db(workflow_path: str, expected_workflow_name: str):
     run_id = f"test-run-{str(uuid.uuid4())}"
 
     # Create a persistence manager for the test
-    manager = HybridPersistenceManager()
+    manager = HybridPersistenceManager(is_test=True)
 
     # Run the workflow
     run_workflow_from_yaml(yaml_path=workflow_path, workflow_run_id=run_id, persistence_manager=manager)
 
-    # Verify in database with retries
+    # Verify in database with minimal retries - check if workflow completed immediately
     db_manager = manager.sql_persistence.db_manager
-    for _ in range(20): # Increased retries
+    workflow_data = db_manager.load_workflow(run_id)
+    
+    # If not completed immediately, wait briefly to allow completion
+    completed = False
+    for _ in range(20):  # Allow for completion
         workflow_data = db_manager.load_workflow(run_id)
         if workflow_data and workflow_data["status"] == "completed":
             tasks = db_manager.get_tasks_by_workflow(run_id)
             if all(task["status"] == "completed" for task in tasks):
+                completed = True
                 break
-        time.sleep(1)
-
+        time.sleep(0.1)  # Reduced sleep from 1 second to 0.1 second
+    
+    # Instead of asserting here, let the following assertions handle the failure case
+    # Final verification
     workflow_data = db_manager.load_workflow(run_id)
     assert workflow_data is not None, f"Workflow run {run_id} not found in database"
     assert workflow_data["name"] == expected_workflow_name
     assert workflow_data["status"] == "completed"
+    
+    # Verify all tasks are completed
+    tasks = db_manager.get_tasks_by_workflow(run_id)
+    for task in tasks:
+        assert task["status"] == "completed", f"Task {task['task_id']} was not completed, status: {task['status']}"
 
     tasks = db_manager.get_tasks_by_workflow(run_id)
     assert len(tasks) > 0, "No tasks found for workflow in database"

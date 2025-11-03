@@ -3,7 +3,7 @@ import logging
 import os
 import threading
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional
 
@@ -222,8 +222,8 @@ class DatabaseManager:
                     workflow_name=name,
                     start_task=start_task,
                     variables=variables,
-                    start_time=datetime.utcnow(),
-                    updated_at=datetime.utcnow(),
+                    start_time=datetime.now(timezone.utc),
+                    updated_at=datetime.now(timezone.utc),
                 )
                 session.add(workflow)
                 logger.info(f"Created workflow: {workflow_id}")
@@ -249,7 +249,7 @@ class DatabaseManager:
                 )
                 if workflow:
                     workflow.status = status  # type: ignore
-                    workflow.updated_at = datetime.utcnow()  # type: ignore
+                    workflow.updated_at = datetime.now(timezone.utc)  # type: ignore
                     if error_message:
                         workflow.error_message = error_message  # type: ignore
                     logger.debug(f"Updated workflow {workflow_id} status to {status}")
@@ -302,16 +302,27 @@ class DatabaseManager:
     ) -> bool:
         """Create a new task record."""
         try:
-            # Check if workflow exists, create it if not
-            if not self.workflow_exists(workflow_id):
-                self.create_workflow(
-                    workflow_id=workflow_id,
-                    name=workflow_id,
-                    start_task="",
-                    variables={},
-                )
-
             with self.session_scope() as session:
+                # Check if workflow exists and create if not, handling race conditions
+                workflow_exists = session.query(Workflow).filter(Workflow.workflow_id == workflow_id).first() is not None
+                if not workflow_exists:
+                    workflow = Workflow(
+                        workflow_id=workflow_id,
+                        workflow_name=workflow_id,
+                        start_task="",
+                        variables={},
+                        start_time=datetime.now(timezone.utc),
+                        updated_at=datetime.now(timezone.utc),
+                    )
+                    session.add(workflow)
+                    try:
+                        session.flush()  # Flush to try insert, but keep transaction open
+                    except IntegrityError:
+                        # Another thread created the workflow, ignore this error
+                        session.rollback()
+                        # Continue to create the task anyway
+                        pass
+
                 task = Task(
                     task_id=task_id,
                     workflow_id=workflow_id,
@@ -328,7 +339,7 @@ class DatabaseManager:
                     error_message=error_message,
                     started_at=started_at,
                     completed_at=completed_at,
-                    updated_at=datetime.utcnow(),
+                    updated_at=datetime.now(timezone.utc),
                 )
                 session.add(task)
                 logger.debug(f"Created task: {task_id} in workflow: {workflow_id}")
@@ -358,7 +369,7 @@ class DatabaseManager:
                 )
                 if task:
                     task.status = status  # type: ignore
-                    task.updated_at = datetime.utcnow()  # type: ignore
+                    task.updated_at = datetime.now(timezone.utc)  # type: ignore
                     if started_at:
                         task.started_at = started_at  # type: ignore
                     if error_message:
@@ -407,7 +418,7 @@ class DatabaseManager:
                 if task:
                     task.result_value = result
                     task.status = "completed"  # type: ignore
-                    task.completed_at = completed_at or datetime.utcnow()  # type: ignore
+                    task.completed_at = completed_at or datetime.now(timezone.utc)  # type: ignore
                     return True
                 return False
         except Exception as e:
@@ -432,7 +443,7 @@ class DatabaseManager:
         try:
             with self.session_scope() as session:
                 execution = TaskExecution(
-                    execution_id=f"{task_id}_exec_{int(datetime.utcnow().timestamp())}",
+                    execution_id=f"{task_id}_exec_{int(datetime.now(timezone.utc).timestamp())}",
                     task_id=task_id,
                     workflow_id=workflow_id,
                     executor_runtime=executor_runtime,
@@ -588,7 +599,7 @@ class DatabaseManager:
 
                 if memory_obj:
                     memory_obj.memory_value = memory_value
-                    memory_obj.updated_at = datetime.utcnow()  # type: ignore
+                    memory_obj.updated_at = datetime.now(timezone.utc)  # type: ignore
                 else:
                     memory_obj = WorkflowMemory(
                         workflow_id=workflow_id,
