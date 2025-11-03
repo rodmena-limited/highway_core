@@ -193,7 +193,7 @@ class WorkflowState(BaseModel):
                 )  # Return original if not found
 
             # Otherwise, replace all occurrences within the string
-            def replacer(m: re.Match) -> str:  # type: ignore
+            def replacer(m: re.Match[str]) -> str:
                 val = self.get_value_from_path(m.group(1))
                 if val is not None:
                     str_val = str(val)

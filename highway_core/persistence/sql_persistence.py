@@ -38,7 +38,7 @@ class SQLPersistence(PersistenceManager):
             self.db_manager = DatabaseManager()
 
     def start_workflow(
-        self, workflow_id: str, workflow_name: str, variables: Dict
+        self, workflow_id: str, workflow_name: str, variables: Dict[str, Any]
     ) -> None:
         """Record workflow start in database"""
         # Use the existing create_workflow method in DatabaseManager
@@ -286,11 +286,11 @@ class SQLPersistence(PersistenceManager):
         runtime: str = "python",
         function: Optional[str] = None,
         image: Optional[str] = None,
-        command: Optional[list] = None,
-        args: Optional[list] = None,
-        kwargs: Optional[dict] = None,
+        command: Optional[list[str]] = None,
+        args: Optional[list[Any]] = None,
+        kwargs: Optional[dict[str, Any]] = None,
         result_key: Optional[str] = None,
-        dependencies: Optional[list] = None,
+        dependencies: Optional[list[str]] = None,
     ) -> bool:
         """
         Save task information to the database.
@@ -346,11 +346,11 @@ class SQLPersistence(PersistenceManager):
         runtime: str = "python",
         function: Optional[str] = None,
         image: Optional[str] = None,
-        command: Optional[list] = None,
-        args: Optional[list] = None,
-        kwargs: Optional[dict] = None,
+        command: Optional[list[str]] = None,
+        args: Optional[list[Any]] = None,
+        kwargs: Optional[dict[str, Any]] = None,
         result_key: Optional[str] = None,
-        dependencies: Optional[list] = None,
+        dependencies: Optional[list[str]] = None,
     ) -> bool:
         """
         Save task information to the database if it doesn't already exist.

@@ -1,5 +1,6 @@
 import json
 from datetime import datetime
+from typing import TYPE_CHECKING, Optional, Union
 
 from sqlalchemy import (
     Boolean,
@@ -14,7 +15,10 @@ from sqlalchemy import (
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.orm.decl_api import DeclarativeMeta
 
-Base = declarative_base()  # type: ignore
+if TYPE_CHECKING:
+    from typing import Any, List
+
+Base: DeclarativeMeta = declarative_base()
 
 
 class Workflow(Base):  # type: ignore
@@ -49,23 +53,23 @@ class Workflow(Base):  # type: ignore
     )  # Removed back_populates to avoid join issues
 
     @property
-    def variables(self):
+    def variables(self) -> dict[str, Any]:
         if self.variables_json:
-            return json.loads(self.variables_json)
+            return json.loads(self.variables_json)  # type: ignore
         return {}
 
     @variables.setter
-    def variables(self, value):
-        self.variables_json = json.dumps(value)
+    def variables(self, value: dict[str, Any]) -> None:
+        self.variables_json = json.dumps(value)  # type: ignore
 
     @property
-    def name(self):
+    def name(self) -> str:
         """Alias for workflow_name to maintain compatibility with existing code"""
-        return self.workflow_name
+        return self.workflow_name  # type: ignore
 
     @name.setter
-    def name(self, value):
-        self.workflow_name = value
+    def name(self, value: str) -> None:
+        self.workflow_name = value  # type: ignore
 
 
 class Task(Base):  # type: ignore
@@ -117,69 +121,73 @@ class Task(Base):  # type: ignore
     )
 
     @property
-    def command(self):
+    def command(self) -> list[Any] | None:
         if self.command_json:
-            return json.loads(self.command_json)
+            return json.loads(self.command_json)  # type: ignore
         return None
 
     @command.setter
-    def command(self, value):
+    def command(self, value: list[Any] | None) -> None:
         if value is None or (isinstance(value, list) and not value):
-            self.command_json = None
+            self.command_json = None  # type: ignore
         else:
-            self.command_json = json.dumps(value)
+            self.command_json = json.dumps(value)  # type: ignore
 
     @property
-    def args(self):
+    def args(self) -> list[Any] | None:
         if self.args_json:
-            return json.loads(self.args_json)
+            return json.loads(self.args_json)  # type: ignore
         return None
 
     @args.setter
-    def args(self, value):
+    def args(self, value: list[Any] | None) -> None:
         if value is None or (isinstance(value, list) and not value):
-            self.args_json = None
+            self.args_json = None  # type: ignore
         else:
-            self.args_json = json.dumps(value)
+            self.args_json = json.dumps(value)  # type: ignore
 
     @property
-    def kwargs(self):
+    def kwargs(self) -> dict[str, Any] | None:
         if self.kwargs_json:
-            return json.loads(self.kwargs_json)
+            return json.loads(self.kwargs_json)  # type: ignore
         return None
 
     @kwargs.setter
-    def kwargs(self, value):
+    def kwargs(self, value: dict[str, Any] | None) -> None:
         if value is None or (isinstance(value, dict) and not value):
-            self.kwargs_json = None
+            self.kwargs_json = None  # type: ignore
         else:
-            self.kwargs_json = json.dumps(value)
+            self.kwargs_json = json.dumps(value)  # type: ignore
 
     @property
-    def dependencies_list(self):
+    def dependencies_list(self) -> list[str]:
         if self.dependencies_json:
-            return json.loads(self.dependencies_json)
+            return json.loads(self.dependencies_json)  # type: ignore
         return []
 
     @dependencies_list.setter
-    def dependencies_list(self, value):
+    def dependencies_list(self, value: list[str]) -> None:
         if value is None or (isinstance(value, list) and not value):
-            self.dependencies_json = None
+            self.dependencies_json = None  # type: ignore
         else:
-            self.dependencies_json = json.dumps(value)
+            self.dependencies_json = json.dumps(value)  # type: ignore
 
     @property
-    def result_value(self):
+    def result_value(
+        self,
+    ) -> dict[str, Any] | list[Any] | str | int | float | bool | None:
         if self.result_value_json:
-            return json.loads(self.result_value_json)
+            return json.loads(self.result_value_json)  # type: ignore
         return None
 
     @result_value.setter
-    def result_value(self, value):
+    def result_value(
+        self, value: dict[str, Any] | list[Any] | str | int | float | bool | None
+    ) -> None:
         if value is None:
-            self.result_value_json = None
+            self.result_value_json = None  # type: ignore
         else:
-            self.result_value_json = json.dumps(value)
+            self.result_value_json = json.dumps(value)  # type: ignore
 
 
 class TaskExecution(Base):  # type: ignore
@@ -214,34 +222,36 @@ class TaskExecution(Base):  # type: ignore
     # Removed relationship to avoid join condition issues since there's no proper FK
 
     @property
-    def execution_args(self):
+    def execution_args(self) -> dict[str, Any] | list[Any] | None:
         if self.execution_args_json:
-            return json.loads(self.execution_args_json)
+            return json.loads(self.execution_args_json)  # type: ignore
         return None
 
     @execution_args.setter
-    def execution_args(self, value):
-        self.execution_args_json = json.dumps(value)
+    def execution_args(self, value: dict[str, Any] | list[Any] | None) -> None:
+        self.execution_args_json = json.dumps(value)  # type: ignore
 
     @property
-    def execution_kwargs(self):
+    def execution_kwargs(self) -> dict[str, Any] | list[Any] | None:
         if self.execution_kwargs_json:
-            return json.loads(self.execution_kwargs_json)
+            return json.loads(self.execution_kwargs_json)  # type: ignore
         return None
 
     @execution_kwargs.setter
-    def execution_kwargs(self, value):
-        self.execution_kwargs_json = json.dumps(value)
+    def execution_kwargs(self, value: dict[str, Any] | list[Any] | None) -> None:
+        self.execution_kwargs_json = json.dumps(value)  # type: ignore
 
     @property
-    def result(self):
+    def result(self) -> dict[str, Any] | list[Any] | str | int | float | bool | None:
         if self.result_json:
-            return json.loads(self.result_json)
+            return json.loads(self.result_json)  # type: ignore
         return None
 
     @result.setter
-    def result(self, value):
-        self.result_json = json.dumps(value)
+    def result(
+        self, value: dict[str, Any] | list[Any] | str | int | float | bool | None
+    ) -> None:
+        self.result_json = json.dumps(value)  # type: ignore
 
 
 class WorkflowResult(Base):  # type: ignore
@@ -260,14 +270,18 @@ class WorkflowResult(Base):  # type: ignore
     created_at = Column(DateTime, default=datetime.utcnow)
 
     @property
-    def result_value(self):
+    def result_value(
+        self,
+    ) -> dict[str, Any] | list[Any] | str | int | float | bool | None:
         if self.result_value_json:
-            return json.loads(self.result_value_json)
+            return json.loads(self.result_value_json)  # type: ignore
         return None
 
     @result_value.setter
-    def result_value(self, value):
-        self.result_value_json = json.dumps(value)
+    def result_value(
+        self, value: dict[str, Any] | list[Any] | str | int | float | bool | None
+    ) -> None:
+        self.result_value_json = json.dumps(value)  # type: ignore
 
 
 class WorkflowMemory(Base):  # type: ignore
@@ -290,14 +304,18 @@ class WorkflowMemory(Base):  # type: ignore
     # Relationship removed to avoid join condition issues
 
     @property
-    def memory_value(self):
+    def memory_value(
+        self,
+    ) -> dict[str, Any] | list[Any] | str | int | float | bool | None:
         if self.memory_value_json:
-            return json.loads(self.memory_value_json)
+            return json.loads(self.memory_value_json)  # type: ignore
         return None
 
     @memory_value.setter
-    def memory_value(self, value):
-        self.memory_value_json = json.dumps(value)
+    def memory_value(
+        self, value: dict[str, Any] | list[Any] | str | int | float | bool | None
+    ) -> None:
+        self.memory_value_json = json.dumps(value)  # type: ignore
 
 
 class TaskDependency(Base):  # type: ignore

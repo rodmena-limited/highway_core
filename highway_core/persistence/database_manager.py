@@ -86,7 +86,7 @@ class DatabaseManager:
             return  # Only apply for SQLite
 
         @event.listens_for(self.engine, "connect")
-        def set_sqlite_pragma(dbapi_connection, connection_record):
+        def set_sqlite_pragma(dbapi_connection: Any, connection_record: Any) -> None:
             cursor = dbapi_connection.cursor()
             # Enable WAL mode (the safest and most performant journal mode)
             cursor.execute("PRAGMA journal_mode=WAL")  # Use WAL for better concurrency
@@ -117,7 +117,7 @@ class DatabaseManager:
         """Get a thread-local database session."""
         if not hasattr(self._local, "session"):
             self._local.session = self.SessionLocal()
-        return self._local.session
+        return self._local.session  # type: ignore
 
     def _initialize_schema(self) -> None:
         """Initialize the database schema using SQLAlchemy metadata."""
@@ -145,7 +145,7 @@ class DatabaseManager:
                         pass
 
     @contextmanager
-    def transaction(self):
+    def transaction(self) -> Any:
         """Context manager for database transactions."""
         session = self._get_session()
         try:
@@ -156,7 +156,7 @@ class DatabaseManager:
             raise
 
     @contextmanager
-    def database_transaction(self):
+    def database_transaction(self) -> Any:
         """Context manager for database transactions (for backward compatibility)."""
         # For SQLAlchemy, both methods do the same thing
         with self.transaction() as session:
@@ -471,7 +471,7 @@ class DatabaseManager:
 
         return execution_list
 
-    def get_completed_tasks(self, workflow_id: str) -> set:
+    def get_completed_tasks(self, workflow_id: str) -> set[str]:
         """Get set of completed task IDs for a workflow."""
         session = self._get_session()
         completed_tasks = (

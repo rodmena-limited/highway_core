@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 @tool()
-def run(*args) -> str:
+def run(*args: str) -> str:
     """
     Runs a shell command and returns its stdout.
     Accepts multiple arguments to form the complete command.

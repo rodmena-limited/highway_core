@@ -64,14 +64,14 @@ def _run_sub_workflow(
                         selected_sub_executor = specific_executor
 
                 handler_func = sub_handler_map.get(task_clone.operator_type)
-                if handler_func:
+                if handler_func and registry is not None:
                     # Note: sub-workflows don't get the orchestrator
                     handler_func(
                         task=task_clone,
                         state=state,
                         orchestrator=None,
-                        registry=registry,  # type: ignore
-                        bulkhead_manager=bulkhead_manager,  # type: ignore
+                        registry=registry,
+                        bulkhead_manager=bulkhead_manager,
                         executor=selected_sub_executor,
                         resource_manager=None,  # Pass None for resource manager in sub-workflows
                         workflow_run_id="",  # Pass empty string for workflow_run_id in sub-workflows

@@ -75,8 +75,8 @@ def execute(
                 sub_graph_tasks=loop_body_tasks,
                 sub_graph=loop_graph,
                 state=iteration_state,  # Use the isolated state
-                registry=registry,  # type: ignore
-                bulkhead_manager=bulkhead_manager,  # type: ignore
+                registry=registry,
+                bulkhead_manager=bulkhead_manager,
                 executor=executor,  # Pass the executor to the sub-workflow
                 available_executors=orchestrator.executors,  # Pass available executors from orchestrator
             )

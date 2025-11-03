@@ -103,8 +103,8 @@ def _run_foreach_item(
         sub_graph_tasks=sub_graph_tasks,
         sub_graph=sub_graph,
         state=item_state,  # Use the isolated state
-        registry=registry,  # type: ignore
-        bulkhead_manager=bulkhead_manager,  # type: ignore
+        registry=registry,
+        bulkhead_manager=bulkhead_manager,
         executor=executor,
         available_executors=available_executors,  # Use the available executors passed to this function
     )

@@ -98,11 +98,11 @@ class PersistenceManager(ABC):
         runtime: str = "python",
         function: Optional[str] = None,
         image: Optional[str] = None,
-        command: Optional[list] = None,
-        args: Optional[list] = None,
-        kwargs: Optional[dict] = None,
+        command: Optional[list[str]] = None,
+        args: Optional[list[Any]] = None,
+        kwargs: Optional[dict[str, Any]] = None,
         result_key: Optional[str] = None,
-        dependencies: Optional[list] = None,
+        dependencies: Optional[list[str]] = None,
     ) -> bool:
         """Save task details."""
         pass
@@ -116,11 +116,11 @@ class PersistenceManager(ABC):
         runtime: str = "python",
         function: Optional[str] = None,
         image: Optional[str] = None,
-        command: Optional[list] = None,
-        args: Optional[list] = None,
-        kwargs: Optional[dict] = None,
+        command: Optional[list[str]] = None,
+        args: Optional[list[Any]] = None,
+        kwargs: Optional[dict[str, Any]] = None,
         result_key: Optional[str] = None,
-        dependencies: Optional[list] = None,
+        dependencies: Optional[list[str]] = None,
     ) -> bool:
         """Save task details only if task doesn't already exist."""
         pass

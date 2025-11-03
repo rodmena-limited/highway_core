@@ -17,7 +17,7 @@ class ContainerResourceManager:
         self._is_docker_env = is_running_in_docker()
 
     @property
-    def docker_client(self):
+    def docker_client(self) -> Any:
         """Lazy initialization of Docker client - only when actually needed"""
         if self._docker_client is None:
             # Check if we're in Docker environment first
@@ -44,11 +44,11 @@ class ContainerResourceManager:
 
         return self._docker_client
 
-    def register_container(self, container_id: str, container_name: str):
+    def register_container(self, container_id: str, container_name: str) -> None:
         """Track created containers"""
         self.containers.add(container_name)
 
-    def register_network(self, network_id: str, network_name: str):
+    def register_network(self, network_id: str, network_name: str) -> None:
         """Track created networks"""
         self.networks.add(network_name)
 
@@ -75,7 +75,7 @@ class ContainerResourceManager:
                 raise
         return network_name
 
-    def cleanup_all(self):
+    def cleanup_all(self) -> None:
         """Comprehensive cleanup of all workflow resources"""
         # Only proceed with cleanup if we're not in Docker
         if self._is_docker_env:
@@ -102,8 +102,8 @@ class ContainerResourceManager:
                 if "not found" not in str(e).lower():
                     logger.error(f"Error removing network {network_name}: {e}")
 
-    def __enter__(self):
+    def __enter__(self) -> "ContainerResourceManager":
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type: type, exc_val: BaseException, exc_tb: object) -> None:
         self.cleanup_all()

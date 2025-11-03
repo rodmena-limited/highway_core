@@ -45,7 +45,7 @@ class TaskOperatorModel(BaseOperatorModel):
 
     # Add a validation rule
     @model_validator(mode="before")
-    def validate_runtime_fields(cls, values):
+    def validate_runtime_fields(cls, values: Any) -> Any:
         runtime = values.get("runtime", "python")
         if runtime == "python":
             if not values.get("function"):

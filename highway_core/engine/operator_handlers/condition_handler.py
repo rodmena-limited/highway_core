@@ -9,7 +9,7 @@ import ast
 import logging
 import operator
 import warnings
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, List, Optional
 
 from highway_core.engine.models import ConditionOperatorModel
 from highway_core.engine.state import WorkflowState
@@ -32,9 +32,11 @@ def execute(
     registry: Optional["ToolRegistry"],  # <-- Make registry optional
     bulkhead_manager: Optional["BulkheadManager"],  # <-- Make optional
     executor: Optional["BaseExecutor"] = None,  # <-- Add this argument
-    resource_manager=None,  # <-- Add this argument to match orchestrator signature
+    resource_manager: Optional[
+        Any
+    ] = None,  # <-- Add this argument to match orchestrator signature
     workflow_run_id: str = "",  # <-- Add this argument to match orchestrator signature
-) -> None:
+) -> List[str]:
     """
     Evaluates a ConditionOperator.
     Updates the orchestrator's completed tasks to handle conditional branches.
@@ -75,6 +77,8 @@ def execute(
         # depending on BOTH conditional branches can proceed
         orchestrator.sorter.done(skipped_task_id)
         orchestrator.completed_tasks.add(skipped_task_id)  # <-- ADD THIS LINE
+
+    return []
 
 
 def eval_condition(condition_str: str) -> bool:

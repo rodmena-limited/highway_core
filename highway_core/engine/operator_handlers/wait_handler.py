@@ -7,7 +7,7 @@ import logging
 import re
 import time
 from datetime import datetime
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Any, List, Optional
 
 from highway_core.engine.models import WaitOperatorModel
 from highway_core.engine.state import WorkflowState
@@ -28,7 +28,9 @@ def execute(
     registry: Optional["ToolRegistry"],  # <-- Make registry optional
     bulkhead_manager: Optional["BulkheadManager"],  # <-- Make optional
     executor: Optional["BaseExecutor"] = None,  # <-- Add this argument
-    resource_manager=None,  # <-- Add this argument to match orchestrator signature
+    resource_manager: Optional[
+        Any
+    ] = None,  # <-- Add this argument to match orchestrator signature
     workflow_run_id: str = "",  # <-- Add this argument to match orchestrator signature
 ) -> List[str]:
     """

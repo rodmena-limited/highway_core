@@ -16,7 +16,7 @@ from highway_core.engine.engine import run_workflow_from_yaml
 from highway_core.utils.docker_detector import is_running_in_docker
 
 
-def get_system_info():
+def get_system_info() -> dict[str, str | int | float | bool]:
     """Get detailed system information."""
     cpu_count = psutil.cpu_count(logical=True)
     cpu_freq = psutil.cpu_freq()
@@ -38,7 +38,7 @@ def get_system_info():
     return info
 
 
-def format_system_info(info):
+def format_system_info(info: dict[str, str | int | float | bool]) -> str:
     """Format system information for display."""
     lines = [
         "System Information:",
@@ -58,7 +58,7 @@ def format_system_info(info):
 
 @click.group()
 @click.version_option(version=get_package_version("highway_core"))
-def cli():
+def cli() -> None:
     r"""
     -------------------------------------------------
 
@@ -91,7 +91,7 @@ def start(
     verbose: bool,
     show_system_info: bool,
     timeout: float,
-):
+) -> None:
     """Start a highway workflow from a YAML file."""
     # Set up logging
     log_level = logging.DEBUG if verbose else logging.INFO
