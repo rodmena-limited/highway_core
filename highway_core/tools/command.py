@@ -10,7 +10,7 @@ from .decorators import tool
 logger = logging.getLogger(__name__)
 
 
-@tool()
+@tool("tools.command.run")
 def run(*args) -> str:
     """
     Runs a shell command and returns its stdout.

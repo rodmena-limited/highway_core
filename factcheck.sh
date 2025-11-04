@@ -25,6 +25,7 @@ run_python_workflow_test() {
     local workflow_file="$1"
     local test_name="$2"
     local expected_result="$3"
+    local expect_failure="$4"  # New parameter: "true" if we expect this workflow to fail
     
     TOTAL_TESTS=$((TOTAL_TESTS + 1))
     
@@ -40,7 +41,20 @@ run_python_workflow_test() {
     output=$(python cli.py "tests/data/$workflow_file" 2>&1)
     exit_code=$?
     
-    # Check if workflow completed successfully
+    # Handle expected failure case
+    if [ "$expect_failure" = "true" ]; then
+        if [ $exit_code -ne 0 ]; then
+            echo -e "${GREEN}✅ PASS: Workflow failed as expected (testing error handling)${NC}"
+            PASSED_TESTS=$((PASSED_TESTS + 1))
+        else
+            echo -e "${RED}❌ FAIL: Workflow should have failed but succeeded${NC}"
+            echo "Output: $output"
+            FAILED_TESTS=$((FAILED_TESTS + 1))
+        fi
+        return
+    fi
+    
+    # Handle normal case (expecting success)
     if [ $exit_code -eq 0 ]; then
         echo -e "${GREEN}✅ PASS: Workflow completed successfully${NC}"
         
@@ -84,7 +98,8 @@ run_python_workflow_test \
 run_python_workflow_test \
     "failing_workflow.py" \
     "Failing Workflow Test" \
-    ""
+    "" \
+    "true"  # Expect this workflow to fail (testing error handling)
 
 # Test 3: Loop Test
 run_python_workflow_test \
