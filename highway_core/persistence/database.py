@@ -1034,6 +1034,7 @@ class DatabaseManager:
         headers: Optional[Dict[str, Any]] = None,
         payload: Optional[Dict[str, Any]] = None,
         webhook_type: str = "on_complete",
+        status: str = "pending",
         max_retries: int = 3,
         rate_limit_requests: int = 10,
         rate_limit_window: int = 60
@@ -1068,6 +1069,7 @@ class DatabaseManager:
                         headers=headers or {},
                         payload=payload or {},
                         webhook_type=webhook_type,
+                        status=status,
                         max_retries=max_retries,
                         rate_limit_requests=rate_limit_requests,
                         rate_limit_window=rate_limit_window,

@@ -427,9 +427,9 @@ class Webhook(Base):  # type: ignore
     __tablename__ = "webhooks"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    task_id = Column(String, nullable=False)  # References tasks table (task_id)
-    execution_id = Column(String, nullable=False)  # References task_executions table
-    workflow_id = Column(String, ForeignKey("workflows.workflow_id"), nullable=False)
+    task_id = Column(String, nullable=True)  # Can be null for system-wide webhooks
+    execution_id = Column(String, nullable=True)  # Can be null for system-wide webhooks
+    workflow_id = Column(String, nullable=True)  # Can be null for system-wide webhooks, no FK constraint to allow historical references
     url = Column(String, nullable=False)  # Webhook endpoint URL
     method = Column(String(10), default="POST")  # HTTP method (GET, POST, PUT, PATCH, DELETE)
     headers_json = Column(Text)  # JSON string for additional headers
