@@ -263,7 +263,10 @@ class TaskExecution(Base):  # type: ignore
     # Foreign key to task (workflow_id, task_id)
 
     # Ensure unique execution_id but also consider task executions per workflow
-    __table_args__ = (UniqueConstraint("execution_id", name="uix_task_execution_id"),)
+    __table_args__ = (
+        UniqueConstraint("execution_id", name="uix_task_execution_id"),
+        Index("idx_task_executions_wfid_tid_status", "workflow_id", "task_id", "status"),
+    )
 
     # Removed relationship to avoid join condition issues since there's no proper FK
 
@@ -324,6 +327,7 @@ class WorkflowResult(Base):  # type: ignore
             "result_key",
             name="uix_workflow_task_result_unique",
         ),
+        Index("idx_workflow_results_wfid_key", "workflow_id", "result_key"),
     )
 
     @property

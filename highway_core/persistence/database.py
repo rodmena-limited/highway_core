@@ -7,8 +7,8 @@ from pathlib import Path
 from time import sleep
 from typing import Any, Dict, Generator, List, Optional, Union
 
-from sqlalchemy import Column, DateTime, create_engine, event, text, and_, func, case
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy import Column, DateTime, create_engine, event, text, and_, func, case, inspect
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError, OperationalError
 from sqlalchemy.orm import Session, scoped_session, sessionmaker
 from sqlalchemy.pool import QueuePool, StaticPool
 
@@ -30,7 +30,8 @@ logger = logging.getLogger(__name__)
 
 def retry_on_lock_error(max_retries: int = 3, delay: float = 0.1):
     """
-    Decorator to retry database operations that fail due to lock contention.
+    Decorator to retry database operations that fail due to lock contention
+    (SQLite) or deadlock (PostgreSQL).
     """
 
     def decorator(func):
@@ -39,8 +40,7 @@ def retry_on_lock_error(max_retries: int = 3, delay: float = 0.1):
             for attempt in range(max_retries):
                 try:
                     return func(*args, **kwargs)
-                except Exception as e:
-                    # Check for lock-related errors
+                except OperationalError as e:  # Catch general DB errors
                     error_str = str(e).lower()
                     if (
                         any(
@@ -50,20 +50,25 @@ def retry_on_lock_error(max_retries: int = 3, delay: float = 0.1):
                                 "locked",
                                 "busy",
                                 "timeout",
+                                "deadlock detected",  # PostgreSQL
+                                "lock not available",  # PostgreSQL
                             ]
                         )
                         and attempt < max_retries - 1
                     ):
                         wait_time = delay * (2**attempt)  # Exponential backoff
                         logger.warning(
-                            f"Database lock error on attempt {attempt + 1}, retrying in {wait_time:.2f}s: {e}"
+                            f"Database lock/deadlock error on attempt {attempt + 1}, retrying in {wait_time:.2f}s: {e}"
                         )
                         sleep(wait_time)
                         continue
                     else:
                         # Re-raise if not a lock error or last attempt
                         raise
-            return None
+                except Exception as e:
+                    # Re-raise other exceptions immediately
+                    raise
+            return None  # Should not be reached if retries fail, as exception is raised
 
         return wrapper
 
@@ -111,41 +116,51 @@ class DatabaseManager:
 
             if engine_url is None:
                 if db_path is None:
-                    home = Path.home()
-                    db_path = str(home / ".highway.sqlite3")
-
-                Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-                self.engine_url = f"sqlite:///{db_path}"
+                    # This will now get the correct URL from config.py
+                    from highway_core.config import settings
+                    self.engine_url = settings.DATABASE_URL
+                else:
+                    # Use explicit db_path if provided
+                    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+                    self.engine_url = f"sqlite:///{db_path}"
             else:
                 self.engine_url = engine_url
 
-            # Create SQLAlchemy engine with proper configuration for SQLite concurrency
+            # Create SQLAlchemy engine with proper configuration for DB dialect
             if self.engine_url.startswith("sqlite://"):
                 # Use QueuePool with proper settings for SQLite concurrent access
                 self.engine = create_engine(
                     self.engine_url,
-                    poolclass=QueuePool,  # Use QueuePool instead of StaticPool for better concurrency
-                    pool_size=1,  # Single connection for SQLite to avoid locking issues
+                    poolclass=QueuePool,  # Use QueuePool instead of StaticPool
+                    pool_size=1,  # Single connection for SQLite
                     max_overflow=0,  # No additional connections
                     pool_pre_ping=True,  # Verify connections before use
                     pool_recycle=3600,  # Recycle connections after 1 hour
                     connect_args={
                         "check_same_thread": False,  # Allow cross-thread access
-                        "timeout": 5.0,  # Shorter timeout for faster failure detection
+                        "timeout": 5.0,
                     },
                     echo=False,
                     echo_pool=False,
                 )
                 self._optimize_sqlite_connection()
-            else:
-                # For other database engines, use connection pooling
+                logger.info("DatabaseManager initialized with SQLite backend.")
+            
+            elif self.engine_url.startswith("postgresql+psycopg"):
+                # For PostgreSQL, use a standard connection pool
                 self.engine = create_engine(
                     self.engine_url,
-                    pool_size=16,
-                    max_overflow=4,
-                    pool_pre_ping=True,  # Verify connections before use
+                    poolclass=QueuePool,
+                    pool_size=10,  # Pool of 10 connections
+                    max_overflow=5,  # Allow 5 more
+                    pool_pre_ping=True,
+                    pool_recycle=1800,  # Recycle connections every 30 mins
                     echo=False,
                 )
+                logger.info("DatabaseManager initialized with PostgreSQL backend.")
+            
+            else:
+                raise ValueError(f"Unsupported database engine URL: {self.engine_url}")
 
             # Create scoped session factory with proper cleanup
             self.SessionLocal = scoped_session(
@@ -219,91 +234,32 @@ class DatabaseManager:
                 return
 
             try:
-                # First, ensure WAL mode is enabled for concurrent access
+                # Special WAL pragma for SQLite
                 if self.engine_url.startswith("sqlite://"):
                     try:
-                        # Use a raw connection to enable WAL mode before any transactions
                         with self.engine.connect() as conn:
                             conn.execute(text("PRAGMA journal_mode=WAL"))
                             logger.debug("Enabled WAL mode for SQLite concurrency")
                     except Exception as e:
                         logger.warning(f"Could not enable WAL mode: {e}")
 
-                # Check if tables already exist using a more reliable method
+                # Check if tables already exist using the dialect-agnostic inspector
                 try:
-                    with self.session_scope() as session:
-                        # Try to query workflows table
-                        result = session.execute(
-                            text(
-                                "SELECT name FROM sqlite_master WHERE type='table' AND name='workflows'"
-                            )
-                        )
-                        table_exists = result.fetchone() is not None
+                    inspector = inspect(self.engine)
+                    table_exists = inspector.has_table("workflows")
 
-                        if table_exists:
-                            self._schema_created = True
-                            logger.info("Database schema already exists")
-                            return
+                    if table_exists:
+                        self._schema_created = True
+                        logger.info("Database schema already exists")
+                        return
                 except Exception as e:
                     logger.debug(f"Error checking table existence: {e}")
 
-                # Create tables with proper error handling for concurrent creation
+                # Create tables
                 try:
-                    # Use a more robust approach - create tables individually
-                    # to ensure all tables are created even if some have issues
-                    from .models import (
-                        Workflow, Task, TaskExecution, TaskDependency, 
-                        WorkflowResult, WorkflowMemory, Webhook,
-                        AdminTask, WorkflowTemplate
-                    )
-                    
-                    # Create tables in order of dependencies
-                    tables_to_create = [
-                        Workflow.__table__,
-                        Task.__table__,
-                        TaskExecution.__table__,
-                        TaskDependency.__table__,
-                        WorkflowResult.__table__,
-                        WorkflowMemory.__table__,
-                        Webhook.__table__,
-                        AdminTask.__table__,
-                        WorkflowTemplate.__table__,
-                    ]
-                    
-                    created_tables = []
-                    for table in tables_to_create:
-                        try:
-                            table.create(bind=self.engine, checkfirst=True)
-                            created_tables.append(table.name)
-                            logger.debug(f"Created table: {table.name}")
-                        except Exception as table_error:
-                            logger.warning(f"Error creating table {table.name}: {table_error}")
-                            # Continue with other tables even if one fails
-                    
-                    logger.info(f"Created tables: {created_tables}")
-                    self._schema_created = True
-                    
-                    # Verify all expected tables exist
-                    from sqlalchemy import inspect
-                    inspector = inspect(self.engine)
-                    actual_tables = inspector.get_table_names()
-                    expected_tables = [table.name for table in tables_to_create]
-                    
-                    missing_tables = set(expected_tables) - set(actual_tables)
-                    if missing_tables:
-                        logger.error(f"Missing tables after creation: {missing_tables}")
-                        # Try to create missing tables using bulk method as fallback
-                        Base.metadata.create_all(bind=self.engine, checkfirst=True)
-                        logger.info("Fallback bulk creation completed")
-                    else:
-                        logger.info("All tables created successfully")
-                        
-                except Exception as e:
-                    logger.error(f"Error during table creation: {e}")
-                    # Fallback to original bulk creation method
                     Base.metadata.create_all(bind=self.engine, checkfirst=True)
-                    logger.info("Fallback to bulk creation completed")
                     self._schema_created = True
+                    logger.info("Database schema created successfully.")
                 except IntegrityError as e:
                     # Another process created the schema, verify it exists
                     logger.debug(f"Schema creation race condition handled: {e}")
@@ -318,13 +274,9 @@ class DatabaseManager:
                         )
                         raise
                 except SQLAlchemyError as e:
-                    # Handle other SQLAlchemy-specific errors
-                    if (
-                        "already exists" in str(e).lower()
-                        or "disk I/O error" in str(e).lower()
-                    ):
+                    if "already exists" in str(e).lower():
                         logger.debug(
-                            f"Table already exists or I/O error, continuing: {e}"
+                            f"Table already exists, continuing: {e}"
                         )
                         self._schema_created = True
                     else:
@@ -335,7 +287,6 @@ class DatabaseManager:
 
             except Exception as e:
                 logger.error(f"Failed to initialize database schema: {e}")
-                # Don't set _schema_created = True on real errors
                 raise
 
     @contextmanager

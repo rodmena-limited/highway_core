@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -19,22 +20,41 @@ if dotenv_path.exists():
 
 
 class Settings:
-    # Database settings
-    raw_db_url = os.getenv("DATABASE_URL", "sqlite:///~/.highway.sqlite3")
-    DATABASE_URL: str = raw_db_url.replace("~", os.path.expanduser("~"))
+    # --- Test settings ---
+    # Check for USE_PG=true for testing against prod PG
+    USE_PG_FOR_TESTS: bool = os.getenv("USE_PG", "false").lower() in ("true", "1")
 
-    # Redis settings
-    REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
-    REDIS_PORT: int = int(os.getenv("REDIS_PORT", 6379))
-    REDIS_PASSWORD: str | None = os.getenv("REDIS_PASSWORD")
-    REDIS_DB: int = int(os.getenv("REDIS_DB", 0))
+    # --- Database settings ---
+    POSTGRES_USER: Optional[str] = os.getenv("POSTGRES_USER")
+    POSTGRES_PASSWORD: Optional[str] = os.getenv("POSTGRES_PASSWORD")
+    POSTGRES_HOST: Optional[str] = os.getenv("POSTGRES_HOST")
+    POSTGRES_PORT: Optional[str] = os.getenv("POSTGRES_PORT")
+    POSTGRES_DB: Optional[str] = os.getenv("POSTGRES_DB")
 
-    # Test settings
-    USE_FAKE_REDIS: bool = os.getenv("USE_FAKE_REDIS", "false").lower() in (
-        "true",
-        "1",
-        "t",
+    # Check if all PG variables are set
+    use_postgres = all(
+        [
+            POSTGRES_USER,
+            POSTGRES_PASSWORD,
+            POSTGRES_HOST,
+            POSTGRES_PORT,
+            POSTGRES_DB,
+        ]
     )
+
+    if use_postgres:
+        # Build PostgreSQL connection string for psycopg (v3)
+        DATABASE_URL: str = f"postgresql+psycopg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+    else:
+        # Fallback to SQLite
+        raw_db_url = os.getenv("DATABASE_URL", "sqlite:///~/.highway.sqlite3")
+        DATABASE_URL: str = raw_db_url.replace("~", os.path.expanduser("~"))
+
+    # --- Test Environment Override ---
+    # If we are in 'test' mode AND we are NOT explicitly told to use PG,
+    # then we force the test SQLite DB.
+    if ENV == "test" and not USE_PG_FOR_TESTS:
+        DATABASE_URL = "sqlite:///tests/test_db.sqlite3"
 
     # Docker settings for tests
     NO_DOCKER_USE: bool = os.getenv("NO_DOCKER_USE", "false").lower() in (
@@ -46,8 +66,19 @@ class Settings:
 
 settings = Settings()
 
-# In test environment, use the DATABASE_URL from environment variable if set,
-# otherwise use a default test database file
+# In test environment, if USE_PG is true, we let the PG URL stand.
+# If USE_PG is false, we set the default test DB path.
 if ENV == "test":
-    if os.getenv("DATABASE_URL") is None:
+    if settings.USE_PG_FOR_TESTS:
+        if not settings.use_postgres:
+            # This is an error state, user wants PG test but .env is not set
+            print(
+                "WARNING: USE_PG=true but PostgreSQL env vars not set. Falling back to SQLite."
+            )
+            settings.DATABASE_URL = "sqlite:///tests/test_db.sqlite3"
+        else:
+            # Using PG for tests, print a clear message
+            print(f"TESTING with POSTGRES: {settings.POSTGRES_HOST}")
+    else:
+        # Default test environment: use the temp SQLite DB
         settings.DATABASE_URL = "sqlite:///tests/test_db.sqlite3"
