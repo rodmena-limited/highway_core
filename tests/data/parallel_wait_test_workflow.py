@@ -1,5 +1,6 @@
 from highway_dsl import WorkflowBuilder
 
+
 def demonstrate_parallel_wait_workflow():
     """
     Defines a workflow that tests parallel execution, fan-in, and wait operators.
@@ -46,7 +47,9 @@ def demonstrate_parallel_wait_workflow():
     builder.task(
         "log_parallel_complete",
         "tools.log.info",
-        args=["All parallel branches complete. Fetched todo 1: {{results.todo_1.data.id}}"],
+        args=[
+            "All parallel branches complete. Fetched todo 1: {{results.todo_1.data.id}}"
+        ],
         dependencies=["fetch_todo_1", "log_todo_2", "short_wait"],
     )
 
@@ -60,9 +63,11 @@ def demonstrate_parallel_wait_workflow():
 
     workflow = builder.build()
 
-    workflow.set_variables({
-        "base_api_url": "https://jsonplaceholder.typicode.com",
-    })
+    workflow.set_variables(
+        {
+            "base_api_url": "https://jsonplaceholder.typicode.com",
+        }
+    )
 
     return workflow
 

@@ -246,11 +246,11 @@ class TestConcurrentWorkflows:
 
         # Test the engine directly in the test environment - this works
         from highway_core.engine.engine import run_workflow_from_yaml
-        from highway_core.persistence.sql_persistence_manager import SQLPersistenceManager
-
-        persistence_manager = SQLPersistenceManager(
-            db_path=TEST_DB_PATH, is_test=True
+        from highway_core.persistence.sql_persistence_manager import (
+            SQLPersistenceManager,
         )
+
+        persistence_manager = SQLPersistenceManager(db_path=TEST_DB_PATH, is_test=True)
 
         try:
             result = run_workflow_from_yaml(

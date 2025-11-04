@@ -28,14 +28,24 @@ class SQLPersistence(PersistenceManager):
                      If None, uses ~/.highway.sqlite3 for production and tests/data/highway.sqlite3 for tests
             is_test: Whether this is running in test mode
         """
-        if is_test or db_path is not None:
-            # When db_path is provided or is_test=True, use the provided database URL
-            # This ensures proper executor initialization in test environments
-            self.db_manager = get_db_manager(db_path=db_path or 'test_db.sqlite3')
-        else:
-            # Use default production database  
-            self.db_manager = get_db_manager(engine_url=settings.DATABASE_URL)
+        # Import settings at the top to avoid scoping issues
+        from highway_core.config import settings
         
+        if db_path is not None:
+            # When db_path is explicitly provided, use it
+            self.db_manager = get_db_manager(db_path=db_path)
+        elif is_test:
+            # In test mode, check if DATABASE_URL is set first
+            if settings.DATABASE_URL and settings.DATABASE_URL != "sqlite:///highway.sqlite3":
+                # Use the configured test database URL
+                self.db_manager = get_db_manager(engine_url=settings.DATABASE_URL)
+            else:
+                # Fallback to default test database
+                self.db_manager = get_db_manager(db_path="test_db.sqlite3")
+        else:
+            # Use default production database
+            self.db_manager = get_db_manager(engine_url=settings.DATABASE_URL)
+
         # No need to call _setup_sqlite_options anymore as it's handled in the unified DatabaseManager
 
     def start_workflow(
@@ -63,29 +73,30 @@ class SQLPersistence(PersistenceManager):
     def start_task(self, workflow_id: str, task: AnyOperatorModel) -> bool:
         """Record task start - legacy method with changed return type"""
         return self._attempt_start_task(workflow_id, task)
-    
+
     def start_task_sql_only(self, workflow_id: str, task: AnyOperatorModel) -> bool:
         """Attempt to start a task with SQL-based locking"""
         return self._attempt_start_task(workflow_id, task)
-    
+
     def _attempt_start_task(self, workflow_id: str, task: AnyOperatorModel) -> bool:
         """Internal method to attempt starting a task with locking."""
         try:
             # Try to create the task with status "executing"
             # If the task already exists with status "executing", it means it's locked
             all_tasks = self.db_manager.get_tasks_by_workflow(workflow_id)
-            existing_task = next((t for t in all_tasks if t["task_id"] == task.task_id), None)
-            
+            existing_task = next(
+                (t for t in all_tasks if t["task_id"] == task.task_id), None
+            )
+
             if existing_task and existing_task.get("status") == "executing":
                 # Task is already being executed by another process/thread
                 return False
-        
+
             # Check if the task already exists in the database
             if existing_task:
                 # Update the existing task to "executing" status
                 success = self.db_manager.update_task_status(
-                    task_id=task.task_id,
-                    status="executing"
+                    task_id=task.task_id, status="executing"
                 )
             else:
                 # Create the task with executing status
@@ -104,7 +115,7 @@ class SQLPersistence(PersistenceManager):
                     dependencies=getattr(task, "dependencies", []),
                     status="executing",
                 )
-            
+
             # If operation succeeded, we successfully acquired the lock
             return success is not False
         except Exception as e:
@@ -155,8 +166,14 @@ class SQLPersistence(PersistenceManager):
             state: Current workflow state
             completed_tasks: Set of completed task IDs
         """
-        # This method currently stores the state and completed tasks
-        # In a SQL implementation, we might save task completion status to the tasks table
+        # Save workflow variables to the workflow record
+        self.db_manager.update_workflow_variables(workflow_run_id, state.variables)
+        
+        # Save workflow memory entries
+        for memory_key, memory_value in state.memory.items():
+            self.db_manager.store_memory(workflow_run_id, memory_key, memory_value)
+        
+        # Save completed tasks status
         for task_id in completed_tasks:
             self.db_manager.update_task_status(task_id, "completed")
 

@@ -25,7 +25,9 @@ def _run_sub_workflow(
     available_executors: Optional[
         Dict[str, "BaseExecutor"]
     ] = None,  # Available executors for sub-tasks
-    orchestrator: Optional["Orchestrator"] = None,  # Pass orchestrator for proper error handling
+    orchestrator: Optional[
+        "Orchestrator"
+    ] = None,  # Pass orchestrator for proper error handling
 ) -> None:
     """
     Runs a sub-workflow (like a loop body) to completion.
@@ -68,10 +70,12 @@ def _run_sub_workflow(
                 handler_func = sub_handler_map.get(task_clone.operator_type)
                 if handler_func:
                     # Record the start of the task in the persistence layer
-                    if orchestrator and hasattr(orchestrator, 'persistence'):
+                    if orchestrator and hasattr(orchestrator, "persistence"):
                         # Attempt to start the task in persistence
                         try:
-                            orchestrator.persistence.start_task(orchestrator.run_id, task_clone)
+                            orchestrator.persistence.start_task(
+                                orchestrator.run_id, task_clone
+                            )
                         except Exception:
                             # If start_task fails, that's ok - it might already be started
                             pass
@@ -88,15 +92,23 @@ def _run_sub_workflow(
                     )
 
                     # After successful execution, record the completion in the persistence layer
-                    if orchestrator and hasattr(orchestrator, 'persistence'):
+                    if orchestrator and hasattr(orchestrator, "persistence"):
                         actual_result = None
-                        if isinstance(task_clone, TaskOperatorModel) and task_clone.result_key:
+                        if (
+                            isinstance(task_clone, TaskOperatorModel)
+                            and task_clone.result_key
+                        ):
                             actual_result = state.get_result(task_clone.result_key)
                         try:
-                            orchestrator.persistence.complete_task(orchestrator.run_id, task_clone.task_id, actual_result)
+                            orchestrator.persistence.complete_task(
+                                orchestrator.run_id, task_clone.task_id, actual_result
+                            )
                         except Exception:
                             # If complete_task fails, log it but continue
-                            logger.debug("Could not complete task '%s' in persistence", task_clone.task_id)
+                            logger.debug(
+                                "Could not complete task '%s' in persistence",
+                                task_clone.task_id,
+                            )
             else:
                 logger.warning(
                     "_run_sub_workflow: Skipping unsupported operator type '%s' for task '%s'",

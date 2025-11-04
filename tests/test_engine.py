@@ -40,11 +40,11 @@ tasks:
         temp_file_path = temp_file.name
 
     try:
-        # Mock the Orchestrator and HybridPersistenceManager
+        # Mock the Orchestrator and SQLPersistenceManager
         with (
             patch("highway_core.engine.engine.Orchestrator") as mock_orchestrator_class,
             patch(
-                "highway_core.engine.engine.HybridPersistenceManager"
+                "highway_core.engine.engine.SQLPersistenceManager"
             ) as mock_persistence_class,
         ):
 
@@ -96,7 +96,7 @@ tasks:
                 "highway_core.engine.engine.BulkheadManager"
             ) as mock_bulkhead_manager_class,
             patch(
-                "highway_core.engine.engine.HybridPersistenceManager"
+                "highway_core.engine.engine.SQLPersistenceManager"
             ) as mock_persistence_class,
         ):
             mock_persistence_instance = MagicMock()
@@ -127,7 +127,7 @@ def test_run_workflow_from_yaml_invalid_file():
 
     try:
         with patch(
-            "highway_core.engine.engine.HybridPersistenceManager"
+            "highway_core.engine.engine.SQLPersistenceManager"
         ) as mock_persistence_class:
             run_workflow_from_yaml(temp_file_path)
     finally:
@@ -138,7 +138,7 @@ def test_run_workflow_from_yaml_invalid_file():
 def test_run_workflow_from_yaml_nonexistent_file():
     """Test running a workflow from a non-existent file."""
     with patch(
-        "highway_core.engine.engine.HybridPersistenceManager"
+        "highway_core.engine.engine.SQLPersistenceManager"
     ) as mock_persistence_class:
         run_workflow_from_yaml("/nonexistent/path.yaml")
 
@@ -177,7 +177,7 @@ tasks:
                 "highway_core.engine.engine.BulkheadManager"
             ) as mock_bulkhead_manager_class,
             patch(
-                "highway_core.engine.engine.HybridPersistenceManager"
+                "highway_core.engine.engine.SQLPersistenceManager"
             ) as mock_persistence_class,
         ):
             mock_persistence_instance = MagicMock()
@@ -234,7 +234,7 @@ tasks:
                 "highway_core.engine.engine.BulkheadManager"
             ) as mock_bulkhead_manager_class,
             patch(
-                "highway_core.engine.engine.HybridPersistenceManager"
+                "highway_core.engine.engine.SQLPersistenceManager"
             ) as mock_persistence_class,
         ):
             mock_persistence_instance = MagicMock()
@@ -269,7 +269,7 @@ def test_run_workflow_from_yaml_exception():
         with (
             patch("highway_core.engine.engine.yaml.safe_load") as mock_safe_load,
             patch(
-                "highway_core.engine.engine.HybridPersistenceManager"
+                "highway_core.engine.engine.SQLPersistenceManager"
             ) as mock_persistence_class,
         ):
             mock_safe_load.side_effect = Exception("YAML load error")

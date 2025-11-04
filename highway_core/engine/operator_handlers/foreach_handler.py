@@ -85,10 +85,13 @@ def execute(
     # Mark all loop body tasks as conceptually completed so the main orchestrator
     # doesn't try to execute them again
     for task_id in loop_body_task_ids:
-        if hasattr(orchestrator, 'completed_tasks'):
+        if hasattr(orchestrator, "completed_tasks"):
             # Add to completed tasks so the main orchestrator will know these are done
             orchestrator.completed_tasks.add(task_id)
-            logger.info("ForEachHandler: Marked loop body task '%s' as conceptually completed", task_id)
+            logger.info(
+                "ForEachHandler: Marked loop body task '%s' as conceptually completed",
+                task_id,
+            )
 
     logger.info("ForEachHandler: All %s items processed.", len(items))
     return []  # This operator adds no new tasks to the main graph

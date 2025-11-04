@@ -1,5 +1,6 @@
 from highway_dsl import WorkflowBuilder
 
+
 def demonstrate_loop_test_workflow():
     """
     Defines a workflow that tests while loops and foreach loops.
@@ -60,9 +61,11 @@ def demonstrate_loop_test_workflow():
 
     workflow = builder.build()
 
-    workflow.set_variables({
-        "user_ids": [1, 2, 3],
-    })
+    workflow.set_variables(
+        {
+            "user_ids": [1, 2, 3],
+        }
+    )
 
     return workflow
 

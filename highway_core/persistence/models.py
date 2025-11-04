@@ -191,7 +191,7 @@ class Task(Base):  # type: ignore
     # Explicit table arguments with unique constraint
     __table_args__ = (
         # Unique constraint on the composite key (task_id, workflow_id)
-        UniqueConstraint('task_id', 'workflow_id', name='uix_task_workflow_pair'),
+        UniqueConstraint("task_id", "workflow_id", name="uix_task_workflow_pair"),
         # Additional indexes for performance
         Index("idx_tasks_workflow_id", "workflow_id"),
         Index("idx_tasks_status", "status"),
@@ -227,11 +227,9 @@ class TaskExecution(Base):  # type: ignore
 
     # Composite foreign key constraint handled via application logic
     # Foreign key to task (workflow_id, task_id)
-    
+
     # Ensure unique execution_id but also consider task executions per workflow
-    __table_args__ = (
-        UniqueConstraint('execution_id', name='uix_task_execution_id'),
-    )
+    __table_args__ = (UniqueConstraint("execution_id", name="uix_task_execution_id"),)
 
     # Removed relationship to avoid join condition issues since there's no proper FK
 
@@ -283,7 +281,12 @@ class WorkflowResult(Base):  # type: ignore
 
     # Ensure unique result keys per task/workflow combination
     __table_args__ = (
-        UniqueConstraint('workflow_id', 'task_id', 'result_key', name='uix_workflow_task_result_unique'),
+        UniqueConstraint(
+            "workflow_id",
+            "task_id",
+            "result_key",
+            name="uix_workflow_task_result_unique",
+        ),
     )
 
     @property
@@ -316,7 +319,9 @@ class WorkflowMemory(Base):  # type: ignore
 
     # Ensure unique memory keys per workflow
     __table_args__ = (
-        UniqueConstraint('workflow_id', 'memory_key', name='uix_workflow_memory_key_unique'),
+        UniqueConstraint(
+            "workflow_id", "memory_key", name="uix_workflow_memory_key_unique"
+        ),
     )
 
     # Relationship removed to avoid join condition issues
@@ -348,7 +353,12 @@ class TaskDependency(Base):  # type: ignore
 
     # Create explicit unique and index constraints
     __table_args__ = (
-        UniqueConstraint('task_id', 'depends_on_task_id', 'workflow_id', name='uix_task_dependency_unique'),
+        UniqueConstraint(
+            "task_id",
+            "depends_on_task_id",
+            "workflow_id",
+            name="uix_task_dependency_unique",
+        ),
         Index("idx_task_dependencies_task", "task_id"),
         Index("idx_task_dependencies_depends_on", "depends_on_task_id"),
         Index("idx_task_dependencies_workflow", "workflow_id"),

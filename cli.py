@@ -23,28 +23,32 @@ def load_workflow_from_python(file_path):
         spec = importlib.util.spec_from_file_location("workflow_module", file_path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        
+
         # Find and call the workflow function (skip WorkflowBuilder class)
         for attr_name in dir(module):
-            if attr_name == 'WorkflowBuilder':
+            if attr_name == "WorkflowBuilder":
                 continue  # Skip the WorkflowBuilder class
-                
+
             attr = getattr(module, attr_name)
-            if callable(attr) and hasattr(attr, '__name__') and 'workflow' in attr.__name__.lower():
+            if (
+                callable(attr)
+                and hasattr(attr, "__name__")
+                and "workflow" in attr.__name__.lower()
+            ):
                 return attr()
-        
+
         # If no specific function found, try common names
-        if hasattr(module, 'demonstrate_failing_workflow'):
+        if hasattr(module, "demonstrate_failing_workflow"):
             return module.demonstrate_failing_workflow()
-        elif hasattr(module, 'demonstrate_workflow'):
+        elif hasattr(module, "demonstrate_workflow"):
             return module.demonstrate_workflow()
-        elif hasattr(module, 'create_workflow'):
+        elif hasattr(module, "create_workflow"):
             return module.create_workflow()
-        elif hasattr(module, 'workflow'):
+        elif hasattr(module, "workflow"):
             return module.workflow()
-        
+
         raise ValueError(f"No workflow function found in {file_path}")
-        
+
     except Exception as e:
         raise RuntimeError(f"Failed to load workflow from {file_path}: {e}")
 
@@ -53,7 +57,9 @@ def main():
     parser = argparse.ArgumentParser(
         description="Run Highway Core workflows from YAML files or highway_dsl Python files"
     )
-    parser.add_argument("workflow_path", help="Path to the workflow file (YAML or Python)")
+    parser.add_argument(
+        "workflow_path", help="Path to the workflow file (YAML or Python)"
+    )
     parser.add_argument(
         "--run-id",
         help="Unique ID for this workflow run (default: auto-generated UUID)",
@@ -86,24 +92,27 @@ def main():
 
     try:
         # Determine file type and load workflow
-        if workflow_path.suffix.lower() in ['.yaml', '.yml']:
+        if workflow_path.suffix.lower() in [".yaml", ".yml"]:
             # Run YAML workflow
             result = run_workflow_from_yaml(
                 yaml_path=str(workflow_path), workflow_run_id=run_id
             )
-        elif workflow_path.suffix.lower() == '.py':
+        elif workflow_path.suffix.lower() == ".py":
             # Load and run highway_dsl Python workflow
             workflow = load_workflow_from_python(str(workflow_path))
-            
+
             # Convert to YAML and run
             yaml_content = workflow.to_yaml()
-            
+
             # Create a temporary YAML file
             import tempfile
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as temp_file:
+
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".yaml", delete=False
+            ) as temp_file:
                 temp_file.write(yaml_content)
                 temp_file_path = temp_file.name
-            
+
             try:
                 result = run_workflow_from_yaml(
                     yaml_path=temp_file_path, workflow_run_id=run_id
@@ -112,7 +121,10 @@ def main():
                 # Clean up temporary file
                 os.unlink(temp_file_path)
         else:
-            print(f"Error: Unsupported file format '{workflow_path.suffix}'", file=sys.stderr)
+            print(
+                f"Error: Unsupported file format '{workflow_path.suffix}'",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
         print("-" * 50)
@@ -134,7 +146,7 @@ def main():
         try:
             from highway_core.config import settings
             from highway_core.persistence.database import get_db_manager
-
+            
             db_manager = get_db_manager(engine_url=settings.DATABASE_URL)
 
             # Get all tasks for this workflow
@@ -162,6 +174,8 @@ def main():
 
             db_manager.close()
 
+        except ImportError as e:
+            print(f"\n⚠️  Could not import required modules for detailed task information: {e}")
         except Exception as e:
             print(f"\n⚠️  Could not retrieve detailed task information: {e}")
 

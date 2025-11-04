@@ -1,6 +1,7 @@
-from highway_dsl import WorkflowBuilder, RetryPolicy
-from datetime import timedelta
 import sys
+from datetime import timedelta
+
+from highway_dsl import RetryPolicy, WorkflowBuilder
 
 builder = WorkflowBuilder("data_processing_pipeline")
 
@@ -19,7 +20,9 @@ builder.condition(
         "high_quality_processing",
         "workflows.tasks.advanced_processing",
         args=["{{validated_data}}"],
-        retry_policy=RetryPolicy(max_retries=5, delay=timedelta(seconds=10), backoff_factor=2.0),
+        retry_policy=RetryPolicy(
+            max_retries=5, delay=timedelta(seconds=10), backoff_factor=2.0
+        ),
     ),
     if_false=lambda b: b.task(
         "standard_processing",

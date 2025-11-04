@@ -1,5 +1,6 @@
 from highway_dsl import WorkflowBuilder
 
+
 def demonstrate_failing_workflow():
     """
     Defines a workflow that intentionally fails to test error handling.
@@ -26,9 +27,11 @@ def demonstrate_failing_workflow():
 
     workflow = builder.build()
 
-    workflow.set_variables({
-        "base": 100,
-    })
+    workflow.set_variables(
+        {
+            "base": 100,
+        }
+    )
 
     return workflow
 

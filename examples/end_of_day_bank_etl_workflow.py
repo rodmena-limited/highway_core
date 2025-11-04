@@ -1,19 +1,19 @@
 import json
-from datetime import timedelta, time, datetime  # Need datetime for the validator
+from datetime import datetime, time, timedelta  # Need datetime for the validator
 
 try:
     from highway_dsl import (
+        ConditionOperator,
+        ForEachOperator,
+        OperatorType,
+        ParallelOperator,
+        RetryPolicy,
+        TaskOperator,
+        TimeoutPolicy,
+        WaitOperator,
+        WhileOperator,
         Workflow,
         WorkflowBuilder,
-        TaskOperator,
-        ConditionOperator,
-        ParallelOperator,
-        WaitOperator,
-        ForEachOperator,
-        WhileOperator,
-        RetryPolicy,
-        TimeoutPolicy,
-        OperatorType,
     )
 except ImportError:
     print("Error: highway_dsl library not found. Please install it.")

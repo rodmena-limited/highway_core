@@ -1,19 +1,19 @@
 import json
-from datetime import timedelta, time, datetime
+from datetime import datetime, time, timedelta
 
 try:
     from highway_dsl import (
+        ConditionOperator,
+        ForEachOperator,
+        OperatorType,
+        ParallelOperator,
+        RetryPolicy,
+        TaskOperator,
+        TimeoutPolicy,
+        WaitOperator,
+        WhileOperator,
         Workflow,
         WorkflowBuilder,
-        TaskOperator,
-        ConditionOperator,
-        ParallelOperator,
-        WaitOperator,
-        ForEachOperator,
-        WhileOperator,
-        RetryPolicy,
-        TimeoutPolicy,
-        OperatorType,
     )
 except ImportError:
     print("Error: highway_dsl library not found. Please install it.")
@@ -28,8 +28,10 @@ def demonstrate_ecommerce_workflow():
     builder = WorkflowBuilder("ecommerce_order_processing_v1")
 
     # --- PHASE 1: ORDER VALIDATION ---
-    builder.task("validate_order", "tools.memory.set", args=["order_status", "validating"])
-    
+    builder.task(
+        "validate_order", "tools.memory.set", args=["order_status", "validating"]
+    )
+
     builder.parallel(
         "validate_items_availability",
         branches={
@@ -51,7 +53,7 @@ def demonstrate_ecommerce_workflow():
                 args=["price_validated", "true"],
             ),
         },
-        dependencies=["validate_order"]
+        dependencies=["validate_order"],
     )
 
     # --- PHASE 2: PAYMENT PROCESSING ---
@@ -90,7 +92,7 @@ def demonstrate_ecommerce_workflow():
                 args=["shipping_label_generated", "true"],
             ),
         },
-        dependencies=["process_payment"]
+        dependencies=["process_payment"],
     )
 
     # --- PHASE 4: WAIT AND RETRY LOGIC ---
@@ -130,12 +132,16 @@ def demonstrate_ecommerce_workflow():
         loop_body=lambda b: b.task(
             "notify_low_stock",
             "tools.log.warning",
-            args=["Low stock alert! Loop iteration: {{memory.loop_counter | default(0)}}"],
-        ).task(
+            args=[
+                "Low stock alert! Loop iteration: {{memory.loop_counter | default(0)}}"
+            ],
+        )
+        .task(
             "increment_counter",
             "tools.memory.increment",
             args=["loop_counter"],
-        ).wait(
+        )
+        .wait(
             "wait_for_restock",
             wait_for=1,
         ),

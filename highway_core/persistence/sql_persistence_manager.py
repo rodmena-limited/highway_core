@@ -31,7 +31,9 @@ class SQLPersistenceManager(PersistenceManager):
     def save_workflow_state(
         self, workflow_run_id: str, state: WorkflowState, completed_tasks: Set[str]
     ) -> None:
-        self.sql_persistence.save_workflow_state(workflow_run_id, state, completed_tasks)
+        self.sql_persistence.save_workflow_state(
+            workflow_run_id, state, completed_tasks
+        )
 
     def load_workflow_state(
         self, workflow_run_id: str
@@ -45,6 +47,27 @@ class SQLPersistenceManager(PersistenceManager):
 
     def complete_task(self, workflow_id: str, task_id: str, result: Any) -> None:
         self.sql_persistence.complete_task(workflow_id, task_id, result)
+
+    def set_memory(self, workflow_id: str, memory_key: str, memory_value: Any) -> bool:
+        """Store a memory value for a workflow."""
+        return self.sql_persistence.db_manager.store_memory(workflow_id, memory_key, memory_value)
+
+    def get_memory(self, workflow_id: str, memory_key: str) -> Any:
+        """Get a memory value for a workflow."""
+        memory_dict = self.sql_persistence.db_manager.load_memory(workflow_id)
+        return memory_dict.get(memory_key)
+
+    def get_all_memory(self, workflow_id: str) -> Dict[str, Any]:
+        """Get all memory values for a workflow."""
+        return self.sql_persistence.db_manager.load_memory(workflow_id)
+
+    def store_workflow_result(self, workflow_id: str, result: Any) -> bool:
+        """Store workflow result."""
+        return self.sql_persistence.db_manager.store_workflow_result(workflow_id, result)
+
+    def get_workflow_result(self, workflow_id: str) -> Any:
+        """Get workflow result."""
+        return self.sql_persistence.db_manager.get_workflow_result(workflow_id)
 
     def fail_task(self, workflow_id: str, task_id: str, error_message: str) -> None:
         self.sql_persistence.fail_task(workflow_id, task_id, error_message)

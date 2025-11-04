@@ -1,5 +1,6 @@
 from highway_dsl import WorkflowBuilder
 
+
 def demonstrate_persistence_test_workflow():
     """
     Defines a workflow that tests persistence functionality.
@@ -31,9 +32,11 @@ def demonstrate_persistence_test_workflow():
 
     workflow = builder.build()
 
-    workflow.set_variables({
-        "run_id": "persistent-run-123",  # A static ID for testing
-    })
+    workflow.set_variables(
+        {
+            "run_id": "persistent-run-123",  # A static ID for testing
+        }
+    )
 
     return workflow
 

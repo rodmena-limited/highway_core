@@ -91,12 +91,12 @@ class DatabaseManager:
         so we must guard against re-initialization.
         """
         # Check if instance is already initialized by checking for engine attribute
-        if hasattr(self, 'engine'):
+        if hasattr(self, "engine"):
             return
 
         with self._lock:
             # Double-check after acquiring lock
-            if hasattr(self, 'engine'):
+            if hasattr(self, "engine"):
                 return
 
             self._session_lock = threading.RLock()  # For thread safety
@@ -129,7 +129,6 @@ class DatabaseManager:
                     connect_args={
                         "check_same_thread": False,  # Allow cross-thread access
                         "timeout": 5.0,  # Shorter timeout for faster failure detection
-                        "isolation_level": "EXCLUSIVE",  # Use EXCLUSIVE isolation for better consistency
                     },
                     echo=False,
                     echo_pool=False,
@@ -184,7 +183,9 @@ class DatabaseManager:
                 cursor.execute(
                     "PRAGMA foreign_keys=ON"
                 )  # Enable FK constraints for data integrity
-                cursor.execute("PRAGMA locking_mode=EXCLUSIVE")  # Use EXCLUSIVE locking mode
+                cursor.execute(
+                    "PRAGMA locking_mode=EXCLUSIVE"
+                )  # Use EXCLUSIVE locking mode
                 cursor.execute(
                     "PRAGMA temp_store=MEMORY"
                 )  # Memory temp tables for speed
@@ -207,7 +208,11 @@ class DatabaseManager:
     def _initialize_schema(self) -> None:
         """Initialize the database schema with proper concurrency handling and race condition prevention."""
         with self._schema_lock:  # Use dedicated schema lock
-            if self._initialized and hasattr(self, '_schema_created') and self._schema_created:
+            if (
+                self._initialized
+                and hasattr(self, "_schema_created")
+                and self._schema_created
+            ):
                 return
 
             try:
@@ -215,9 +220,7 @@ class DatabaseManager:
                 if self.engine_url.startswith("sqlite://"):
                     try:
                         # Use a raw connection to enable WAL mode before any transactions
-                        with self.engine.connect().execution_options(
-                            isolation_level="AUTOCOMMIT"
-                        ) as conn:
+                        with self.engine.connect() as conn:
                             conn.execute(text("PRAGMA journal_mode=WAL"))
                             logger.debug("Enabled WAL mode for SQLite concurrency")
                     except Exception as e:
@@ -244,9 +247,56 @@ class DatabaseManager:
                 # Create tables with proper error handling for concurrent creation
                 try:
                     # Use a more robust approach - create tables individually
-                    Base.metadata.create_all(bind=self.engine, checkfirst=True)
+                    # to ensure all tables are created even if some have issues
+                    from .models import (
+                        Workflow, Task, TaskExecution, TaskDependency, 
+                        WorkflowResult, WorkflowMemory
+                    )
+                    
+                    # Create tables in order of dependencies
+                    tables_to_create = [
+                        Workflow.__table__,
+                        Task.__table__,
+                        TaskExecution.__table__,
+                        TaskDependency.__table__,
+                        WorkflowResult.__table__,
+                        WorkflowMemory.__table__,
+                    ]
+                    
+                    created_tables = []
+                    for table in tables_to_create:
+                        try:
+                            table.create(bind=self.engine, checkfirst=True)
+                            created_tables.append(table.name)
+                            logger.debug(f"Created table: {table.name}")
+                        except Exception as table_error:
+                            logger.warning(f"Error creating table {table.name}: {table_error}")
+                            # Continue with other tables even if one fails
+                    
+                    logger.info(f"Created tables: {created_tables}")
                     self._schema_created = True
-                    logger.info("Database schema initialized successfully")
+                    
+                    # Verify all expected tables exist
+                    from sqlalchemy import inspect
+                    inspector = inspect(self.engine)
+                    actual_tables = inspector.get_table_names()
+                    expected_tables = [table.name for table in tables_to_create]
+                    
+                    missing_tables = set(expected_tables) - set(actual_tables)
+                    if missing_tables:
+                        logger.error(f"Missing tables after creation: {missing_tables}")
+                        # Try to create missing tables using bulk method as fallback
+                        Base.metadata.create_all(bind=self.engine, checkfirst=True)
+                        logger.info("Fallback bulk creation completed")
+                    else:
+                        logger.info("All tables created successfully")
+                        
+                except Exception as e:
+                    logger.error(f"Error during table creation: {e}")
+                    # Fallback to original bulk creation method
+                    Base.metadata.create_all(bind=self.engine, checkfirst=True)
+                    logger.info("Fallback to bulk creation completed")
+                    self._schema_created = True
                 except IntegrityError as e:
                     # Another process created the schema, verify it exists
                     logger.debug(f"Schema creation race condition handled: {e}")
@@ -434,6 +484,67 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error updating workflow {workflow_id} status: {e}")
             return False
+
+    def update_workflow_variables(self, workflow_id: str, variables: Dict[str, Any]) -> bool:
+        """Update workflow variables."""
+        try:
+            with self.session_scope() as session:
+                workflow = (
+                    session.query(Workflow)
+                    .filter(Workflow.workflow_id == workflow_id)
+                    .with_for_update()  # Lock the row for update
+                    .first()
+                )
+                if workflow:
+                    workflow.variables = variables  # type: ignore
+                    workflow.updated_at = datetime.now(timezone.utc)  # type: ignore
+                    logger.debug(f"Updated workflow {workflow_id} variables")
+                    return True
+                logger.warning(f"Workflow {workflow_id} not found for variables update")
+                return False
+        except Exception as e:
+            logger.error(f"Error updating workflow {workflow_id} variables: {e}")
+            return False
+
+    def store_workflow_result(self, workflow_id: str, result: Any) -> bool:
+        """Store workflow-level result."""
+        try:
+            with self.session_scope() as session:
+                # Store as a special workflow result with task_id="__workflow__"
+                result_obj = WorkflowResult(
+                    workflow_id=workflow_id,
+                    task_id="__workflow__",
+                    result_key="workflow_result",
+                    result_value=result,
+                    created_at=datetime.now(timezone.utc),
+                )
+                session.add(result_obj)
+                logger.debug(f"Stored workflow result for {workflow_id}")
+                return True
+        except Exception as e:
+            logger.error(f"Error storing workflow result for {workflow_id}: {e}")
+            return False
+
+    def get_workflow_result(self, workflow_id: str) -> Any:
+        """Get workflow-level result."""
+        try:
+            with self.session_scope() as session:
+                result_obj = (
+                    session.query(WorkflowResult)
+                    .filter(
+                        WorkflowResult.workflow_id == workflow_id,
+                        WorkflowResult.task_id == "__workflow__",
+                        WorkflowResult.result_key == "workflow_result",
+                    )
+                    .first()
+                )
+                
+                if result_obj:
+                    return result_obj.result_value
+                return None
+        except Exception as e:
+            logger.error(f"Error getting workflow result for {workflow_id}: {e}")
+            return None
 
     def load_workflow(self, workflow_id: str) -> Optional[Dict[str, Any]]:
         """Load a workflow by ID."""
@@ -923,7 +1034,9 @@ class DatabaseManager:
 
 
 # Global function to get the database manager instance
-def get_db_manager(db_path: Optional[str] = None, engine_url: Optional[str] = None) -> DatabaseManager:
+def get_db_manager(
+    db_path: Optional[str] = None, engine_url: Optional[str] = None
+) -> DatabaseManager:
     """Get the singleton instance of DatabaseManager."""
     return DatabaseManager(db_path=db_path, engine_url=engine_url)
 
