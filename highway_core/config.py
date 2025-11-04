@@ -43,6 +43,13 @@ class Settings:
         ]
     )
 
+    # --- Test Environment Override ---
+    # If we are in 'test' mode AND we are NOT explicitly told to use PG,
+    # then we force SQLite regardless of what PostgreSQL variables are set
+    if ENV == "test" and not USE_PG_FOR_TESTS:
+        # Force SQLite for tests unless explicitly using PG
+        use_postgres = False
+
     if use_postgres:
         # Build PostgreSQL connection string for psycopg (v3)
         DATABASE_URL: str = f"postgresql+psycopg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
@@ -50,13 +57,6 @@ class Settings:
         # Fallback to SQLite
         raw_db_url = os.getenv("DATABASE_URL", "sqlite:///~/.highway.sqlite3")
         DATABASE_URL: str = raw_db_url.replace("~", os.path.expanduser("~"))
-
-    # --- Test Environment Override ---
-    # If we are in 'test' mode AND we are NOT explicitly told to use PG,
-    # then we use the DATABASE_URL set by conftest.py (which should be /tmp/highway_test.sqlite3)
-    if ENV == "test" and not USE_PG_FOR_TESTS:
-        # Use the DATABASE_URL already set by conftest.py, don't override it
-        pass
 
     # Docker settings for tests
     NO_DOCKER_USE: bool = os.getenv("NO_DOCKER_USE", "false").lower() in (
@@ -69,7 +69,7 @@ class Settings:
 settings = Settings()
 
 # In test environment, if USE_PG is true, we let the PG URL stand.
-# If USE_PG is false, we use the DATABASE_URL set by conftest.py
+# If USE_PG is false, we force SQLite regardless of PostgreSQL variables.
 if ENV == "test":
     if settings.USE_PG_FOR_TESTS:
         if not settings.use_postgres:
@@ -77,10 +77,11 @@ if ENV == "test":
             print(
                 "WARNING: USE_PG=true but PostgreSQL env vars not set. Falling back to SQLite."
             )
-            # Don't override DATABASE_URL, let conftest.py handle it
+            # Use the DATABASE_URL set by conftest.py
         else:
             # Using PG for tests, print a clear message
             print(f"TESTING with POSTGRES: {settings.POSTGRES_HOST}")
     else:
-        # Default test environment: use the DATABASE_URL set by conftest.py
-        pass
+        # Default test environment: force SQLite even if PostgreSQL vars are set
+        # Use the DATABASE_URL set by conftest.py (which should be a temp SQLite file)
+        print(f"TESTING with SQLITE: {settings.DATABASE_URL}")
