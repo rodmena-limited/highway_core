@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 
 import yaml
 
-from highway_core.persistence.hybrid_persistence import HybridPersistenceManager
+from highway_core.persistence.sql_persistence_manager import SQLPersistenceManager
 from highway_core.tools.bulkhead import BulkheadConfig, BulkheadManager
 from highway_core.tools.registry import ToolRegistry
 
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 def run_workflow_from_yaml(
     yaml_path: str,
     workflow_run_id: str | None = None,
-    persistence_manager: Optional[HybridPersistenceManager] = None,
+    persistence_manager: Optional[SQLPersistenceManager] = None,
 ) -> Dict[str, Any]:
     """
     The main entry point for the Highway Execution Engine with bulkhead isolation.
@@ -61,7 +61,7 @@ def run_workflow_from_yaml(
 
     # 3. Initialize Core Components
     registry = ToolRegistry()
-    persistence = persistence_manager or HybridPersistenceManager()
+    persistence = persistence_manager or SQLPersistenceManager()
 
     # The Orchestrator will load or create its own state
     orchestrator = Orchestrator(

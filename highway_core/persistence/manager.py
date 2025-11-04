@@ -47,8 +47,8 @@ class PersistenceManager(ABC):
         pass
 
     @abstractmethod
-    def start_task(self, workflow_id: str, task: AnyOperatorModel) -> None:
-        """Start tracking a task execution."""
+    def start_task(self, workflow_id: str, task: AnyOperatorModel) -> bool:
+        """Start tracking a task execution. Returns True if successful, False if task is locked."""
         pass
 
     @abstractmethod

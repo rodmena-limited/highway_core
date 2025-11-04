@@ -67,16 +67,14 @@ def _run_sub_workflow(
 
                 handler_func = sub_handler_map.get(task_clone.operator_type)
                 if handler_func:
-                    # Attempt to start the task in the main workflow's persistence
-                    # This might fail if the task is also being tracked by the main workflow, which is fine
-                    task_started = False
+                    # Record the start of the task in the persistence layer
                     if orchestrator and hasattr(orchestrator, 'persistence'):
+                        # Attempt to start the task in persistence
                         try:
-                            task_started = orchestrator.persistence.start_task(orchestrator.run_id, task_clone)
+                            orchestrator.persistence.start_task(orchestrator.run_id, task_clone)
                         except Exception:
-                            # If starting the task fails (e.g., due to duplicate key), 
-                            # we'll still execute the task but won't track it again in this context
-                            task_started = True  # Treat as started to continue execution
+                            # If start_task fails, that's ok - it might already be started
+                            pass
 
                     handler_func(
                         task=task_clone,
@@ -89,17 +87,16 @@ def _run_sub_workflow(
                         workflow_run_id="",  # Pass empty string for workflow_run_id in sub-workflows
                     )
 
-                    # After successful execution, mark as complete in main workflow persistence if needed
-                    if task_started and orchestrator and hasattr(orchestrator, 'persistence'):
+                    # After successful execution, record the completion in the persistence layer
+                    if orchestrator and hasattr(orchestrator, 'persistence'):
+                        actual_result = None
+                        if isinstance(task_clone, TaskOperatorModel) and task_clone.result_key:
+                            actual_result = state.get_result(task_clone.result_key)
                         try:
-                            actual_result = None
-                            if isinstance(task_clone, TaskOperatorModel) and task_clone.result_key:
-                                actual_result = state.get_result(task_clone.result_key)
                             orchestrator.persistence.complete_task(orchestrator.run_id, task_clone.task_id, actual_result)
-                        except Exception as e:
-                            # If completion fails (e.g., due to duplicate key), that's fine
-                            # The task may have already been completed by the main workflow
-                            logger.debug("Sub-workflow: Could not complete task '%s' in persistence: %s", task_clone.task_id, str(e))
+                        except Exception:
+                            # If complete_task fails, log it but continue
+                            logger.debug("Could not complete task '%s' in persistence", task_clone.task_id)
             else:
                 logger.warning(
                     "_run_sub_workflow: Skipping unsupported operator type '%s' for task '%s'",

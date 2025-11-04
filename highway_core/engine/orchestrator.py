@@ -230,6 +230,25 @@ class Orchestrator:
                                     "Orchestrator: Task %s already completed as part of loop body, marking as done.",
                                     task_id,
                                 )
+                                # Even though the task is conceptually completed, we should ensure
+                                # it's also properly recorded in the persistence layer
+                                task_model = self.workflow.tasks.get(task_id)
+                                if task_model:
+                                    # Try to complete the task to ensure it's properly tracked in the database
+                                    actual_result = None 
+                                    if isinstance(task_model, TaskOperatorModel) and hasattr(task_model, 'result_key') and task_model.result_key:
+                                        actual_result = self.state.get_result(task_model.result_key)
+                                    try:
+                                        # Make sure the task is properly marked as completed in the persistence
+                                        self.persistence.complete_task(self.run_id, task_id, actual_result)
+                                        logger.debug("Orchestrator: Task %s marked as completed in persistence", task_id)
+                                    except Exception as e:
+                                        logger.warning(
+                                            "Orchestrator: Could not complete task '%s' in persistence: %s", 
+                                            task_id, str(e)
+                                        )
+                                        # Even if persistence fails, we still need to mark it as done in the sorter
+
                                 self.sorter.done(task_id)
                                 continue
 

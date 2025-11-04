@@ -46,13 +46,13 @@ def run_workflow(workflow_file: str) -> Dict[str, Any]:
     # Debug: Check the environment variables before creating persistence manager
     import logging
 
-    from highway_core.persistence.hybrid_persistence import HybridPersistenceManager
+    from highway_core.persistence.sql_persistence_manager import SQLPersistenceManager
 
     logger = logging.getLogger(__name__)
     logger.info(f"run_workflow DATABASE_URL: {os.environ.get('DATABASE_URL')}")
     logger.info(f"run_workflow TEST_DB_PATH: {TEST_DB_PATH}")
 
-    persistence_manager = HybridPersistenceManager(db_path=TEST_DB_PATH, is_test=True)
+    persistence_manager = SQLPersistenceManager(db_path=TEST_DB_PATH, is_test=True)
 
     # Import the engine function
     from highway_core.engine.engine import run_workflow_from_yaml
@@ -246,9 +246,9 @@ class TestConcurrentWorkflows:
 
         # Test the engine directly in the test environment - this works
         from highway_core.engine.engine import run_workflow_from_yaml
-        from highway_core.persistence.hybrid_persistence import HybridPersistenceManager
+        from highway_core.persistence.sql_persistence_manager import SQLPersistenceManager
 
-        persistence_manager = HybridPersistenceManager(
+        persistence_manager = SQLPersistenceManager(
             db_path=TEST_DB_PATH, is_test=True
         )
 

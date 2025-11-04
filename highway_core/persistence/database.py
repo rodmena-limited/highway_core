@@ -1,13 +1,11 @@
 import functools
-import json
 import logging
-import os
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from time import sleep
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any, Dict, Generator, List, Optional, Union
 
 from sqlalchemy import Column, DateTime, create_engine, event, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -75,75 +73,94 @@ class DatabaseManager:
     Provides proper connection pooling, transaction management, and resource cleanup.
     """
 
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls, *args, **kwargs):
+        """Implement singleton pattern to ensure only one instance exists."""
+        if not cls._instance:
+            with cls._lock:
+                if not cls._instance:
+                    cls._instance = super().__new__(cls)
+        return cls._instance
+
     def __init__(self, db_path: Optional[str] = None, engine_url: Optional[str] = None):
         """
-        Initialize the database manager with proper connection handling for SQLite concurrency.
+        Initialize the database manager.
+        This method is called every time __new__ returns the same instance,
+        so we must guard against re-initialization.
         """
-        self._lock = threading.RLock()  # For thread safety
-        self._sessions_created = 0
-        self._sessions_closed = 0
-        self._active_sessions: set[int] = set()
-        self._initialized = False
-        self._schema_lock = threading.Lock()  # Dedicated lock for schema operations
+        # Check if instance is already initialized by checking for engine attribute
+        if hasattr(self, 'engine'):
+            return
 
-        if engine_url is None:
-            if db_path is None:
-                home = Path.home()
-                db_path = str(home / ".highway.sqlite3")
+        with self._lock:
+            # Double-check after acquiring lock
+            if hasattr(self, 'engine'):
+                return
 
-            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-            self.engine_url = f"sqlite:///{db_path}"
-        else:
-            self.engine_url = engine_url
+            self._session_lock = threading.RLock()  # For thread safety
+            self._sessions_created = 0
+            self._sessions_closed = 0
+            self._active_sessions: set[int] = set()
+            self._schema_lock = threading.Lock()  # Dedicated lock for schema operations
+            self._initialized = False  # Track initialization status
 
-        # Create SQLAlchemy engine with proper configuration for SQLite concurrency
-        if self.engine_url.startswith("sqlite://"):
-            # Use QueuePool with proper settings for SQLite concurrent access
-            self.engine = create_engine(
-                self.engine_url,
-                poolclass=QueuePool,  # Use QueuePool instead of StaticPool for better concurrency
-                pool_size=1,  # Single connection for SQLite to avoid locking issues
-                max_overflow=0,  # No additional connections
-                pool_pre_ping=True,  # Verify connections before use
-                pool_recycle=3600,  # Recycle connections after 1 hour
-                connect_args={
-                    "check_same_thread": False,  # Allow cross-thread access
-                    "timeout": 5.0,  # Shorter timeout for faster failure detection
-                    "isolation_level": None,  # Let SQLite handle isolation
-                },
-                # SQLite supports: READ UNCOMMITTED, SERIALIZABLE, AUTOCOMMIT
-                execution_options={
-                    "isolation_level": "AUTOCOMMIT"  # Use AUTOCOMMIT for SQLite
-                },
-                echo=False,
-                echo_pool=False,
+            if engine_url is None:
+                if db_path is None:
+                    home = Path.home()
+                    db_path = str(home / ".highway.sqlite3")
+
+                Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+                self.engine_url = f"sqlite:///{db_path}"
+            else:
+                self.engine_url = engine_url
+
+            # Create SQLAlchemy engine with proper configuration for SQLite concurrency
+            if self.engine_url.startswith("sqlite://"):
+                # Use QueuePool with proper settings for SQLite concurrent access
+                self.engine = create_engine(
+                    self.engine_url,
+                    poolclass=QueuePool,  # Use QueuePool instead of StaticPool for better concurrency
+                    pool_size=1,  # Single connection for SQLite to avoid locking issues
+                    max_overflow=0,  # No additional connections
+                    pool_pre_ping=True,  # Verify connections before use
+                    pool_recycle=3600,  # Recycle connections after 1 hour
+                    connect_args={
+                        "check_same_thread": False,  # Allow cross-thread access
+                        "timeout": 5.0,  # Shorter timeout for faster failure detection
+                        "isolation_level": "EXCLUSIVE",  # Use EXCLUSIVE isolation for better consistency
+                    },
+                    echo=False,
+                    echo_pool=False,
+                )
+                self._optimize_sqlite_connection()
+            else:
+                # For other database engines, use connection pooling
+                self.engine = create_engine(
+                    self.engine_url,
+                    pool_size=16,
+                    max_overflow=4,
+                    pool_pre_ping=True,  # Verify connections before use
+                    echo=False,
+                )
+
+            # Create scoped session factory with proper cleanup
+            self.SessionLocal = scoped_session(
+                sessionmaker(
+                    bind=self.engine,
+                    expire_on_commit=False,
+                    autocommit=False,  # Disable autocommit for explicit transaction control
+                    autoflush=False,
+                    class_=Session,
+                )
             )
-            self._optimize_sqlite_connection()
-        else:
-            # For other database engines, use connection pooling
-            self.engine = create_engine(
-                self.engine_url,
-                pool_size=16,
-                max_overflow=4,
-                pool_pre_ping=True,  # Verify connections before use
-                echo=False,
-            )
 
-        # Create scoped session factory with proper cleanup
-        self.SessionLocal = scoped_session(
-            sessionmaker(
-                bind=self.engine,
-                expire_on_commit=False,
-                autocommit=False,
-                autoflush=False,
-                class_=Session,
-            )
-        )
+            # Create schema
+            self._initialize_schema()
 
-        # Create schema
-        self._initialize_schema()
-
-        logger.info(f"DatabaseManager initialized with URL: {self.engine_url}")
+            logger.info(f"DatabaseManager initialized with URL: {self.engine_url}")
+            self._initialized = True
 
     def _optimize_sqlite_connection(self) -> None:
         """
@@ -167,7 +184,7 @@ class DatabaseManager:
                 cursor.execute(
                     "PRAGMA foreign_keys=ON"
                 )  # Enable FK constraints for data integrity
-                cursor.execute("PRAGMA locking_mode=NORMAL")  # Fixed typo: was DEFFERED
+                cursor.execute("PRAGMA locking_mode=EXCLUSIVE")  # Use EXCLUSIVE locking mode
                 cursor.execute(
                     "PRAGMA temp_store=MEMORY"
                 )  # Memory temp tables for speed
@@ -190,7 +207,7 @@ class DatabaseManager:
     def _initialize_schema(self) -> None:
         """Initialize the database schema with proper concurrency handling and race condition prevention."""
         with self._schema_lock:  # Use dedicated schema lock
-            if self._initialized:
+            if self._initialized and hasattr(self, '_schema_created') and self._schema_created:
                 return
 
             try:
@@ -218,7 +235,7 @@ class DatabaseManager:
                         table_exists = result.fetchone() is not None
 
                         if table_exists:
-                            self._initialized = True
+                            self._schema_created = True
                             logger.info("Database schema already exists")
                             return
                 except Exception as e:
@@ -228,7 +245,7 @@ class DatabaseManager:
                 try:
                     # Use a more robust approach - create tables individually
                     Base.metadata.create_all(bind=self.engine, checkfirst=True)
-                    self._initialized = True
+                    self._schema_created = True
                     logger.info("Database schema initialized successfully")
                 except IntegrityError as e:
                     # Another process created the schema, verify it exists
@@ -236,7 +253,7 @@ class DatabaseManager:
                     try:
                         with self.session_scope() as session:
                             session.execute(text("SELECT 1 FROM workflows LIMIT 1"))
-                        self._initialized = True
+                        self._schema_created = True
                         logger.info("Schema verified after race condition")
                     except Exception:
                         logger.error(
@@ -252,7 +269,7 @@ class DatabaseManager:
                         logger.debug(
                             f"Table already exists or I/O error, continuing: {e}"
                         )
-                        self._initialized = True
+                        self._schema_created = True
                     else:
                         logger.error(
                             f"Database error during schema initialization: {e}"
@@ -261,7 +278,7 @@ class DatabaseManager:
 
             except Exception as e:
                 logger.error(f"Failed to initialize database schema: {e}")
-                # Don't set _initialized = True on real errors
+                # Don't set _schema_created = True on real errors
                 raise
 
     @contextmanager
@@ -273,7 +290,7 @@ class DatabaseManager:
         session = self._get_session()
         session_id = id(session)
 
-        with self._lock:
+        with self._session_lock:
             self._active_sessions.add(session_id)
 
         try:
@@ -304,7 +321,7 @@ class DatabaseManager:
             raise
         finally:
             self._close_session(session)
-            with self._lock:
+            with self._session_lock:
                 self._active_sessions.discard(session_id)
 
     @contextmanager
@@ -321,7 +338,7 @@ class DatabaseManager:
 
     def _get_session(self) -> Session:
         """Get a thread-local database session with proper initialization."""
-        with self._lock:
+        with self._session_lock:
             session = self.SessionLocal()
             self._sessions_created += 1
             logger.debug(f"Session created (total: {self._sessions_created})")
@@ -329,7 +346,7 @@ class DatabaseManager:
 
     def _close_session(self, session: Optional[Session] = None) -> None:
         """Close a session and remove it from the registry."""
-        with self._lock:
+        with self._session_lock:
             try:
                 if session is None:
                     session = self.SessionLocal()
@@ -485,9 +502,10 @@ class DatabaseManager:
                     try:
                         session.flush()  # Flush to try insert, but keep transaction open
                     except IntegrityError:
-                        # Another thread created the workflow, ignore this error
+                        # Another thread created the workflow, ignore this error by refreshing
                         session.rollback()
-                        # Continue to create the task anyway
+                        # Don't continue with a different session, just continue with task creation
+                        # The workflow might exist now after rollback
                         pass
 
                 task = Task(
@@ -509,6 +527,7 @@ class DatabaseManager:
                     updated_at=datetime.now(timezone.utc),
                 )
                 session.add(task)
+                session.flush()  # Ensure the task is flushed within the transaction
                 logger.debug(f"Created task: {task_id} in workflow: {workflow_id}")
             return True
         except IntegrityError as e:
@@ -852,7 +871,7 @@ class DatabaseManager:
 
     def get_session_stats(self) -> Dict[str, Any]:
         """Get session statistics for monitoring."""
-        with self._lock:
+        with self._session_lock:
             return {
                 "sessions_created": self._sessions_created,
                 "sessions_closed": self._sessions_closed,
@@ -876,7 +895,7 @@ class DatabaseManager:
 
     def close_all_connections(self) -> None:
         """Close all connections and cleanup resources."""
-        with self._lock:
+        with self._session_lock:
             try:
                 # Close any remaining active sessions
                 active_count = len(self._active_sessions)
@@ -901,6 +920,12 @@ class DatabaseManager:
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit with proper cleanup."""
         self.close_all_connections()
+
+
+# Global function to get the database manager instance
+def get_db_manager(db_path: Optional[str] = None, engine_url: Optional[str] = None) -> DatabaseManager:
+    """Get the singleton instance of DatabaseManager."""
+    return DatabaseManager(db_path=db_path, engine_url=engine_url)
 
 
 # Usage example

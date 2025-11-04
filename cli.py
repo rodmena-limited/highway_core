@@ -133,9 +133,9 @@ def main():
         # Get detailed task status from database
         try:
             from highway_core.config import settings
-            from highway_core.persistence.database_manager import DatabaseManager
+            from highway_core.persistence.database import get_db_manager
 
-            db_manager = DatabaseManager(engine_url=settings.DATABASE_URL)
+            db_manager = get_db_manager(engine_url=settings.DATABASE_URL)
 
             # Get all tasks for this workflow
             tasks = db_manager.get_tasks_by_workflow(result["workflow_id"])

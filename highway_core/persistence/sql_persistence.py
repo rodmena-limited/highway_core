@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional, Set, Tuple
 from highway_core.config import settings
 from highway_core.engine.models import AnyOperatorModel, TaskOperatorModel
 from highway_core.engine.state import WorkflowState
-from highway_core.persistence.database_manager import DatabaseManager
+from highway_core.persistence.database import get_db_manager
 from highway_core.persistence.manager import PersistenceManager
 
 logger = logging.getLogger(__name__)
@@ -31,10 +31,12 @@ class SQLPersistence(PersistenceManager):
         if is_test or db_path is not None:
             # When db_path is provided or is_test=True, use the provided database URL
             # This ensures proper executor initialization in test environments
-            self.db_manager = DatabaseManager(engine_url=settings.DATABASE_URL)
+            self.db_manager = get_db_manager(db_path=db_path or 'test_db.sqlite3')
         else:
-            # Use default production database
-            self.db_manager = DatabaseManager()
+            # Use default production database  
+            self.db_manager = get_db_manager(engine_url=settings.DATABASE_URL)
+        
+        # No need to call _setup_sqlite_options anymore as it's handled in the unified DatabaseManager
 
     def start_workflow(
         self, workflow_id: str, workflow_name: str, variables: Dict
@@ -58,24 +60,56 @@ class SQLPersistence(PersistenceManager):
             workflow_id, "failed", error_message=error_message
         )
 
-    def start_task(self, workflow_id: str, task: AnyOperatorModel) -> None:
-        """Record task start"""
-        # Create or update the task with executing status
-        # Use getattr to safely access properties that may not exist on all operator types
-        self.db_manager.create_task(
-            workflow_id=workflow_id,
-            task_id=task.task_id,
-            operator_type=task.operator_type,
-            runtime=getattr(task, "runtime", "python"),
-            function=getattr(task, "function", None),
-            image=getattr(task, "image", None),
-            command=getattr(task, "command", None),
-            args=getattr(task, "args", []),
-            kwargs=getattr(task, "kwargs", {}),
-            result_key=getattr(task, "result_key", None),
-            dependencies=getattr(task, "dependencies", []),
-            status="executing",
-        )
+    def start_task(self, workflow_id: str, task: AnyOperatorModel) -> bool:
+        """Record task start - legacy method with changed return type"""
+        return self._attempt_start_task(workflow_id, task)
+    
+    def start_task_sql_only(self, workflow_id: str, task: AnyOperatorModel) -> bool:
+        """Attempt to start a task with SQL-based locking"""
+        return self._attempt_start_task(workflow_id, task)
+    
+    def _attempt_start_task(self, workflow_id: str, task: AnyOperatorModel) -> bool:
+        """Internal method to attempt starting a task with locking."""
+        try:
+            # Try to create the task with status "executing"
+            # If the task already exists with status "executing", it means it's locked
+            all_tasks = self.db_manager.get_tasks_by_workflow(workflow_id)
+            existing_task = next((t for t in all_tasks if t["task_id"] == task.task_id), None)
+            
+            if existing_task and existing_task.get("status") == "executing":
+                # Task is already being executed by another process/thread
+                return False
+        
+            # Check if the task already exists in the database
+            if existing_task:
+                # Update the existing task to "executing" status
+                success = self.db_manager.update_task_status(
+                    task_id=task.task_id,
+                    status="executing"
+                )
+            else:
+                # Create the task with executing status
+                # Use getattr to safely access properties that may not exist on all operator types
+                success = self.db_manager.create_task(
+                    workflow_id=workflow_id,
+                    task_id=task.task_id,
+                    operator_type=task.operator_type,
+                    runtime=getattr(task, "runtime", "python"),
+                    function=getattr(task, "function", None),
+                    image=getattr(task, "image", None),
+                    command=getattr(task, "command", None),
+                    args=getattr(task, "args", []),
+                    kwargs=getattr(task, "kwargs", {}),
+                    result_key=getattr(task, "result_key", None),
+                    dependencies=getattr(task, "dependencies", []),
+                    status="executing",
+                )
+            
+            # If operation succeeded, we successfully acquired the lock
+            return success is not False
+        except Exception as e:
+            logger.error(f"Error attempting to start task {task.task_id}: {e}")
+            return False
 
     def complete_task(self, workflow_id: str, task_id: str, result: Any) -> None:
         """Record task completion with result"""
