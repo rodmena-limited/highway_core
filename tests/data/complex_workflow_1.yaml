@@ -1,0 +1,300 @@
+description: ''
+name: ecommerce_order_processing_v1
+start_task: validate_order
+tasks:
+  check_customer_credit:
+    args:
+    - '{{variables.api_base_url}}/users/{{variables.customer_id}}'
+    dependencies:
+    - validate_items_availability
+    function: tools.fetch.get
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    result_key: customer_credit
+    task_id: check_customer_credit
+  check_inventory_stock:
+    args:
+    - '{{variables.api_base_url}}/posts/{{variables.item_id}}'
+    dependencies:
+    - validate_items_availability
+    function: tools.fetch.get
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    result_key: inventory_status
+    task_id: check_inventory_stock
+  check_low_stock:
+    condition: '{{memory.loop_counter | default(0)}} < 2'
+    dependencies:
+    - verify_payment_complete
+    loop_body:
+    - args:
+      - 'Low stock alert! Loop iteration: {{memory.loop_counter | default(0)}}'
+      dependencies:
+      - check_low_stock
+      function: tools.log.warning
+      kwargs: {}
+      metadata: {}
+      operator_type: task
+      task_id: notify_low_stock
+    - args:
+      - loop_counter
+      dependencies:
+      - notify_low_stock
+      function: tools.memory.increment
+      kwargs: {}
+      metadata: {}
+      operator_type: task
+      task_id: increment_counter
+    - dependencies:
+      - increment_counter
+      metadata: {}
+      operator_type: wait
+      task_id: wait_for_restock
+      wait_for: PT1S
+    metadata: {}
+    operator_type: while
+    task_id: check_low_stock
+  check_payment_status:
+    args:
+    - payment_attempts
+    - '1'
+    dependencies:
+    - wait_for_payment_confirmation
+    function: tools.memory.set
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    task_id: check_payment_status
+  execute_parallel_operations:
+    branches:
+      generate_documents:
+      - generate_invoice
+      - generate_shipping_label
+      send_notifications:
+      - send_customer_notification
+      - send_warehouse_notification
+      update_inventory:
+      - update_inventory_levels
+    dependencies:
+    - process_payment
+    metadata: {}
+    operator_type: parallel
+    task_id: execute_parallel_operations
+  finalize_order:
+    args:
+    - order_status
+    - completed
+    dependencies:
+    - verify_payment_complete
+    function: tools.memory.set
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    task_id: finalize_order
+  generate_invoice:
+    args:
+    - invoice_generated
+    - 'true'
+    dependencies:
+    - execute_parallel_operations
+    function: tools.memory.set
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    task_id: generate_invoice
+  generate_shipping_label:
+    args:
+    - shipping_label_generated
+    - 'true'
+    dependencies:
+    - generate_invoice
+    - execute_parallel_operations
+    function: tools.memory.set
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    task_id: generate_shipping_label
+  handle_payment_failure:
+    args:
+    - Payment failed after {{variables.max_retry_attempts}} attempts
+    dependencies:
+    - verify_payment_complete
+    function: tools.log.error
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    task_id: handle_payment_failure
+  increment_counter:
+    args:
+    - loop_counter
+    dependencies:
+    - notify_low_stock
+    function: tools.memory.increment
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    task_id: increment_counter
+  notify_low_stock:
+    args:
+    - 'Low stock alert! Loop iteration: {{memory.loop_counter | default(0)}}'
+    dependencies:
+    - check_low_stock
+    function: tools.log.warning
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    task_id: notify_low_stock
+  process_order_items:
+    dependencies:
+    - check_low_stock
+    items: '{{variables.order_items}}'
+    loop_body:
+    - args:
+      - 'Processing item: {{loop_context.item}}'
+      dependencies:
+      - process_order_items
+      function: tools.log.info
+      kwargs: {}
+      metadata: {}
+      operator_type: task
+      task_id: process_single_item
+    metadata: {}
+    operator_type: foreach
+    task_id: process_order_items
+  process_payment:
+    args:
+    - payment_method
+    - credit
+    dependencies:
+    - validate_items_availability
+    function: tools.memory.set
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    task_id: process_payment
+  process_single_item:
+    args:
+    - 'Processing item: {{loop_context.item}}'
+    dependencies:
+    - process_order_items
+    function: tools.log.info
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    task_id: process_single_item
+  send_customer_notification:
+    args:
+    - 'Order confirmed! Payment method: {{memory.payment_method}}'
+    dependencies:
+    - execute_parallel_operations
+    function: tools.log.info
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    task_id: send_customer_notification
+  send_final_confirmation:
+    args:
+    - Order {{variables.order_id}} completed successfully!
+    dependencies:
+    - process_order_items
+    function: tools.log.info
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    task_id: send_final_confirmation
+  send_warehouse_notification:
+    args:
+    - New order received for item {{variables.item_id}}
+    dependencies:
+    - send_customer_notification
+    - execute_parallel_operations
+    function: tools.log.info
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    task_id: send_warehouse_notification
+  update_inventory_levels:
+    args:
+    - inventory_updated
+    - 'true'
+    dependencies:
+    - execute_parallel_operations
+    function: tools.memory.set
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    task_id: update_inventory_levels
+  validate_item_prices:
+    args:
+    - price_validated
+    - 'true'
+    dependencies:
+    - validate_items_availability
+    function: tools.memory.set
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    task_id: validate_item_prices
+  validate_items_availability:
+    branches:
+      check_customer:
+      - check_customer_credit
+      check_inventory:
+      - check_inventory_stock
+      check_pricing:
+      - validate_item_prices
+    dependencies:
+    - validate_order
+    metadata: {}
+    operator_type: parallel
+    task_id: validate_items_availability
+  validate_order:
+    args:
+    - order_status
+    - validating
+    dependencies: []
+    function: tools.memory.set
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    task_id: validate_order
+  verify_payment_complete:
+    condition: '{{memory.payment_attempts}} <= {{variables.max_retry_attempts}}'
+    dependencies:
+    - check_payment_status
+    if_false: handle_payment_failure
+    if_true: finalize_order
+    metadata: {}
+    operator_type: condition
+    task_id: verify_payment_complete
+  wait_for_payment_confirmation:
+    dependencies:
+    - execute_parallel_operations
+    metadata: {}
+    operator_type: wait
+    task_id: wait_for_payment_confirmation
+    wait_for: PT1S
+  wait_for_restock:
+    dependencies:
+    - increment_counter
+    metadata: {}
+    operator_type: wait
+    task_id: wait_for_restock
+    wait_for: PT1S
+variables:
+  api_base_url: https://jsonplaceholder.typicode.com
+  customer_id: 1
+  item_id: 1
+  low_stock_threshold: 5
+  max_retry_attempts: 3
+  order_id: ORD-12345
+  order_items:
+  - item1
+  - item2
+  - item3
+  order_total: 100
+  quantity: 2
+version: 1.0.0
+
