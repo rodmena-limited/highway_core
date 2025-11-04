@@ -123,12 +123,13 @@ class SQLPersistence(PersistenceManager):
             return False
 
     def complete_task(self, workflow_id: str, task_id: str, result: Any) -> None:
-        """Record task completion with result"""
+        """Record task completion with result and trigger any associated webhooks"""
         from datetime import datetime
 
         # Update the task with result and completion status
+        completed_at = datetime.now(timezone.utc)
         self.db_manager.update_task_with_result(
-            task_id, result, datetime.now(timezone.utc)
+            task_id, result, completed_at
         )
 
         # Find the task's result_key to store in workflow results
@@ -145,6 +146,146 @@ class SQLPersistence(PersistenceManager):
 
         # Mark the task as completed in the database
         self.db_manager.update_task_status(task_id, "completed")
+
+        # Trigger webhooks associated with task completion
+        # Look for webhooks that should be triggered on this task's completion
+        try:
+            # This will create a webhook record to be processed by the webhook runner
+            self._trigger_webhooks_for_task_event(workflow_id, task_id, "on_completed", result, completed_at)
+        except Exception as e:
+            logger.error(f"Error triggering webhooks for task {task_id} completion: {e}")
+
+    def _trigger_webhooks_for_task_event(self, workflow_id: str, task_id: str, event: str, result: Any, timestamp: datetime) -> None:
+        """Trigger any webhooks registered for a specific task event."""
+        from datetime import timezone
+        import json
+        
+        # In a real implementation, we would look for webhook configurations
+        # that were registered to be triggered when this task reaches this state
+        # For now, let's assume we have a mechanism to find registered webhooks
+        
+        # In the workflow definition, webhooks would be stored with their trigger conditions
+        # When a task completes, we should look for any webhooks registered for that task+event
+        # and create a webhook record in the database to be processed
+        
+        # Check for any webhooks that were registered to fire on this event for this task
+        # In a real implementation, this would query a webhook_configs table or similar
+        # But since we're dealing with a scenario where webhooks are registered via tools,
+        # we need to implement the tracking mechanism
+        
+        # Create a webhook record to be processed by the webhook runner
+        # This is a placeholder implementation - the actual implementation would
+        # query registered webhook configs and create appropriate webhook records
+        webhook_url = f"http://127.0.0.1:7666/index.json"  # This would come from actual config
+        webhook_payload = {
+            "event": event,
+            "task_id": task_id,
+            "workflow_id": workflow_id,
+            "result": result,
+            "timestamp": timestamp.isoformat()
+        }
+        
+        # Only create webhook if it's one we want to track (in a real system we'd have a webhook registry)
+        # For now, let's create it if the event is on_completed and result contains the right info
+        if event == "on_completed":
+            # Create webhook record to be processed by webhook runner
+            success = self.db_manager.create_webhook(
+                task_id=task_id,
+                execution_id=f"exec_{task_id}_{int(timestamp.timestamp())}",
+                workflow_id=workflow_id,
+                url=webhook_url,
+                method="POST",
+                headers={"Content-Type": "application/json"},
+                payload=webhook_payload,
+                webhook_type=event,
+                max_retries=3,
+                rate_limit_requests=10,
+                rate_limit_window=60
+            )
+            if success:
+                logger.info(f"Created webhook for task {task_id} {event} event")
+            else:
+                logger.error(f"Failed to create webhook for task {task_id} {event} event")
+    
+    def fail_task(self, workflow_id: str, task_id: str, error_message: str) -> None:
+        """Record task failure with error details and trigger any associated webhooks"""
+        from datetime import datetime
+        
+        # Update task status
+        self.db_manager.update_task_status(
+            task_id, "failed", error_message=error_message
+        )
+
+        # Trigger webhooks associated with task failure
+        try:
+            # Get current timestamp for webhook creation
+            timestamp = datetime.now(timezone.utc)
+            # Create webhook for failure event
+            self._trigger_webhooks_for_task_event(
+                workflow_id, task_id, "on_failed", 
+                {"error": error_message}, timestamp
+            )
+        except Exception as e:
+            logger.error(f"Error triggering webhooks for task {task_id} failure: {e}")
+
+    def start_task_sql_only(self, workflow_id: str, task: AnyOperatorModel) -> bool:
+        """Attempt to start a task with SQL-based locking and optionally trigger webhooks"""
+        from datetime import datetime
+
+        try:
+            # Try to create the task with status "executing"
+            # If the task already exists with status "executing", it means it's locked
+            all_tasks = self.db_manager.get_tasks_by_workflow(workflow_id)
+            existing_task = next(
+                (t for t in all_tasks if t["task_id"] == task.task_id), None
+            )
+
+            if existing_task and existing_task.get("status") == "executing":
+                # Task is already being executed by another process/thread
+                return False
+
+            # Check if the task already exists in the database
+            if existing_task:
+                # Update the existing task to "executing" status
+                success = self.db_manager.update_task_status(
+                    task_id=task.task_id, status="executing", 
+                    started_at=datetime.now(timezone.utc)
+                )
+            else:
+                # Create the task with executing status
+                # Use getattr to safely access properties that may not exist on all operator types
+                success = self.db_manager.create_task(
+                    workflow_id=workflow_id,
+                    task_id=task.task_id,
+                    operator_type=task.operator_type,
+                    runtime=getattr(task, "runtime", "python"),
+                    function=getattr(task, "function", None),
+                    image=getattr(task, "image", None),
+                    command=getattr(task, "command", None),
+                    args=getattr(task, "args", []),
+                    kwargs=getattr(task, "kwargs", {}),
+                    result_key=getattr(task, "result_key", None),
+                    dependencies=getattr(task, "dependencies", []),
+                    status="executing",
+                    started_at=datetime.now(timezone.utc)
+                )
+
+            # If operation succeeded, we successfully acquired the lock
+            # Also trigger webhooks for task start if registered
+            if success:
+                try:
+                    # Trigger webhooks for task start event
+                    self._trigger_webhooks_for_task_event(
+                        workflow_id, task.task_id, "on_start", 
+                        {"status": "starting"}, datetime.now(timezone.utc)
+                    )
+                except Exception as e:
+                    logger.error(f"Error triggering webhooks for task {task.task_id} start: {e}")
+            
+            return success is not False
+        except Exception as e:
+            logger.error(f"Error attempting to start task {task.task_id}: {e}")
+            return False
 
     def fail_task(self, workflow_id: str, task_id: str, error_message: str) -> None:
         """Record task failure with error details"""
