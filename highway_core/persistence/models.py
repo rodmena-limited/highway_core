@@ -10,6 +10,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.orm.decl_api import DeclarativeMeta
@@ -187,6 +188,16 @@ class Task(Base):  # type: ignore
         else:
             self.result_value_json = json.dumps(value)
 
+    # Explicit table arguments with unique constraint
+    __table_args__ = (
+        # Unique constraint on the composite key (task_id, workflow_id)
+        UniqueConstraint('task_id', 'workflow_id', name='uix_task_workflow_pair'),
+        # Additional indexes for performance
+        Index("idx_tasks_workflow_id", "workflow_id"),
+        Index("idx_tasks_status", "status"),
+        Index("idx_tasks_workflow_status", "workflow_id", "status"),
+    )
+
 
 class TaskExecution(Base):  # type: ignore
     """
@@ -216,6 +227,11 @@ class TaskExecution(Base):  # type: ignore
 
     # Composite foreign key constraint handled via application logic
     # Foreign key to task (workflow_id, task_id)
+    
+    # Ensure unique execution_id but also consider task executions per workflow
+    __table_args__ = (
+        UniqueConstraint('execution_id', name='uix_task_execution_id'),
+    )
 
     # Removed relationship to avoid join condition issues since there's no proper FK
 
@@ -265,6 +281,11 @@ class WorkflowResult(Base):  # type: ignore
     result_value_json = Column(Text)
     created_at = Column(DateTime, default=utc_now)
 
+    # Ensure unique result keys per task/workflow combination
+    __table_args__ = (
+        UniqueConstraint('workflow_id', 'task_id', 'result_key', name='uix_workflow_task_result_unique'),
+    )
+
     @property
     def result_value(self):
         if self.result_value_json:
@@ -293,6 +314,11 @@ class WorkflowMemory(Base):  # type: ignore
     created_at = Column(DateTime, default=utc_now)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
+    # Ensure unique memory keys per workflow
+    __table_args__ = (
+        UniqueConstraint('workflow_id', 'memory_key', name='uix_workflow_memory_key_unique'),
+    )
+
     # Relationship removed to avoid join condition issues
 
     @property
@@ -320,8 +346,9 @@ class TaskDependency(Base):  # type: ignore
     workflow_id = Column(String, nullable=False)
     created_at = Column(DateTime, default=utc_now)
 
-    # Create indexes for better performance
+    # Create explicit unique and index constraints
     __table_args__ = (
+        UniqueConstraint('task_id', 'depends_on_task_id', 'workflow_id', name='uix_task_dependency_unique'),
         Index("idx_task_dependencies_task", "task_id"),
         Index("idx_task_dependencies_depends_on", "depends_on_task_id"),
         Index("idx_task_dependencies_workflow", "workflow_id"),

@@ -100,12 +100,20 @@ def execute(
         iteration += 1
 
     # Mark all loop body tasks as conceptually completed so the main orchestrator
-    # doesn't try to execute them again
+    # doesn't try to execute them again, and update their status in the database
     for task_id in loop_body_task_ids:
         if hasattr(orchestrator, 'completed_tasks'):
             # Add to completed tasks so the main orchestrator will know these are done
             orchestrator.completed_tasks.add(task_id)
             logger.info("WhileHandler: Marked loop body task '%s' as conceptually completed", task_id)
+        
+        # Update task status in the database from 'executing' to 'completed'
+        if hasattr(orchestrator, 'persistence') and orchestrator.persistence:
+            try:
+                orchestrator.persistence.complete_task(orchestrator.run_id, task_id, result=None)
+                logger.debug("WhileHandler: Updated task '%s' status to completed in database", task_id)
+            except Exception as e:
+                logger.error("WhileHandler: Failed to update task '%s' status in database: %s", task_id, e)
 
     # The loop is finished, return no new tasks
     return []
