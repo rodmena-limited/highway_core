@@ -1,12 +1,12 @@
 import json
 import os
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, List, Optional
 
 import pytest
-from sqlalchemy import inspect, func, text
-from datetime import datetime, timedelta, timezone
+from sqlalchemy import func, inspect, text
 
 # --- Conditional DB Setup ---
 # This logic ensures this test file respects the USE_PG flag
@@ -15,6 +15,7 @@ if os.environ.get("USE_PG", "false").lower() in ("true", "1"):
     print("CONCURRENT_TEST: USE_PG=true detected. Using settings from .env.")
     os.environ["HIGHWAY_ENV"] = "production"
     from highway_core.config import settings
+
     TEST_DB_PATH_URL = settings.DATABASE_URL
 else:
     print("CONCURRENT_TEST: Defaulting to isolated SQLite.")
@@ -39,9 +40,9 @@ def setup_test_environment():
         db_file_path = TEST_DB_PATH_URL.replace("sqlite:///", "/")
         if os.path.exists(db_file_path):
             os.remove(db_file_path)
-    
+
     yield
-    
+
     # Cleanup after test, only if SQLite
     if TEST_DB_PATH_URL.startswith("sqlite:///"):
         db_file_path = TEST_DB_PATH_URL.replace("sqlite:///", "/")
@@ -66,7 +67,9 @@ def run_workflow(workflow_file: str) -> Dict[str, Any]:
     logger.info(f"run_workflow DATABASE_URL: {os.environ.get('DATABASE_URL')}")
     logger.info(f"run_workflow TEST_DB_PATH_URL: {TEST_DB_PATH_URL}")
 
-    persistence_manager = SQLPersistenceManager(engine_url=TEST_DB_PATH_URL, is_test=True)
+    persistence_manager = SQLPersistenceManager(
+        engine_url=TEST_DB_PATH_URL, is_test=True
+    )
 
     # Import the engine function
     from highway_core.engine.engine import run_workflow_from_yaml
@@ -105,18 +108,19 @@ def get_workflow_results_from_db(db_path: str = TEST_DB_PATH_URL) -> list:
     try:
         with db_manager.session_scope() as session:
             cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
-            
-            results = session.query(
-                WorkflowResult.workflow_id,
-                WorkflowResult.task_id,
-                WorkflowResult.result_value_json,
-                WorkflowResult.created_at
-            ).filter(
-                WorkflowResult.created_at > cutoff
-            ).order_by(
-                WorkflowResult.created_at.desc()
-            ).all()
-            
+
+            results = (
+                session.query(
+                    WorkflowResult.workflow_id,
+                    WorkflowResult.task_id,
+                    WorkflowResult.result_value_json,
+                    WorkflowResult.created_at,
+                )
+                .filter(WorkflowResult.created_at > cutoff)
+                .order_by(WorkflowResult.created_at.desc())
+                .all()
+            )
+
             return [tuple(r) for r in results]
     except Exception as e:
         print(f"Database error reading results from {db_path}: {e}")
@@ -130,18 +134,19 @@ def get_workflow_by_name(
     db_manager = get_db_manager(engine_url=db_path)
     try:
         with db_manager.session_scope() as session:
-            result = session.query(
-                Workflow.workflow_id,
-                Workflow.workflow_name,
-                Workflow.status,
-                Workflow.start_time,
-                Workflow.end_time
-            ).filter(
-                Workflow.workflow_name == workflow_name
-            ).order_by(
-                Workflow.start_time.desc()
-            ).first()
-            
+            result = (
+                session.query(
+                    Workflow.workflow_id,
+                    Workflow.workflow_name,
+                    Workflow.status,
+                    Workflow.start_time,
+                    Workflow.end_time,
+                )
+                .filter(Workflow.workflow_name == workflow_name)
+                .order_by(Workflow.start_time.desc())
+                .first()
+            )
+
             if result:
                 return {
                     "workflow_id": result[0],
@@ -156,21 +161,25 @@ def get_workflow_by_name(
         return None
 
 
-def get_workflow_by_id(workflow_id: str, db_path: str = TEST_DB_PATH_URL) -> Optional[Dict]:
+def get_workflow_by_id(
+    workflow_id: str, db_path: str = TEST_DB_PATH_URL
+) -> Optional[Dict]:
     """Get workflow details by ID using SQLAlchemy."""
     db_manager = get_db_manager(engine_url=db_path)
     try:
         with db_manager.session_scope() as session:
-            result = session.query(
-                Workflow.workflow_id,
-                Workflow.workflow_name,
-                Workflow.status,
-                Workflow.start_time,
-                Workflow.end_time
-            ).filter(
-                Workflow.workflow_id == workflow_id
-            ).first()
-            
+            result = (
+                session.query(
+                    Workflow.workflow_id,
+                    Workflow.workflow_name,
+                    Workflow.status,
+                    Workflow.start_time,
+                    Workflow.end_time,
+                )
+                .filter(Workflow.workflow_id == workflow_id)
+                .first()
+            )
+
             if result:
                 return {
                     "workflow_id": result[0],
@@ -190,16 +199,18 @@ def get_all_workflows(db_path: str = TEST_DB_PATH_URL) -> list:
     db_manager = get_db_manager(engine_url=db_path)
     try:
         with db_manager.session_scope() as session:
-            results = session.query(
-                Workflow.workflow_id,
-                Workflow.workflow_name,
-                Workflow.status,
-                Workflow.start_time,
-                Workflow.end_time
-            ).order_by(
-                Workflow.start_time.desc()
-            ).all()
-            
+            results = (
+                session.query(
+                    Workflow.workflow_id,
+                    Workflow.workflow_name,
+                    Workflow.status,
+                    Workflow.start_time,
+                    Workflow.end_time,
+                )
+                .order_by(Workflow.start_time.desc())
+                .all()
+            )
+
             return [
                 {
                     "workflow_id": result[0],
@@ -242,7 +253,9 @@ class TestConcurrentWorkflows:
             SQLPersistenceManager,
         )
 
-        persistence_manager = SQLPersistenceManager(engine_url=TEST_DB_PATH_URL, is_test=True)
+        persistence_manager = SQLPersistenceManager(
+            engine_url=TEST_DB_PATH_URL, is_test=True
+        )
 
         try:
             result = run_workflow_from_yaml(
@@ -417,7 +430,7 @@ class TestDatabaseIntegrity:
         assert result["success"], "Database creation test failed"
 
         db_manager = get_db_manager(engine_url=TEST_DB_PATH_URL)
-        
+
         # Verify database file exists (only for SQLite)
         if TEST_DB_PATH_URL.startswith("sqlite:///"):
             db_file_path = TEST_DB_PATH_URL.replace("sqlite:///", "/")
@@ -428,7 +441,9 @@ class TestDatabaseIntegrity:
             inspector = inspect(db_manager.engine)
             assert inspector.has_table("workflows"), "Workflows table not found"
             assert inspector.has_table("tasks"), "Tasks table not found"
-            assert inspector.has_table("workflow_results"), "Workflow results table not found"
+            assert inspector.has_table(
+                "workflow_results"
+            ), "Workflow results table not found"
         except Exception as e:
             pytest.fail(f"Database accessibility check failed: {e}")
 
@@ -442,14 +457,16 @@ class TestDatabaseIntegrity:
 
         # Small delay to allow database writes
         time.sleep(0.1)
-        
+
         db_manager = get_db_manager(engine_url=TEST_DB_PATH_URL)
 
         # Verify we can still access the database
         try:
             with db_manager.session_scope() as session:
                 count = session.query(func.count(Workflow.workflow_id)).scalar()
-                assert count > 0, "No workflows found in database after concurrent access"
+                assert (
+                    count > 0
+                ), "No workflows found in database after concurrent access"
         except Exception as e:
             pytest.fail(f"Database query failed during concurrent access: {e}")
 
@@ -478,12 +495,14 @@ def test_workflow_concurrent_execution():
             session.execute(text("SELECT 1"))
     except Exception as e:
         pytest.fail(f"Database is not accessible after concurrent execution: {e}")
-    
+
     # For SQLite, we can check integrity
     if TEST_DB_PATH_URL.startswith("sqlite:///"):
         try:
             with db_manager.session_scope() as session:
-                integrity_result = session.execute(text("PRAGMA integrity_check")).fetchone()
+                integrity_result = session.execute(
+                    text("PRAGMA integrity_check")
+                ).fetchone()
                 assert (
                     integrity_result[0] == "ok"
                 ), f"Database integrity check failed: {integrity_result[0]}"

@@ -4,12 +4,12 @@ Highway Core CLI - Run workflows from YAML files or highway_dsl Python files
 """
 
 import argparse
+import asyncio
 import importlib.util
 import os
 import sys
 import uuid
 from pathlib import Path
-import asyncio
 
 # Add the highway_core to the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -71,26 +71,28 @@ def webhook_status_command(args):
     """Show status of webhook processing."""
     from highway_core.config import settings
     from highway_core.persistence.database import get_db_manager
-    
+
     try:
         db_manager = get_db_manager(engine_url=settings.DATABASE_URL)
-        
+
         # Get counts for different webhook statuses
         pending_count = len(db_manager.get_webhooks_by_status(["pending"]))
         sending_count = len(db_manager.get_webhooks_by_status(["sending"]))
-        retry_scheduled_count = len(db_manager.get_webhooks_by_status(["retry_scheduled"]))
+        retry_scheduled_count = len(
+            db_manager.get_webhooks_by_status(["retry_scheduled"])
+        )
         sent_count = len(db_manager.get_webhooks_by_status(["sent"]))
         failed_count = len(db_manager.get_webhooks_by_status(["failed"]))
-        
+
         print("📊 Webhook Status:")
         print(f"  📥 Pending: {pending_count}")
         print(f"  🚀 Sending: {sending_count}")
         print(f"  🔄 Retry Scheduled: {retry_scheduled_count}")
         print(f"  ✅ Sent: {sent_count}")
         print(f"  ❌ Failed: {failed_count}")
-        
+
         db_manager.close()
-        
+
     except Exception as e:
         print(f"❌ Error retrieving webhook status: {e}", file=sys.stderr)
         sys.exit(1)
@@ -100,16 +102,18 @@ def webhook_cleanup_command(args):
     """Clean up old completed webhooks."""
     from highway_core.config import settings
     from highway_core.persistence.database import get_db_manager
-    
+
     try:
         db_manager = get_db_manager(engine_url=settings.DATABASE_URL)
-        
+
         deleted_count = db_manager.cleanup_completed_webhooks(days_old=args.days_old)
-        
-        print(f"🧹 Cleaned up {deleted_count} completed webhooks older than {args.days_old} days")
-        
+
+        print(
+            f"🧹 Cleaned up {deleted_count} completed webhooks older than {args.days_old} days"
+        )
+
         db_manager.close()
-        
+
     except Exception as e:
         print(f"❌ Error cleaning up webhooks: {e}", file=sys.stderr)
         sys.exit(1)
@@ -119,12 +123,14 @@ def main():
     parser = argparse.ArgumentParser(
         description="Highway Core - Run workflows from YAML files or highway_dsl Python files"
     )
-    
+
     # Create subparsers for different commands
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
-    
+
     # Main workflow command
-    workflow_parser = subparsers.add_parser("run", help="Run a workflow from YAML or Python file")
+    workflow_parser = subparsers.add_parser(
+        "run", help="Run a workflow from YAML or Python file"
+    )
     workflow_parser.add_argument(
         "workflow_path", help="Path to the workflow file (YAML or Python)"
     )
@@ -135,26 +141,45 @@ def main():
     workflow_parser.add_argument(
         "--verbose", "-v", action="store_true", help="Enable verbose logging"
     )
-    
+
     # Webhook commands
-    webhook_parser = subparsers.add_parser("webhooks", help="Webhook management commands")
-    webhook_subparsers = webhook_parser.add_subparsers(dest="webhook_cmd", help="Webhook commands")
-    
-    webhook_run_parser = webhook_subparsers.add_parser("run", help="Run the webhook runner")
-    webhook_run_parser.add_argument(
-        "--batch-size", type=int, default=100, help="Number of webhooks to process in each batch (default: 100)"
+    webhook_parser = subparsers.add_parser(
+        "webhooks", help="Webhook management commands"
+    )
+    webhook_subparsers = webhook_parser.add_subparsers(
+        dest="webhook_cmd", help="Webhook commands"
+    )
+
+    webhook_run_parser = webhook_subparsers.add_parser(
+        "run", help="Run the webhook runner"
     )
     webhook_run_parser.add_argument(
-        "--concurrency", type=int, default=20, help="Number of concurrent webhook requests (default: 20)"
+        "--batch-size",
+        type=int,
+        default=100,
+        help="Number of webhooks to process in each batch (default: 100)",
     )
-    
-    webhook_status_parser = webhook_subparsers.add_parser("status", help="Show webhook processing status")
-    
-    webhook_cleanup_parser = webhook_subparsers.add_parser("cleanup", help="Clean up old completed webhooks")
+    webhook_run_parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=20,
+        help="Number of concurrent webhook requests (default: 20)",
+    )
+
+    webhook_status_parser = webhook_subparsers.add_parser(
+        "status", help="Show webhook processing status"
+    )
+
+    webhook_cleanup_parser = webhook_subparsers.add_parser(
+        "cleanup", help="Clean up old completed webhooks"
+    )
     webhook_cleanup_parser.add_argument(
-        "--days-old", type=int, default=30, help="Clean webhooks older than this many days (default: 30)"
+        "--days-old",
+        type=int,
+        default=30,
+        help="Clean webhooks older than this many days (default: 30)",
     )
-    
+
     args = parser.parse_args()
 
     # Handle command if one was provided
@@ -244,7 +269,7 @@ def main():
             try:
                 from highway_core.config import settings
                 from highway_core.persistence.database import get_db_manager
-                
+
                 db_manager = get_db_manager(engine_url=settings.DATABASE_URL)
 
                 # Get all tasks for this workflow
@@ -273,7 +298,9 @@ def main():
                 db_manager.close()
 
             except ImportError as e:
-                print(f"\n⚠️  Could not import required modules for detailed task information: {e}")
+                print(
+                    f"\n⚠️  Could not import required modules for detailed task information: {e}"
+                )
             except Exception as e:
                 print(f"\n⚠️  Could not retrieve detailed task information: {e}")
 

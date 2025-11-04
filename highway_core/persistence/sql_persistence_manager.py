@@ -50,7 +50,9 @@ class SQLPersistenceManager(PersistenceManager):
 
     def set_memory(self, workflow_id: str, memory_key: str, memory_value: Any) -> bool:
         """Store a memory value for a workflow."""
-        return self.sql_persistence.db_manager.store_memory(workflow_id, memory_key, memory_value)
+        return self.sql_persistence.db_manager.store_memory(
+            workflow_id, memory_key, memory_value
+        )
 
     def get_memory(self, workflow_id: str, memory_key: str) -> Any:
         """Get a memory value for a workflow."""
@@ -63,7 +65,9 @@ class SQLPersistenceManager(PersistenceManager):
 
     def store_workflow_result(self, workflow_id: str, result: Any) -> bool:
         """Store workflow result."""
-        return self.sql_persistence.db_manager.store_workflow_result(workflow_id, result)
+        return self.sql_persistence.db_manager.store_workflow_result(
+            workflow_id, result
+        )
 
     def get_workflow_result(self, workflow_id: str) -> Any:
         """Get workflow result."""

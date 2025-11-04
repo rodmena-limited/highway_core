@@ -27,7 +27,9 @@ class Settings:
     # --- Database settings ---
     # Support both POSTGRES_* and DB_* naming conventions
     POSTGRES_USER: Optional[str] = os.getenv("POSTGRES_USER") or os.getenv("DB_USER")
-    POSTGRES_PASSWORD: Optional[str] = os.getenv("POSTGRES_PASSWORD") or os.getenv("DB_PASSWORD")
+    POSTGRES_PASSWORD: Optional[str] = os.getenv("POSTGRES_PASSWORD") or os.getenv(
+        "DB_PASSWORD"
+    )
     POSTGRES_HOST: Optional[str] = os.getenv("POSTGRES_HOST") or os.getenv("DB_HOST")
     POSTGRES_PORT: Optional[str] = os.getenv("POSTGRES_PORT") or os.getenv("DB_PORT")
     POSTGRES_DB: Optional[str] = os.getenv("POSTGRES_DB") or os.getenv("DB_NAME")
@@ -52,7 +54,9 @@ class Settings:
 
     if use_postgres:
         # Build PostgreSQL connection string for psycopg (v3)
-        DATABASE_URL: str = f"postgresql+psycopg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+        DATABASE_URL: str = (
+            f"postgresql+psycopg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+        )
     else:
         # Fallback to SQLite
         raw_db_url = os.getenv("DATABASE_URL", "sqlite:///~/.highway.sqlite3")

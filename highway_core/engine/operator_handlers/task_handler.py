@@ -40,7 +40,7 @@ def execute(
 
     success = True  # Flag to track if the task executed successfully
     result = None
-    
+
     try:
         # 1. The Orchestrator has already selected the correct executor.
         #    We just call it and pass all dependencies.
@@ -69,7 +69,7 @@ def execute(
             workflow_run_id=workflow_run_id,
             event_type="completed" if success else "failed",
             result=result,
-            error_message=error_msg if not success else None
+            error_message=error_msg if not success else None,
         )
 
     return []  # Return an empty list of new tasks
@@ -80,7 +80,7 @@ def _trigger_webhooks_for_task_event(
     workflow_run_id: str,
     event_type: str,  # e.g., "completed", "failed", "started"
     result=None,
-    error_message: Optional[str] = None
+    error_message: Optional[str] = None,
 ):
     """
     Creates webhook records for any webhooks registered for this task/event combination.
@@ -88,15 +88,16 @@ def _trigger_webhooks_for_task_event(
     """
     try:
         from highway_core.persistence.database import get_db_manager
+
         db_manager = get_db_manager()
-        
+
         # Look for webhook configurations registered for this task + event combination
         # In a real implementation, we'd query a webhook_configs table or similar
         # For now, we'll look for pending webhooks that match this task and event
-        
+
         # Create webhook records that will be processed by the webhook runner
         # The webhook runner will actually make the HTTP requests
-        
+
         # This is where we'd check configuration and create actual webhook records
         # In the actual system, this would query stored configurations for webhooks
         # that should be triggered when this task reaches this state
@@ -107,10 +108,10 @@ def _trigger_webhooks_for_task_event(
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "result": result if result is not None else None,
         }
-        
+
         if error_message:
             webhook_payload["error"] = error_message
-            
+
         # Create a webhook record to be processed by the webhook runner
         webhook_success = db_manager.create_webhook(
             task_id=task_id,
@@ -121,13 +122,17 @@ def _trigger_webhooks_for_task_event(
             headers={"Content-Type": "application/json"},
             payload=webhook_payload,
             webhook_type=f"on_{event_type}",
-            status="pending"
+            status="pending",
         )
-        
+
         if webhook_success:
             logger.info(f"Created webhook for task {task_id} {event_type} event")
         else:
-            logger.warning(f"Failed to create webhook for task {task_id} {event_type} event")
-            
+            logger.warning(
+                f"Failed to create webhook for task {task_id} {event_type} event"
+            )
+
     except Exception as e:
-        logger.error(f"Error triggering webhooks for task {task_id} {event_type} event: {e}")
+        logger.error(
+            f"Error triggering webhooks for task {task_id} {event_type} event: {e}"
+        )

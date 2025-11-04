@@ -49,7 +49,9 @@ class Workflow(Base):  # type: ignore
     # Enterprise fields
     priority = Column(String(20), default="normal")  # low, normal, high, critical
     tags_json = Column(Text)  # JSON string for tags
-    parent_workflow_id = Column(String, ForeignKey("workflows.workflow_id"))  # For nested workflows
+    parent_workflow_id = Column(
+        String, ForeignKey("workflows.workflow_id")
+    )  # For nested workflows
     timeout_seconds = Column(Integer, default=3600)  # Workflow timeout
 
     # Relationship
@@ -265,7 +267,9 @@ class TaskExecution(Base):  # type: ignore
     # Ensure unique execution_id but also consider task executions per workflow
     __table_args__ = (
         UniqueConstraint("execution_id", name="uix_task_execution_id"),
-        Index("idx_task_executions_wfid_tid_status", "workflow_id", "task_id", "status"),
+        Index(
+            "idx_task_executions_wfid_tid_status", "workflow_id", "task_id", "status"
+        ),
     )
 
     # Removed relationship to avoid join condition issues since there's no proper FK
@@ -428,18 +432,27 @@ class Webhook(Base):  # type: ignore
     """
     Webhook model for tracking webhook events and their execution status
     """
+
     __tablename__ = "webhooks"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     task_id = Column(String, nullable=True)  # Can be null for system-wide webhooks
     execution_id = Column(String, nullable=True)  # Can be null for system-wide webhooks
-    workflow_id = Column(String, nullable=True)  # Can be null for system-wide webhooks, no FK constraint to allow historical references
+    workflow_id = Column(
+        String, nullable=True
+    )  # Can be null for system-wide webhooks, no FK constraint to allow historical references
     url = Column(String, nullable=False)  # Webhook endpoint URL
-    method = Column(String(10), default="POST")  # HTTP method (GET, POST, PUT, PATCH, DELETE)
+    method = Column(
+        String(10), default="POST"
+    )  # HTTP method (GET, POST, PUT, PATCH, DELETE)
     headers_json = Column(Text)  # JSON string for additional headers
     payload_json = Column(Text)  # JSON payload to send
-    webhook_type = Column(String(50), nullable=False)  # on_start, on_complete, on_fail, on_retry, on_custom
-    status = Column(String(50), default="pending")  # pending, sending, sent, failed, retry_scheduled, cancelled
+    webhook_type = Column(
+        String(50), nullable=False
+    )  # on_start, on_complete, on_fail, on_retry, on_custom
+    status = Column(
+        String(50), default="pending"
+    )  # pending, sending, sent, failed, retry_scheduled, cancelled
     retry_count = Column(Integer, default=0)
     max_retries = Column(Integer, default=3)
     next_retry_at = Column(DateTime)  # When to retry next
@@ -454,8 +467,11 @@ class Webhook(Base):  # type: ignore
     # Ensure unique combination of task_id, execution_id, workflow_id, and webhook_type
     __table_args__ = (
         UniqueConstraint(
-            "execution_id", "task_id", "workflow_id", "webhook_type",
-            name="uix_webhook_task_execution_type"
+            "execution_id",
+            "task_id",
+            "workflow_id",
+            "webhook_type",
+            name="uix_webhook_task_execution_type",
         ),
         Index("idx_webhooks_workflow", "workflow_id"),
         Index("idx_webhooks_status", "status"),
@@ -498,12 +514,17 @@ class AdminTask(Base):  # type: ignore
     """
     AdminTask model for managing administrative operations like cleanup, cancellation, etc.
     """
+
     __tablename__ = "admin_tasks"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    task_type = Column(String(100), nullable=False)  # cleanup_old_workflows, cancel_workflow, etc.
+    task_type = Column(
+        String(100), nullable=False
+    )  # cleanup_old_workflows, cancel_workflow, etc.
     target_id = Column(String, nullable=False)  # workflow_id or task_id
-    status = Column(String(50), default="pending")  # pending, running, completed, failed
+    status = Column(
+        String(50), default="pending"
+    )  # pending, running, completed, failed
     parameters_json = Column(Text)  # JSON string for configurable parameters
     created_at = Column(DateTime, default=utc_now)
     started_at = Column(DateTime)
@@ -532,12 +553,15 @@ class WorkflowTemplate(Base):  # type: ignore
     """
     WorkflowTemplate model for reusable workflow definitions
     """
+
     __tablename__ = "workflow_templates"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(255), nullable=False)
     description = Column(Text)
-    workflow_definition_json = Column(Text, nullable=False)  # JSON string of workflow definition
+    workflow_definition_json = Column(
+        Text, nullable=False
+    )  # JSON string of workflow definition
     created_by = Column(String(255))
     created_at = Column(DateTime, default=utc_now)
     updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)

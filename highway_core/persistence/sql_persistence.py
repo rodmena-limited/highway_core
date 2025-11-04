@@ -30,13 +30,16 @@ class SQLPersistence(PersistenceManager):
         """
         # Import settings at the top to avoid scoping issues
         from highway_core.config import settings
-        
+
         if db_path is not None:
             # When db_path is explicitly provided, use it
             self.db_manager = get_db_manager(db_path=db_path)
         elif is_test:
             # In test mode, check if DATABASE_URL is set first
-            if settings.DATABASE_URL and settings.DATABASE_URL != "sqlite:///highway.sqlite3":
+            if (
+                settings.DATABASE_URL
+                and settings.DATABASE_URL != "sqlite:///highway.sqlite3"
+            ):
                 # Use the configured test database URL
                 self.db_manager = get_db_manager(engine_url=settings.DATABASE_URL)
             else:
@@ -128,9 +131,7 @@ class SQLPersistence(PersistenceManager):
 
         # Update the task with result and completion status
         completed_at = datetime.now(timezone.utc)
-        self.db_manager.update_task_with_result(
-            task_id, result, completed_at
-        )
+        self.db_manager.update_task_with_result(task_id, result, completed_at)
 
         # Find the task's result_key to store in workflow results
         all_tasks = self.db_manager.get_tasks_by_workflow(workflow_id)
@@ -151,40 +152,50 @@ class SQLPersistence(PersistenceManager):
         # Look for webhooks that should be triggered on this task's completion
         try:
             # This will create a webhook record to be processed by the webhook runner
-            self._trigger_webhooks_for_task_event(workflow_id, task_id, "on_completed", result, completed_at)
+            self._trigger_webhooks_for_task_event(
+                workflow_id, task_id, "on_completed", result, completed_at
+            )
         except Exception as e:
-            logger.error(f"Error triggering webhooks for task {task_id} completion: {e}")
+            logger.error(
+                f"Error triggering webhooks for task {task_id} completion: {e}"
+            )
 
-    def _trigger_webhooks_for_task_event(self, workflow_id: str, task_id: str, event: str, result: Any, timestamp: datetime) -> None:
+    def _trigger_webhooks_for_task_event(
+        self,
+        workflow_id: str,
+        task_id: str,
+        event: str,
+        result: Any,
+        timestamp: datetime,
+    ) -> None:
         """Trigger any webhooks registered for a specific task event."""
-        from datetime import timezone
         import json
-        
+        from datetime import timezone
+
         # In a real implementation, we would look for webhook configurations
         # that were registered to be triggered when this task reaches this state
         # For now, let's assume we have a mechanism to find registered webhooks
-        
         # In the workflow definition, webhooks would be stored with their trigger conditions
         # When a task completes, we should look for any webhooks registered for that task+event
         # and create a webhook record in the database to be processed
-        
         # Check for any webhooks that were registered to fire on this event for this task
         # In a real implementation, this would query a webhook_configs table or similar
         # But since we're dealing with a scenario where webhooks are registered via tools,
         # we need to implement the tracking mechanism
-        
         # Create a webhook record to be processed by the webhook runner
         # This is a placeholder implementation - the actual implementation would
         # query registered webhook configs and create appropriate webhook records
-        webhook_url = f"http://127.0.0.1:7666/index.json"  # This would come from actual config
+        webhook_url = (
+            f"http://127.0.0.1:7666/index.json"  # This would come from actual config
+        )
         webhook_payload = {
             "event": event,
             "task_id": task_id,
             "workflow_id": workflow_id,
             "result": result,
-            "timestamp": timestamp.isoformat()
+            "timestamp": timestamp.isoformat(),
         }
-        
+
         # Only create webhook if it's one we want to track (in a real system we'd have a webhook registry)
         # For now, let's create it if the event is on_completed and result contains the right info
         if event == "on_completed":
@@ -200,17 +211,19 @@ class SQLPersistence(PersistenceManager):
                 webhook_type=event,
                 max_retries=3,
                 rate_limit_requests=10,
-                rate_limit_window=60
+                rate_limit_window=60,
             )
             if success:
                 logger.info(f"Created webhook for task {task_id} {event} event")
             else:
-                logger.error(f"Failed to create webhook for task {task_id} {event} event")
-    
+                logger.error(
+                    f"Failed to create webhook for task {task_id} {event} event"
+                )
+
     def fail_task(self, workflow_id: str, task_id: str, error_message: str) -> None:
         """Record task failure with error details and trigger any associated webhooks"""
         from datetime import datetime
-        
+
         # Update task status
         self.db_manager.update_task_status(
             task_id, "failed", error_message=error_message
@@ -222,8 +235,7 @@ class SQLPersistence(PersistenceManager):
             timestamp = datetime.now(timezone.utc)
             # Create webhook for failure event
             self._trigger_webhooks_for_task_event(
-                workflow_id, task_id, "on_failed", 
-                {"error": error_message}, timestamp
+                workflow_id, task_id, "on_failed", {"error": error_message}, timestamp
             )
         except Exception as e:
             logger.error(f"Error triggering webhooks for task {task_id} failure: {e}")
@@ -248,8 +260,9 @@ class SQLPersistence(PersistenceManager):
             if existing_task:
                 # Update the existing task to "executing" status
                 success = self.db_manager.update_task_status(
-                    task_id=task.task_id, status="executing", 
-                    started_at=datetime.now(timezone.utc)
+                    task_id=task.task_id,
+                    status="executing",
+                    started_at=datetime.now(timezone.utc),
                 )
             else:
                 # Create the task with executing status
@@ -267,7 +280,7 @@ class SQLPersistence(PersistenceManager):
                     result_key=getattr(task, "result_key", None),
                     dependencies=getattr(task, "dependencies", []),
                     status="executing",
-                    started_at=datetime.now(timezone.utc)
+                    started_at=datetime.now(timezone.utc),
                 )
 
             # If operation succeeded, we successfully acquired the lock
@@ -276,12 +289,17 @@ class SQLPersistence(PersistenceManager):
                 try:
                     # Trigger webhooks for task start event
                     self._trigger_webhooks_for_task_event(
-                        workflow_id, task.task_id, "on_start", 
-                        {"status": "starting"}, datetime.now(timezone.utc)
+                        workflow_id,
+                        task.task_id,
+                        "on_start",
+                        {"status": "starting"},
+                        datetime.now(timezone.utc),
                     )
                 except Exception as e:
-                    logger.error(f"Error triggering webhooks for task {task.task_id} start: {e}")
-            
+                    logger.error(
+                        f"Error triggering webhooks for task {task.task_id} start: {e}"
+                    )
+
             return success is not False
         except Exception as e:
             logger.error(f"Error attempting to start task {task.task_id}: {e}")
@@ -309,11 +327,11 @@ class SQLPersistence(PersistenceManager):
         """
         # Save workflow variables to the workflow record
         self.db_manager.update_workflow_variables(workflow_run_id, state.variables)
-        
+
         # Save workflow memory entries
         for memory_key, memory_value in state.memory.items():
             self.db_manager.store_memory(workflow_run_id, memory_key, memory_value)
-        
+
         # Save completed tasks status
         for task_id in completed_tasks:
             self.db_manager.update_task_status(task_id, "completed")

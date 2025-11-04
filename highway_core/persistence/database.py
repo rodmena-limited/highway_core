@@ -2,17 +2,28 @@ import functools
 import logging
 import threading
 from contextlib import contextmanager
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from time import sleep
 from typing import Any, Dict, Generator, List, Optional, Union
 
-from sqlalchemy import Column, DateTime, create_engine, event, text, and_, func, case, inspect
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError, OperationalError
+from sqlalchemy import (
+    Column,
+    DateTime,
+    and_,
+    case,
+    create_engine,
+    event,
+    func,
+    inspect,
+    text,
+)
+from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 from sqlalchemy.orm import Session, scoped_session, sessionmaker
 from sqlalchemy.pool import QueuePool, StaticPool
 
 from .models import (
+    AdminTask,
     Base,
     Task,
     TaskDependency,
@@ -21,7 +32,6 @@ from .models import (
     Workflow,
     WorkflowMemory,
     WorkflowResult,
-    AdminTask,
     WorkflowTemplate,
 )
 
@@ -118,6 +128,7 @@ class DatabaseManager:
                 if db_path is None:
                     # This will now get the correct URL from config.py
                     from highway_core.config import settings
+
                     self.engine_url = settings.DATABASE_URL
                 else:
                     # Use explicit db_path if provided
@@ -145,7 +156,7 @@ class DatabaseManager:
                 )
                 self._optimize_sqlite_connection()
                 logger.info("DatabaseManager initialized with SQLite backend.")
-            
+
             elif self.engine_url.startswith("postgresql+psycopg"):
                 # For PostgreSQL, use a standard connection pool
                 self.engine = create_engine(
@@ -158,7 +169,7 @@ class DatabaseManager:
                     echo=False,
                 )
                 logger.info("DatabaseManager initialized with PostgreSQL backend.")
-            
+
             else:
                 raise ValueError(f"Unsupported database engine URL: {self.engine_url}")
 
@@ -275,9 +286,7 @@ class DatabaseManager:
                         raise
                 except SQLAlchemyError as e:
                     if "already exists" in str(e).lower():
-                        logger.debug(
-                            f"Table already exists, continuing: {e}"
-                        )
+                        logger.debug(f"Table already exists, continuing: {e}")
                         self._schema_created = True
                     else:
                         logger.error(
@@ -422,6 +431,7 @@ class DatabaseManager:
         self, workflow_id: str, status: str, error_message: Optional[str] = None
     ) -> bool:
         """Update workflow status."""
+
         @retry_on_lock_error(max_retries=3, delay=0.1)
         def _update_workflow_status_internal():
             try:
@@ -437,17 +447,25 @@ class DatabaseManager:
                         workflow.updated_at = datetime.now(timezone.utc)  # type: ignore
                         if error_message:
                             workflow.error_message = error_message  # type: ignore
-                        logger.debug(f"Updated workflow {workflow_id} status to {status}")
+                        logger.debug(
+                            f"Updated workflow {workflow_id} status to {status}"
+                        )
                         return True
-                    logger.warning(f"Workflow {workflow_id} not found for status update")
+                    logger.warning(
+                        f"Workflow {workflow_id} not found for status update"
+                    )
                     return False
             except Exception as e:
                 logger.error(f"Error updating workflow {workflow_id} status: {e}")
                 raise
+
         return _update_workflow_status_internal()
 
-    def update_workflow_variables(self, workflow_id: str, variables: Dict[str, Any]) -> bool:
+    def update_workflow_variables(
+        self, workflow_id: str, variables: Dict[str, Any]
+    ) -> bool:
         """Update workflow variables."""
+
         @retry_on_lock_error(max_retries=3, delay=0.1)
         def _update_workflow_variables_internal():
             try:
@@ -463,15 +481,19 @@ class DatabaseManager:
                         workflow.updated_at = datetime.now(timezone.utc)  # type: ignore
                         logger.debug(f"Updated workflow {workflow_id} variables")
                         return True
-                    logger.warning(f"Workflow {workflow_id} not found for variables update")
+                    logger.warning(
+                        f"Workflow {workflow_id} not found for variables update"
+                    )
                     return False
             except Exception as e:
                 logger.error(f"Error updating workflow {workflow_id} variables: {e}")
                 raise
+
         return _update_workflow_variables_internal()
 
     def store_workflow_result(self, workflow_id: str, result: Any) -> bool:
         """Store workflow-level result."""
+
         @retry_on_lock_error(max_retries=3, delay=0.1)
         def _store_workflow_result_internal():
             try:
@@ -490,6 +512,7 @@ class DatabaseManager:
             except Exception as e:
                 logger.error(f"Error storing workflow result for {workflow_id}: {e}")
                 raise
+
         return _store_workflow_result_internal()
 
     def get_workflow_result(self, workflow_id: str) -> Any:
@@ -505,7 +528,7 @@ class DatabaseManager:
                     )
                     .first()
                 )
-                
+
                 if result_obj:
                     return result_obj.result_value
                 return None
@@ -558,6 +581,7 @@ class DatabaseManager:
         completed_at: Optional[datetime] = None,
     ) -> bool:
         """Create a new task record."""
+
         @retry_on_lock_error(max_retries=3, delay=0.1)
         def _create_task_internal():
             try:
@@ -616,6 +640,7 @@ class DatabaseManager:
             except Exception as e:
                 logger.error(f"Unexpected error creating task {task_id}: {e}")
                 raise  # Re-raise so the retry decorator can catch it
+
         return _create_task_internal()
 
     def update_task_status(
@@ -626,6 +651,7 @@ class DatabaseManager:
         error_message: Optional[str] = None,
     ) -> bool:
         """Update task status."""
+
         @retry_on_lock_error(max_retries=3, delay=0.1)
         def _update_task_status_internal():
             try:
@@ -649,10 +675,12 @@ class DatabaseManager:
             except Exception as e:
                 logger.error(f"Error updating task {task_id} status: {e}")
                 raise
+
         return _update_task_status_internal()
 
     def update_task_completion(self, task_id: str, completed_at: datetime) -> bool:
         """Update task completion timestamp."""
+
         @retry_on_lock_error(max_retries=3, delay=0.1)
         def _update_task_completion_internal():
             try:
@@ -671,6 +699,7 @@ class DatabaseManager:
             except Exception as e:
                 logger.error(f"Error updating task {task_id} completion: {e}")
                 raise
+
         return _update_task_completion_internal()
 
     def update_task_with_result(
@@ -680,6 +709,7 @@ class DatabaseManager:
         completed_at: Optional[datetime] = None,
     ) -> bool:
         """Update task with result and completion status."""
+
         @retry_on_lock_error(max_retries=3, delay=0.1)
         def _update_task_with_result_internal():
             try:
@@ -699,6 +729,7 @@ class DatabaseManager:
             except Exception as e:
                 logger.error(f"Error updating task {task_id} with result: {e}")
                 raise
+
         return _update_task_with_result_internal()
 
     def create_task_execution(
@@ -875,6 +906,7 @@ class DatabaseManager:
         self, workflow_id: str, memory_key: str, memory_value: Any
     ) -> bool:
         """Store a memory value for a workflow."""
+
         @retry_on_lock_error(max_retries=3, delay=0.1)
         def _store_memory_internal():
             try:
@@ -905,6 +937,7 @@ class DatabaseManager:
                     f"Error storing memory {memory_key} for workflow {workflow_id}: {e}"
                 )
                 raise
+
         return _store_memory_internal()
 
     def load_memory(self, workflow_id: str) -> Dict[str, Any]:
@@ -988,9 +1021,10 @@ class DatabaseManager:
         status: str = "pending",
         max_retries: int = 3,
         rate_limit_requests: int = 10,
-        rate_limit_window: int = 60
+        rate_limit_window: int = 60,
     ) -> bool:
         """Create a new webhook record."""
+
         @retry_on_lock_error(max_retries=3, delay=0.1)
         def _create_webhook_internal():
             try:
@@ -1002,13 +1036,15 @@ class DatabaseManager:
                             Webhook.execution_id == execution_id,
                             Webhook.task_id == task_id,
                             Webhook.workflow_id == workflow_id,
-                            Webhook.webhook_type == webhook_type
+                            Webhook.webhook_type == webhook_type,
                         )
                         .first()
                     )
-                    
+
                     if existing_webhook:
-                        logger.warning(f"Webhook already exists for task {task_id}, workflow {workflow_id}, type {webhook_type}")
+                        logger.warning(
+                            f"Webhook already exists for task {task_id}, workflow {workflow_id}, type {webhook_type}"
+                        )
                         return False
 
                     webhook = Webhook(
@@ -1025,14 +1061,17 @@ class DatabaseManager:
                         rate_limit_requests=rate_limit_requests,
                         rate_limit_window=rate_limit_window,
                         created_at=datetime.now(timezone.utc),
-                        updated_at=datetime.now(timezone.utc)
+                        updated_at=datetime.now(timezone.utc),
                     )
                     session.add(webhook)
-                    logger.debug(f"Created webhook for task {task_id}, workflow {workflow_id}, type {webhook_type}")
+                    logger.debug(
+                        f"Created webhook for task {task_id}, workflow {workflow_id}, type {webhook_type}"
+                    )
                     return True
             except Exception as e:
                 logger.error(f"Error creating webhook: {e}")
                 raise
+
         return _create_webhook_internal()
 
     def get_ready_webhooks(self, limit: int = 1000) -> List[Dict[str, Any]]:
@@ -1043,7 +1082,8 @@ class DatabaseManager:
                 session.query(Webhook)
                 .filter(
                     Webhook.status.in_(["pending", "retry_scheduled"]),
-                    (Webhook.next_retry_at.is_(None)) | (Webhook.next_retry_at <= datetime.now(timezone.utc))
+                    (Webhook.next_retry_at.is_(None))
+                    | (Webhook.next_retry_at <= datetime.now(timezone.utc)),
                 )
                 .order_by(Webhook.created_at)
                 .limit(limit)
@@ -1072,21 +1112,22 @@ class DatabaseManager:
                     "rate_limit_requests": webhook.rate_limit_requests,
                     "rate_limit_window": webhook.rate_limit_window,
                     "created_at": webhook.created_at,
-                    "updated_at": webhook.updated_at
+                    "updated_at": webhook.updated_at,
                 }
                 webhook_list.append(webhook_dict)
 
             return webhook_list
 
     def update_webhook_response(
-        self, 
-        webhook_id: int, 
-        response_status: int, 
-        response_headers: Dict[str, Any], 
+        self,
+        webhook_id: int,
+        response_status: int,
+        response_headers: Dict[str, Any],
         response_body: str,
-        success: bool = True
+        success: bool = True,
     ) -> bool:
         """Update a webhook record with response information."""
+
         @retry_on_lock_error(max_retries=3, delay=0.1)
         def _update_webhook_response_internal():
             try:
@@ -1102,22 +1143,26 @@ class DatabaseManager:
                         webhook.response_headers = response_headers
                         webhook.response_body = response_body
                         webhook.updated_at = datetime.now(timezone.utc)
-                        
+
                         if success:
                             webhook.status = "sent"
                         else:
                             webhook.status = "failed"
-                        
-                        logger.debug(f"Updated webhook {webhook_id} with response status {response_status}")
+
+                        logger.debug(
+                            f"Updated webhook {webhook_id} with response status {response_status}"
+                        )
                         return True
                     return False
             except Exception as e:
                 logger.error(f"Error updating webhook {webhook_id} response: {e}")
                 raise
+
         return _update_webhook_response_internal()
 
     def schedule_webhook_retry(self, webhook_id: int) -> bool:
         """Schedule a webhook for retry with exponential backoff."""
+
         @retry_on_lock_error(max_retries=3, delay=0.1)
         def _schedule_webhook_retry_internal():
             try:
@@ -1131,23 +1176,29 @@ class DatabaseManager:
                     if webhook:
                         # Exponential backoff with jitter: base_delay * 2^retry_count + random jitter
                         base_delay = 5  # 5 seconds base delay
-                        multiplier = 2 ** webhook.retry_count
+                        multiplier = 2**webhook.retry_count
                         jitter = 1  # Add up to 1 second of jitter
-                        
+
                         import random
+
                         delay = (base_delay * multiplier) + random.uniform(0, jitter)
-                        
-                        webhook.next_retry_at = datetime.now(timezone.utc) + timedelta(seconds=delay)
+
+                        webhook.next_retry_at = datetime.now(timezone.utc) + timedelta(
+                            seconds=delay
+                        )
                         webhook.status = "retry_scheduled"
                         webhook.retry_count += 1
                         webhook.updated_at = datetime.now(timezone.utc)
-                        
-                        logger.debug(f"Scheduled retry for webhook {webhook_id} in {delay:.2f} seconds")
+
+                        logger.debug(
+                            f"Scheduled retry for webhook {webhook_id} in {delay:.2f} seconds"
+                        )
                         return True
                     return False
             except Exception as e:
                 logger.error(f"Error scheduling webhook {webhook_id} retry: {e}")
                 raise
+
         return _schedule_webhook_retry_internal()
 
     def get_webhooks_by_workflow(self, workflow_id: str) -> List[Dict[str, Any]]:
@@ -1182,7 +1233,7 @@ class DatabaseManager:
                     "rate_limit_requests": webhook.rate_limit_requests,
                     "rate_limit_window": webhook.rate_limit_window,
                     "created_at": webhook.created_at,
-                    "updated_at": webhook.updated_at
+                    "updated_at": webhook.updated_at,
                 }
                 webhook_list.append(webhook_dict)
 
@@ -1220,7 +1271,7 @@ class DatabaseManager:
                     "rate_limit_requests": webhook.rate_limit_requests,
                     "rate_limit_window": webhook.rate_limit_window,
                     "created_at": webhook.created_at,
-                    "updated_at": webhook.updated_at
+                    "updated_at": webhook.updated_at,
                 }
                 webhook_list.append(webhook_dict)
 
@@ -1229,22 +1280,26 @@ class DatabaseManager:
     def cleanup_completed_webhooks(self, days_old: int = 30) -> int:
         """Remove old completed webhooks."""
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_old)
-        
+
         try:
             with self.session_scope() as session:
                 # Count how many will be deleted
-                count = session.query(Webhook).filter(
-                    Webhook.status == "sent",
-                    Webhook.updated_at < cutoff_date
-                ).count()
-                
+                count = (
+                    session.query(Webhook)
+                    .filter(Webhook.status == "sent", Webhook.updated_at < cutoff_date)
+                    .count()
+                )
+
                 # Actually delete them
-                deleted_count = session.query(Webhook).filter(
-                    Webhook.status == "sent",
-                    Webhook.updated_at < cutoff_date
-                ).delete(synchronize_session=False)
-                
-                logger.info(f"Cleaned up {deleted_count} completed webhooks older than {days_old} days")
+                deleted_count = (
+                    session.query(Webhook)
+                    .filter(Webhook.status == "sent", Webhook.updated_at < cutoff_date)
+                    .delete(synchronize_session=False)
+                )
+
+                logger.info(
+                    f"Cleaned up {deleted_count} completed webhooks older than {days_old} days"
+                )
                 return deleted_count
         except Exception as e:
             logger.error(f"Error cleaning up completed webhooks: {e}")
@@ -1253,24 +1308,26 @@ class DatabaseManager:
     def get_rate_limit_stats(self, base_url: str) -> Dict[str, Any]:
         """Get rate limiting stats for a URL."""
         window_start = datetime.now(timezone.utc) - timedelta(minutes=1)
-        
+
         with self.session_scope() as session:
             stats = (
                 session.query(
-                    func.count(Webhook.id).label('total_requests'),
-                    func.count(case((Webhook.status == 'sent', 1))).label('successful_requests')
+                    func.count(Webhook.id).label("total_requests"),
+                    func.count(case((Webhook.status == "sent", 1))).label(
+                        "successful_requests"
+                    ),
                 )
                 .filter(
-                    Webhook.url.startswith(base_url),
-                    Webhook.updated_at >= window_start
+                    Webhook.url.startswith(base_url), Webhook.updated_at >= window_start
                 )
                 .first()
             )
-            
+
             return {
-                'total_requests': stats.total_requests or 0,
-                'successful_requests': stats.successful_requests or 0,
-                'failed_requests': (stats.total_requests or 0) - (stats.successful_requests or 0)
+                "total_requests": stats.total_requests or 0,
+                "successful_requests": stats.successful_requests or 0,
+                "failed_requests": (stats.total_requests or 0)
+                - (stats.successful_requests or 0),
             }
 
     # Admin Operations Methods
@@ -1278,9 +1335,10 @@ class DatabaseManager:
         self,
         task_type: str,
         target_id: str,
-        parameters: Optional[Dict[str, Any]] = None
+        parameters: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """Schedule an administrative task."""
+
         @retry_on_lock_error(max_retries=3, delay=0.1)
         def _schedule_admin_task_internal():
             try:
@@ -1290,14 +1348,17 @@ class DatabaseManager:
                         target_id=target_id,
                         status="pending",
                         parameters=parameters or {},
-                        created_at=datetime.now(timezone.utc)
+                        created_at=datetime.now(timezone.utc),
                     )
                     session.add(admin_task)
-                    logger.info(f"Scheduled admin task {task_type} for target {target_id}")
+                    logger.info(
+                        f"Scheduled admin task {task_type} for target {target_id}"
+                    )
                     return True
             except Exception as e:
                 logger.error(f"Error scheduling admin task: {e}")
                 raise
+
         return _schedule_admin_task_internal()
 
     def get_admin_tasks_by_status(self, status: str) -> List[Dict[str, Any]]:
@@ -1321,7 +1382,7 @@ class DatabaseManager:
                     "created_at": task.created_at,
                     "started_at": task.started_at,
                     "completed_at": task.completed_at,
-                    "error_message": task.error_message
+                    "error_message": task.error_message,
                 }
                 task_list.append(task_dict)
 
@@ -1330,20 +1391,26 @@ class DatabaseManager:
     def cleanup_old_results(self, days_old: int = 30) -> int:
         """Clean up old workflow results."""
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_old)
-        
+
         try:
             with self.session_scope() as session:
                 # Count how many will be deleted
-                count = session.query(WorkflowResult).filter(
-                    WorkflowResult.created_at < cutoff_date
-                ).count()
-                
+                count = (
+                    session.query(WorkflowResult)
+                    .filter(WorkflowResult.created_at < cutoff_date)
+                    .count()
+                )
+
                 # Actually delete them
-                deleted_count = session.query(WorkflowResult).filter(
-                    WorkflowResult.created_at < cutoff_date
-                ).delete(synchronize_session=False)
-                
-                logger.info(f"Cleaned up {deleted_count} old workflow results older than {days_old} days")
+                deleted_count = (
+                    session.query(WorkflowResult)
+                    .filter(WorkflowResult.created_at < cutoff_date)
+                    .delete(synchronize_session=False)
+                )
+
+                logger.info(
+                    f"Cleaned up {deleted_count} old workflow results older than {days_old} days"
+                )
                 return deleted_count
         except Exception as e:
             logger.error(f"Error cleaning up old results: {e}")
@@ -1352,22 +1419,32 @@ class DatabaseManager:
     def cleanup_old_workflows(self, status_list: List[str], days_old: int = 30) -> int:
         """Clean up old workflows with specific status."""
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_old)
-        
+
         try:
             with self.session_scope() as session:
                 # Count how many will be deleted
-                count = session.query(Workflow).filter(
-                    Workflow.status.in_(status_list),
-                    Workflow.updated_at < cutoff_date
-                ).count()
-                
+                count = (
+                    session.query(Workflow)
+                    .filter(
+                        Workflow.status.in_(status_list),
+                        Workflow.updated_at < cutoff_date,
+                    )
+                    .count()
+                )
+
                 # Actually delete them
-                deleted_count = session.query(Workflow).filter(
-                    Workflow.status.in_(status_list),
-                    Workflow.updated_at < cutoff_date
-                ).delete(synchronize_session=False)
-                
-                logger.info(f"Cleaned up {deleted_count} old workflows with status {status_list} older than {days_old} days")
+                deleted_count = (
+                    session.query(Workflow)
+                    .filter(
+                        Workflow.status.in_(status_list),
+                        Workflow.updated_at < cutoff_date,
+                    )
+                    .delete(synchronize_session=False)
+                )
+
+                logger.info(
+                    f"Cleaned up {deleted_count} old workflows with status {status_list} older than {days_old} days"
+                )
                 return deleted_count
         except Exception as e:
             logger.error(f"Error cleaning up old workflows: {e}")
@@ -1375,66 +1452,81 @@ class DatabaseManager:
 
     def cancel_workflow_tasks(self, workflow_id: str) -> bool:
         """Cancel all tasks in a workflow."""
+
         @retry_on_lock_error(max_retries=3, delay=0.1)
         def _cancel_workflow_tasks_internal():
             try:
                 with self.session_scope() as session:
                     # Update all tasks in the workflow that are not yet completed
-                    updated_count = session.query(Task).filter(
-                        Task.workflow_id == workflow_id,
-                        Task.status.in_(["pending", "executing"])
-                    ).update({
-                        Task.status: "cancelled",
-                        Task.updated_at: datetime.now(timezone.utc)
-                    }, synchronize_session=False)
-                    
-                    logger.info(f"Cancelled {updated_count} tasks in workflow {workflow_id}")
+                    updated_count = (
+                        session.query(Task)
+                        .filter(
+                            Task.workflow_id == workflow_id,
+                            Task.status.in_(["pending", "executing"]),
+                        )
+                        .update(
+                            {
+                                Task.status: "cancelled",
+                                Task.updated_at: datetime.now(timezone.utc),
+                            },
+                            synchronize_session=False,
+                        )
+                    )
+
+                    logger.info(
+                        f"Cancelled {updated_count} tasks in workflow {workflow_id}"
+                    )
                     return updated_count > 0
             except Exception as e:
                 logger.error(f"Error cancelling workflow tasks for {workflow_id}: {e}")
                 raise
+
         return _cancel_workflow_tasks_internal()
 
     def get_workflow_statistics(self) -> Dict[str, Any]:
         """Get overall workflow statistics."""
         with self.session_scope() as session:
-            stats = (
-                session.query(
-                    func.count(Workflow.workflow_id).label('total_workflows'),
-                    func.count(case((Workflow.status == 'completed', 1))).label('completed_workflows'),
-                    func.count(case((Workflow.status == 'failed', 1))).label('failed_workflows'),
-                    func.count(case((Workflow.status == 'running', 1))).label('running_workflows')
-                )
-                .first()
-            )
-            
+            stats = session.query(
+                func.count(Workflow.workflow_id).label("total_workflows"),
+                func.count(case((Workflow.status == "completed", 1))).label(
+                    "completed_workflows"
+                ),
+                func.count(case((Workflow.status == "failed", 1))).label(
+                    "failed_workflows"
+                ),
+                func.count(case((Workflow.status == "running", 1))).label(
+                    "running_workflows"
+                ),
+            ).first()
+
             return {
-                'total_workflows': stats.total_workflows or 0,
-                'completed_workflows': stats.completed_workflows or 0,
-                'failed_workflows': stats.failed_workflows or 0,
-                'running_workflows': stats.running_workflows or 0
+                "total_workflows": stats.total_workflows or 0,
+                "completed_workflows": stats.completed_workflows or 0,
+                "failed_workflows": stats.failed_workflows or 0,
+                "running_workflows": stats.running_workflows or 0,
             }
 
     def get_task_statistics(self) -> Dict[str, Any]:
         """Get task execution statistics."""
         with self.session_scope() as session:
-            stats = (
-                session.query(
-                    func.count(Task.task_id).label('total_tasks'),
-                    func.count(case((Task.status == 'completed', 1))).label('completed_tasks'),
-                    func.count(case((Task.status == 'failed', 1))).label('failed_tasks'),
-                    func.count(case((Task.status == 'pending', 1))).label('pending_tasks'),
-                    func.count(case((Task.status == 'executing', 1))).label('executing_tasks')
-                )
-                .first()
-            )
-            
+            stats = session.query(
+                func.count(Task.task_id).label("total_tasks"),
+                func.count(case((Task.status == "completed", 1))).label(
+                    "completed_tasks"
+                ),
+                func.count(case((Task.status == "failed", 1))).label("failed_tasks"),
+                func.count(case((Task.status == "pending", 1))).label("pending_tasks"),
+                func.count(case((Task.status == "executing", 1))).label(
+                    "executing_tasks"
+                ),
+            ).first()
+
             return {
-                'total_tasks': stats.total_tasks or 0,
-                'completed_tasks': stats.completed_tasks or 0,
-                'failed_tasks': stats.failed_tasks or 0,
-                'pending_tasks': stats.pending_tasks or 0,
-                'executing_tasks': stats.executing_tasks or 0
+                "total_tasks": stats.total_tasks or 0,
+                "completed_tasks": stats.completed_tasks or 0,
+                "failed_tasks": stats.failed_tasks or 0,
+                "pending_tasks": stats.pending_tasks or 0,
+                "executing_tasks": stats.executing_tasks or 0,
             }
 
     def get_session_stats(self) -> Dict[str, Any]:
