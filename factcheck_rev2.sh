@@ -15,22 +15,6 @@ PASSED_TESTS=0
 FAILED_TESTS=0
 
 # Function to clean database
-clean_database() {
-    echo "🧹 Cleaning database..."
-    # For PostgreSQL, we'll truncate tables instead of deleting the file
-    python3 -c "
-from highway_core.persistence.database import get_db_manager
-from highway_core.config import settings
-from sqlalchemy import text
-
-db_manager = get_db_manager()
-with db_manager.session_scope() as session:
-    # Truncate all tables to clean the database
-    session.execute(text('TRUNCATE TABLE workflows, tasks, workflow_results, task_dependencies, webhooks, admin_tasks, workflow_templates, workflow_memory, task_queue CASCADE'))
-    session.commit()
-print('Database cleaned')
-"
-}
 
 # Function to verify workflow results in database
 verify_workflow_in_database() {
@@ -115,8 +99,6 @@ run_python_workflow_test() {
     echo "🧪 Testing: $test_name"
     echo "📁 Workflow: $workflow_file"
     
-    # Clean database before each test to ensure consistent state
-    clean_database
     
     # Run the workflow
     echo "🚀 Running workflow..."

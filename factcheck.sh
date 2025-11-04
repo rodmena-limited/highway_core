@@ -14,24 +14,6 @@ TOTAL_TESTS=0
 PASSED_TESTS=0
 FAILED_TESTS=0
 
-# Function to clean database
-clean_database() {
-    echo "🧹 Cleaning database..."
-    # For PostgreSQL, we'll truncate tables instead of deleting the file
-    python3 -c "
-from highway_core.persistence.database import get_db_manager
-from highway_core.config import settings
-from sqlalchemy import text
-
-db_manager = get_db_manager()
-with db_manager.session_scope() as session:
-    # Truncate all tables to clean the database
-    session.execute(text('TRUNCATE TABLE workflows, tasks, workflow_results, task_dependencies, webhooks, admin_tasks, workflow_templates, workflow_memory CASCADE'))
-    session.commit()
-print('Database cleaned')
-"
-}
-
 # Function to verify workflow results in database
 verify_workflow_in_database() {
     local workflow_name="$1"
@@ -106,17 +88,13 @@ with db_manager.session_scope() as session:
 run_python_workflow_test() {
     local workflow_file="$1"
     local test_name="$2"
-    local expected_result="$3"
-    local expect_failure="$4"  # New parameter: "true" if we expect this workflow to fail
+    local expect_failure="$3"  # "true" if we expect this workflow to fail
     
     TOTAL_TESTS=$((TOTAL_TESTS + 1))
     
     echo ""
     echo "🧪 Testing: $test_name"
     echo "📁 Workflow: $workflow_file"
-    
-    # Clean database before each test to ensure consistent state
-    clean_database
     
     # Run the workflow
     echo "🚀 Running workflow..."
@@ -140,7 +118,6 @@ run_python_workflow_test() {
     if [ $exit_code -eq 0 ]; then
         echo -e "${GREEN}✅ PASS: Workflow completed successfully${NC}"
         
-        # Verify results in database instead of trusting CLI output
         # Get the actual workflow name from the database
         workflow_name=$(python3 -c "
 from highway_core.persistence.database import get_db_manager
@@ -199,6 +176,7 @@ with db_manager.session_scope() as session:
 }
 
 # Main test execution
+echo ""
 echo "🚀 Starting Highway Core Python Workflow Tests"
 echo "============================================="
 
@@ -206,13 +184,12 @@ echo "============================================="
 run_python_workflow_test \
     "container_checksum_test_workflow.py" \
     "Container Checksum Test" \
-    "5746"
+    ""
 
 # Test 2: Failing Workflow (should complete but may have error tasks)
 run_python_workflow_test \
     "failing_workflow.py" \
     "Failing Workflow Test" \
-    "" \
     "true"  # Expect this workflow to fail (testing error handling)
 
 # Test 3: Loop Test

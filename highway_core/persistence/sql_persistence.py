@@ -146,7 +146,7 @@ class SQLPersistence(PersistenceManager):
             self.db_manager.store_result(workflow_id, task_id, task_result_key, result)
 
         # Mark the task as completed in the database
-        self.db_manager.update_task_status(task_id, "completed")
+        self.db_manager.complete_task(workflow_id, task_id, result)
 
         # Trigger webhooks associated with task completion
         # Look for webhooks that should be triggered on this task's completion
