@@ -50,7 +50,8 @@ def execute(
             registry=registry,
             bulkhead_manager=bulkhead_manager,
             resource_manager=resource_manager,
-            workflow_run_id=workflow_run_id,
+            orchestrator=orchestrator,  # <-- PASS THIS
+            workflow_run_id=workflow_run_id,  # <-- PASS THIS
         )
 
         # 2. Save the result (this logic stays in the handler)

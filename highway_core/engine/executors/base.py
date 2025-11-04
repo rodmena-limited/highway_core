@@ -27,6 +27,7 @@ class BaseExecutor(ABC):
         registry: "ToolRegistry",
         bulkhead_manager: Optional["BulkheadManager"],
         resource_manager: Optional["ContainerResourceManager"],
+        orchestrator: Optional["Orchestrator"],  # <-- ADD THIS
         workflow_run_id: Optional[str],
     ) -> Any:
         """

@@ -1,12 +1,7 @@
-# --- engine/operator_handlers/wait_handler.py ---
-# Purpose: Handles the 'WaitOperator'.
-# Responsibilities:
-# - Pauses execution for a specified duration or until a specific time.
-
 import logging
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import TYPE_CHECKING, List, Optional
 
 from highway_core.engine.models import WaitOperatorModel
@@ -24,93 +19,74 @@ logger = logging.getLogger(__name__)
 def execute(
     task: WaitOperatorModel,
     state: WorkflowState,
-    orchestrator: "Orchestrator",  # Added for consistent signature
-    registry: Optional["ToolRegistry"],  # <-- Make registry optional
-    bulkhead_manager: Optional["BulkheadManager"],  # <-- Make optional
-    executor: Optional["BaseExecutor"] = None,  # <-- Add this argument
-    resource_manager=None,  # <-- Add this argument to match orchestrator signature
-    workflow_run_id: str = "",  # <-- Add this argument to match orchestrator signature
+    orchestrator: "Orchestrator",
+    registry: Optional["ToolRegistry"],
+    bulkhead_manager: Optional["BulkheadManager"],
+    executor: Optional["BaseExecutor"] = None,
+    resource_manager=None,
+    workflow_run_id: str = "",
 ) -> List[str]:
     """
     Executes a WaitOperator.
+    - In 'LOCAL' mode, it blocks with time.sleep().
+    - In 'DURABLE' mode, it sets the task status to WAITING_FOR_TIMER and returns.
     """
     wait_for = state.resolve_templating(task.wait_for)
-
-    logger.info("WaitHandler: Waiting for %s...", wait_for)
-
-    # Handle different wait_for formats
+    
+    # Determine the workflow mode from the orchestrator's context
+    workflow_mode = getattr(orchestrator.workflow, 'mode', 'LOCAL')
+    
+    logger.info(f"WaitHandler: Waiting for {wait_for} in {workflow_mode} mode.")
+    
+    # --- Calculate wake_up_time ---
+    wake_up_time = None
+    duration_sec = 0
+    
     if isinstance(wait_for, (int, float)):
-        # If it's a number, treat as seconds
-        time.sleep(wait_for)
-        logger.info("WaitHandler: Wait complete.")
-
+        duration_sec = wait_for
     elif isinstance(wait_for, str):
         if wait_for.startswith("duration:"):
-            # Parse duration format like "duration:5s", "duration:2m", "duration:1h"
-            duration_str = wait_for[9:]  # Remove "duration:" prefix
-            # Extract number and unit (s, m, h)
+            duration_str = wait_for[9:]
             match = re.match(r"(\d+\.?\d*)([smh])", duration_str)
             if match:
                 value, unit = match.groups()
                 value = float(value)
-                if unit == "s":
-                    seconds = value
-                elif unit == "m":
-                    seconds = value * 60
-                elif unit == "h":
-                    seconds = value * 3600
-                else:
-                    seconds = value  # Default to seconds if unit not recognized
-                time.sleep(seconds)
-                logger.info("WaitHandler: Wait complete.")
+                if unit == "s": duration_sec = value
+                elif unit == "m": duration_sec = value * 60
+                elif unit == "h": duration_sec = value * 3600
             else:
-                # If format doesn't match, fallback to seconds (handle potential float conversion errors)
-                try:
-                    seconds = float(duration_str)
-                    time.sleep(seconds)
-                    logger.info("WaitHandler: Wait complete.")
-                except ValueError:
-                    logger.warning(
-                        "WaitHandler: Invalid duration format '%s'. Continuing.",
-                        duration_str,
-                    )
-
+                try: duration_sec = float(duration_str)
+                except ValueError: pass
         elif wait_for.startswith("time:"):
-            # Parse time format like "time:04:00:00" (4 AM)
-            time_str = wait_for[5:]  # Remove "time:" prefix
+            time_str = wait_for[5:]
             target_time = datetime.strptime(time_str, "%H:%M:%S").time()
-            now = datetime.now()
-            target_datetime = datetime.combine(now.date(), target_time)
+            now = datetime.now(timezone.utc)
+            # Ensure the target_datetime is timezone-aware
+            target_datetime = datetime.combine(now.date(), target_time, tzinfo=timezone.utc)
+            if target_datetime < now:
+                target_datetime += timedelta(days=1)
+            wake_up_time = target_datetime
+            duration_sec = (target_datetime - now).total_seconds()
 
-            # If the target time is earlier than now, assume it's for tomorrow
-            if target_datetime.time() < now.time():
-                target_datetime = datetime.combine(
-                    now.date().replace(day=now.date().day + 1), target_time
-                )
+    if wake_up_time is None:
+        wake_up_time = datetime.now(timezone.utc) + timedelta(seconds=duration_sec)
+    # ------------------------------
 
-            wait_seconds = (target_datetime - now).total_seconds()
-            if wait_seconds > 0:
-                logger.info("WaitHandler: Waiting until %s...", target_time)
-                time.sleep(wait_seconds)
-                logger.info("WaitHandler: Wait complete.")
-            else:
-                logger.info(
-                    "WaitHandler: Target time %s is in the past for today. Continuing.",
-                    target_time,
-                )
-
-        else:
-            # For other string formats (datetime, event-based), we'll implement later
-            logger.info(
-                "WaitHandler: STUB: Waiting for event/datetime '%s'. Proceeding immediately.",
-                wait_for,
-            )
-
-    else:
-        # For other types (datetime objects), we'll implement later
-        logger.info(
-            "WaitHandler: STUB: Waiting for '%s'. Proceeding immediately.",
-            wait_for,
+    if workflow_mode == "DURABLE":
+        # --- DURABLE MODE ---
+        # Set task status to WAITING and let the Scheduler wake it up.
+        db = orchestrator.persistence.db_manager
+        db.update_task_status_and_wakeup(
+            workflow_run_id, task.task_id, "WAITING_FOR_TIMER", wake_up_time
         )
+        logger.info(f"Task {task.task_id} set to WAITING_FOR_TIMER until {wake_up_time}.")
+    
+    else:
+        # --- LOCAL MODE ---
+        # Block the thread. This is the original behavior.
+        if duration_sec > 0:
+            logger.info(f"Task {task.task_id} sleeping for {duration_sec}s...")
+            time.sleep(duration_sec)
+            logger.info("WaitHandler: Wait complete.")
 
-    return []
+    return [] # This handler never adds new tasks

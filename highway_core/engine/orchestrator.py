@@ -335,15 +335,9 @@ class Orchestrator:
                 self.bulkhead_manager.shutdown_all()
                 self.close()  # Call the new close method
 
-        logger.info("Orchestrator: Workflow '%s' finished.", self.workflow.name)
-
-    def close(self) -> None:
-        """
-        Closes any open resources, such as database connections.
-        """
-        logger.info("Orchestrator: Closing resources.")
-        if self.persistence:
-            self.persistence.close()
+        # Set the mode on the workflow model for handlers to access
+        # The 'LOCAL' mode is assumed for any workflow run via the old Orchestrator.run()
+        setattr(self.workflow, 'mode', 'LOCAL')
 
     def _execute_task(self, task_id: str) -> Optional[str]:
         """Runs a single task and returns its task_id if executed, otherwise None."""
@@ -417,5 +411,12 @@ class Orchestrator:
 
         return task_id
 
-    # Avoid using __del__ for cleanup because it can be called multiple times
-    # and it can cause issues. Cleanup is handled in the run method's finally block.
+    def close(self):
+        """Clean up resources used by the orchestrator."""
+        if hasattr(self, 'executor_pool'):
+            self.executor_pool.shutdown(wait=True)
+        if hasattr(self, 'bulkhead_manager'):
+            self.bulkhead_manager.shutdown_all()
+        if hasattr(self, 'persistence'):
+            self.persistence.close()
+        logger.info("Orchestrator: Cleaned up resources")

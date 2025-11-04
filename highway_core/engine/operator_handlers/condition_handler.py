@@ -1,10 +1,3 @@
-# --- engine/operator_handlers/condition_handler.py ---
-# Purpose: Handles the 'ConditionOperator' (if/else).
-# Responsibilities:
-# - Resolves the 'condition' string.
-# - Evaluates the condition.
-# - Updates orchestrator state to handle conditional flow.
-
 import ast
 import logging
 import operator
@@ -16,9 +9,7 @@ from highway_core.engine.state import WorkflowState
 from highway_core.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
-    from highway_core.engine.executors.base import (  # <-- Add this import
-        BaseExecutor,
-    )
+    from highway_core.engine.executors.base import BaseExecutor
     from highway_core.engine.orchestrator import Orchestrator
     from highway_core.tools.bulkhead import BulkheadManager
 
@@ -29,21 +20,23 @@ def execute(
     task: ConditionOperatorModel,
     state: WorkflowState,
     orchestrator: "Orchestrator",
-    registry: Optional["ToolRegistry"],  # <-- Make registry optional
-    bulkhead_manager: Optional["BulkheadManager"],  # <-- Make optional
-    executor: Optional["BaseExecutor"] = None,  # <-- Add this argument
-    resource_manager=None,  # <-- Add this argument to match orchestrator signature
-    workflow_run_id: str = "",  # <-- Add this argument to match orchestrator signature
+    registry: Optional["ToolRegistry"],
+    bulkhead_manager: Optional["BulkheadManager"],
+    executor: Optional["BaseExecutor"] = None,
+    resource_manager=None,
+    workflow_run_id: str = "",
 ) -> None:
     """
     Evaluates a ConditionOperator.
-    Updates the orchestrator's completed tasks to handle conditional branches.
+    - In 'LOCAL' mode, updates the in-memory sorter.
+    - In 'DURABLE' mode, updates the skipped task's status in the DB.
     """
     logger.info("ConditionHandler: Evaluating '%s'", task.condition)
+    
+    workflow_mode = getattr(orchestrator.workflow, 'mode', 'LOCAL')
 
-    # 1. Resolve the condition string
+    # 1. Resolve and evaluate the condition
     resolved_condition_value = state.resolve_templating(task.condition)
-    # Ensure it's a string for eval_condition
     resolved_condition_str = str(resolved_condition_value)
     result = eval_condition(resolved_condition_str)
     logger.info(
@@ -52,29 +45,33 @@ def execute(
         result,
     )
 
-    # 2. Determine which path to take and mark the other as conceptually completed
-    next_task_id: Optional[str] = None
+    # 2. Determine which task to skip
     skipped_task_id: Optional[str] = None
     if result:
-        next_task_id = task.if_true
         skipped_task_id = task.if_false
-        logger.info("ConditionHandler: Taking 'if_true' path to '%s'", next_task_id)
+        logger.info("ConditionHandler: Taking 'if_true' path to '%s'", task.if_true)
     else:
-        next_task_id = task.if_false
         skipped_task_id = task.if_true
-        logger.info("ConditionHandler: Taking 'if_false' path to '%s'", next_task_id)
+        logger.info("ConditionHandler: Taking 'if_false' path to '%s'", task.if_false)
 
-    # 3. Mark the skipped branch as conceptually completed to satisfy dependencies
-    # This is needed for tasks that depend on both conditional branches (like log_end in the test)
+    # 3. Mark the skipped branch as completed
     if skipped_task_id:
         logger.info(
             "ConditionHandler: Marking '%s' as conceptually completed.",
             skipped_task_id,
         )
-        # Mark the skipped task as done in the sorter so that tasks
-        # depending on BOTH conditional branches can proceed
-        orchestrator.sorter.done(skipped_task_id)
-        orchestrator.completed_tasks.add(skipped_task_id)  # <-- ADD THIS LINE
+        
+        if workflow_mode == "DURABLE":
+            # --- DURABLE MODE ---
+            # Set status to COMPLETED in the DB. This unblocks
+            # any dependent tasks for the Scheduler.
+            db = orchestrator.persistence.db_manager
+            db.update_task_status_by_workflow(workflow_run_id, skipped_task_id, "completed")
+        else:
+            # --- LOCAL MODE ---
+            # Mark as done in the in-memory sorter.
+            orchestrator.sorter.done(skipped_task_id)
+            orchestrator.completed_tasks.add(skipped_task_id)
 
 
 def eval_condition(condition_str: str) -> bool:

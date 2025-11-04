@@ -32,13 +32,14 @@ class LocalPythonExecutor(BaseExecutor):
         registry: "ToolRegistry",
         bulkhead_manager: Optional["BulkheadManager"],
         resource_manager: Optional["ContainerResourceManager"],
-        workflow_run_id: Optional[str],
+        orchestrator: Optional["Orchestrator"],  # <-- ADD THIS
+        workflow_run_id: Optional[str],  # <-- ADD THIS
     ) -> Any:
         logger.info(
             "LocalPythonExecutor: Executing task %s locally.",
             task.task_id,
         )
-        return self._execute_locally(task, state, registry, bulkhead_manager)
+        return self._execute_locally(task, state, registry, bulkhead_manager, orchestrator, workflow_run_id)
 
     def _execute_locally(
         self,
@@ -46,6 +47,8 @@ class LocalPythonExecutor(BaseExecutor):
         state: "WorkflowState",
         registry: "ToolRegistry",
         bulkhead_manager: Optional["BulkheadManager"],
+        orchestrator: Optional["Orchestrator"],  # <-- ADD THIS
+        workflow_run_id: Optional[str],  # <-- ADD THIS
     ) -> Any:
         """
         Execute the Python function locally in the current process.
@@ -83,9 +86,16 @@ class LocalPythonExecutor(BaseExecutor):
         resolved_args = state.resolve_templating(task.args)
         resolved_kwargs = state.resolve_templating(task.kwargs)
 
-        # 3. Special check for tools that need state
-        if tool_name in ["tools.memory.set", "tools.memory.increment"]:
+        # 3. Special context injection
+        if tool_name.startswith("tools.memory."):
             # Inject the state object as the first argument
+            resolved_args.insert(0, state)
+        elif tool_name.startswith("human."):
+            # Inject all context objects needed for durable pausing
+            # (state, orchestrator, task_id, workflow_run_id)
+            resolved_args.insert(0, workflow_run_id)
+            resolved_args.insert(0, task.task_id)
+            resolved_args.insert(0, orchestrator)
             resolved_args.insert(0, state)
 
         # 4. Execute the tool with bulkhead isolation if bulkhead manager is provided

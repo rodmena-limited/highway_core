@@ -53,6 +53,7 @@ class DockerExecutor(BaseExecutor):
         registry: "ToolRegistry",  # Ignored
         bulkhead_manager: Optional["BulkheadManager"],  # Ignored
         resource_manager: Optional["ContainerResourceManager"],
+        orchestrator: Optional["Orchestrator"],  # <-- ADD THIS
         workflow_run_id: Optional[str],
     ) -> Any:
         # Import Docker exceptions to handle them properly

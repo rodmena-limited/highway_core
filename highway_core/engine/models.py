@@ -117,6 +117,7 @@ class WorkflowModel(BaseModel):
     name: str
     start_task: str
     variables: Dict[str, Any] = Field(default_factory=dict)
+    mode: str = Field(default="LOCAL")  # Add mode field with default value
 
     # This is now a flat map of ONLY the top-level tasks
     tasks: Dict[str, AnyOperatorModel]

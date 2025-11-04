@@ -36,7 +36,8 @@ class Workflow(Base):  # type: ignore
     workflow_name = Column(String(255), nullable=False)  # Match original schema
     start_time = Column(DateTime, default=utc_now)  # Match original schema
     end_time = Column(DateTime)  # Match original schema
-    status = Column(String(50), default="running")  # running, completed, failed
+    status = Column(String(50), default="running", nullable=False)  # running, completed, failed, PENDING, PAUSED
+    mode = Column(String(50), default="LOCAL", nullable=False)  # LOCAL, DURABLE
     error_message = Column(Text)  # Match original schema
     variables_json = Column(Text)  # Store initial workflow variables
     # Additional fields added in the codebase
@@ -92,6 +93,12 @@ class Workflow(Base):  # type: ignore
     def name(self, value):
         self.workflow_name = value
 
+    # New table arguments for durable engine
+    __table_args__ = (
+        Index("idx_workflows_poll", "status", "mode"),
+        Index("idx_workflows_name", "workflow_name"),
+    )
+
 
 class Task(Base):  # type: ignore
     """
@@ -120,10 +127,14 @@ class Task(Base):  # type: ignore
         DateTime, default=utc_now, onupdate=utc_now
     )  # Added after schema creation
     status = Column(
-        String(50), default="pending"
-    )  # pending, executing, completed, failed
+        String(50), default="pending", nullable=False
+    )  # pending, QUEUED, running, completed, failed, WAITING_FOR_TIMER, WAITING_FOR_EVENT
     error_message = Column(Text)
     result_value_json = Column(Text)
+
+    # New columns for durable waiting
+    wake_up_at = Column(DateTime(timezone=True), nullable=True)
+    event_token = Column(String(255), nullable=True, unique=True)
 
     # Enterprise fields
     priority = Column(String(20), default="normal")  # low, normal, high, critical
@@ -232,6 +243,29 @@ class Task(Base):  # type: ignore
         Index("idx_tasks_workflow_id", "workflow_id"),
         Index("idx_tasks_status", "status"),
         Index("idx_tasks_workflow_status", "workflow_id", "status"),
+        
+        # --- NEW INDEXES FOR DURABLE ENGINE ---
+        # This is the most important index for the new scheduler
+        Index("idx_tasks_poll_runnable", "status", "wake_up_at"),
+        Index("idx_tasks_event_token", "event_token"),
+    )
+
+
+class TaskQueue(Base):  # type: ignore
+    """
+    A simple, durable task queue in the database.
+    The Scheduler adds jobs here. Workers pull jobs from here.
+    """
+    __tablename__ = "task_queue"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    workflow_id = Column(String, ForeignKey("workflows.workflow_id", ondelete="CASCADE"), nullable=False)
+    task_id = Column(String, nullable=False)
+    status = Column(String(50), default="QUEUED", nullable=False) # QUEUED, RUNNING
+    created_at = Column(DateTime, default=utc_now)
+
+    __table_args__ = (
+        Index("idx_queue_poll", "status", "created_at"),
     )
 
 

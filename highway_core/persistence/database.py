@@ -28,6 +28,7 @@ from .models import (
     Task,
     TaskDependency,
     TaskExecution,
+    TaskQueue,
     Webhook,
     Workflow,
     WorkflowMemory,
@@ -996,18 +997,299 @@ class DatabaseManager:
 
             return [dep.task_id for dep in dependents]
 
-    def get_dependents(self, task_id: str) -> List[str]:
-        """Get tasks that depend on this task."""
+    def create_durable_workflow(
+        self,
+        workflow_id: str,
+        workflow_name: str,
+        start_task_id: str,
+        variables: Dict[str, Any],
+        tasks: List[Dict[str, Any]], # Use list of dicts for persistence
+    ) -> str:
+        """
+        Creates a new workflow and all its tasks in the DB for the durable engine.
+        Returns the new workflow_id.
+        """
         with self.session_scope() as session:
-            dependents = (
-                session.query(TaskDependency.task_id)
-                .filter(TaskDependency.depends_on_task_id == task_id)
-                .all()
+            # 1. Create the Workflow
+            workflow = Workflow(
+                workflow_id=workflow_id,
+                workflow_name=workflow_name,
+                start_task=start_task_id,
+                variables=variables,
+                status="PENDING", # Will be started by the Scheduler
+                mode="DURABLE",
             )
+            session.add(workflow)
+            
+            # 2. Create all Task objects
+            for task_data in tasks:
+                dependencies = task_data.get("dependencies", [])
+                task = Task(
+                    task_id=task_data["task_id"],
+                    workflow_id=workflow_id,
+                    operator_type=task_data["operator_type"],
+                    runtime=task_data.get("runtime", "python"),
+                    function=task_data.get("function"),
+                    image=task_data.get("image"),
+                    command=task_data.get("command"),
+                    args=task_data.get("args", []),
+                    kwargs=task_data.get("kwargs", {}),
+                    result_key=task_data.get("result_key"),
+                    dependencies_list=dependencies,
+                    status="PENDING", # All tasks start as PENDING
+                )
+                session.add(task)
+                
+                # 3. Store dependencies
+                if dependencies:
+                    for dep_task_id in dependencies:
+                        dependency = TaskDependency(
+                            task_id=task_data["task_id"],
+                            depends_on_task_id=dep_task_id,
+                            workflow_id=workflow_id,
+                        )
+                        session.add(dependency)
+        
+        logger.info(f"Created DURABLE workflow: {workflow_name} ({workflow_id})")
+        return workflow_id
 
-            return [dep.task_id for dep in dependents]
+    def get_workflows_by_status(self, status: str, mode: str = "DURABLE") -> List[Workflow]:
+        """Finds workflows with a specific status and mode."""
+        with self.session_scope() as session:
+            return session.query(Workflow).filter(
+                Workflow.status == status,
+                Workflow.mode == mode
+            ).all()
 
-    # Webhook Management Methods
+    def get_task_by_id(self, workflow_id: str, task_id: str) -> Optional[Task]:
+        """Gets a single task object by its ID."""
+        with self.session_scope() as session:
+            return session.query(Task).filter(
+                Task.workflow_id == workflow_id,
+                Task.task_id == task_id
+            ).first()
+
+    def get_tasks_by_status(self, workflow_id: str, status: str) -> List[Task]:
+        """Finds tasks in a workflow with a specific status."""
+        with self.session_scope() as session:
+            return session.query(Task).filter(
+                Task.workflow_id == workflow_id,
+                Task.status == status
+            ).all()
+
+    def get_task_dependencies(self, workflow_id: str, task_id: str) -> List[str]:
+        """Gets the list of dependency task_ids for a given task."""
+        with self.session_scope() as session:
+            deps = session.query(TaskDependency.depends_on_task_id).filter(
+                TaskDependency.workflow_id == workflow_id,
+                TaskDependency.task_id == task_id
+            ).all()
+            return [dep[0] for dep in deps]
+
+    def are_task_dependencies_met(self, workflow_id: str, task_id: str) -> bool:
+        """Checks if all dependencies for a task are 'completed'."""
+        dependency_ids = self.get_task_dependencies(workflow_id, task_id)
+        if not dependency_ids:
+            return True # No dependencies, it's runnable
+            
+        with self.session_scope() as session:
+            completed_deps_count = session.query(func.count(Task.task_id)).filter(
+                Task.workflow_id == workflow_id,
+                Task.task_id.in_(dependency_ids),
+                Task.status == "completed"
+            ).scalar()
+            return completed_deps_count == len(dependency_ids)
+
+    def find_tasks_to_wake(self) -> List[Task]:
+        """Finds tasks whose timer has expired."""
+        with self.session_scope() as session:
+            now = datetime.now(timezone.utc)
+            return session.query(Task).filter(
+                Task.status == "WAITING_FOR_TIMER",
+                Task.wake_up_at <= now
+            ).all()
+
+    def update_task_status_by_workflow(self, workflow_id: str, task_id: str, status: str) -> bool:
+        """Updates the status of a single task, scoped to a workflow."""
+        @retry_on_lock_error(max_retries=3, delay=0.1)
+        def _update_task_status_internal():
+            try:
+                with self.session_scope() as session:
+                    task = session.query(Task).filter(
+                        Task.workflow_id == workflow_id,
+                        Task.task_id == task_id
+                    ).with_for_update().first()
+                    
+                    if task:
+                        task.status = status
+                        task.updated_at = datetime.now(timezone.utc)
+                        logger.debug(f"Updated task {task_id} in {workflow_id} to {status}")
+                        return True
+                    return False
+            except Exception as e:
+                logger.error(f"Error updating task {task_id} in {workflow_id} status: {e}")
+                raise
+        return _update_task_status_internal()
+
+    def update_task_status_and_wakeup(self, workflow_id: str, task_id: str, status: str, wake_up_at: datetime):
+        """Updates task status and sets its wake_up_at timer."""
+        @retry_on_lock_error(max_retries=3, delay=0.1)
+        def _update_internal():
+            with self.session_scope() as session:
+                task = session.query(Task).filter(
+                    Task.workflow_id == workflow_id,
+                    Task.task_id == task_id
+                ).with_for_update().first()
+                if task:
+                    task.status = status
+                    task.wake_up_at = wake_up_at
+                    task.updated_at = datetime.now(timezone.utc)
+        _update_internal()
+                
+    def update_task_status_and_token(self, workflow_id: str, task_id: str, status: str, token: str):
+        """Updates task status and sets its event_token."""
+        @retry_on_lock_error(max_retries=3, delay=0.1)
+        def _update_internal():
+            with self.session_scope() as session:
+                task = session.query(Task).filter(
+                    Task.workflow_id == workflow_id,
+                    Task.task_id == task_id
+                ).with_for_update().first()
+                if task:
+                    task.status = status
+                    task.event_token = token
+                    task.updated_at = datetime.now(timezone.utc)
+        _update_internal()
+
+    def get_task_by_token(self, token: str) -> Optional[Task]:
+        """Finds a task that is waiting for an event with a specific token."""
+        with self.session_scope() as session:
+            return session.query(Task).filter(
+                Task.event_token == token
+            ).first()
+
+    def enqueue_task(self, workflow_id: str, task_id: str) -> bool:
+        """Adds a task to the durable TaskQueue for a worker to pick up."""
+        from .models import TaskQueue
+        try:
+            with self.session_scope() as session:
+                # Check if already in queue
+                exists = session.query(TaskQueue).filter(
+                    TaskQueue.workflow_id == workflow_id,
+                    TaskQueue.task_id == task_id,
+                    TaskQueue.status == "QUEUED"
+                ).first()
+                
+                if exists:
+                    logger.warning(f"Task {task_id} is already in the queue.")
+                    return False
+                    
+                queue_item = TaskQueue(
+                    workflow_id=workflow_id,
+                    task_id=task_id,
+                    status="QUEUED"
+                )
+                session.add(queue_item)
+            
+            self.update_task_status_by_workflow(workflow_id, task_id, "QUEUED")
+            logger.info(f"Enqueued task {task_id} for workflow {workflow_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to enqueue task {task_id}: {e}")
+            return False
+            
+    def get_next_queued_task_atomic(self) -> Optional[TaskQueue]:
+        """
+        Atomically fetches the oldest 'QUEUED' job, sets it to 'RUNNING',
+        and returns it. This uses FOR UPDATE SKIP LOCKED.
+        """
+        from .models import TaskQueue
+        try:
+            with self.session_scope() as session:
+                # This SQL is dialect-specific but works on PostgreSQL
+                if self.engine.dialect.name == 'postgresql':
+                    job = session.query(TaskQueue).filter(
+                        TaskQueue.status == "QUEUED"
+                    ).order_by(
+                        TaskQueue.created_at
+                    ).with_for_update(
+                        skip_locked=True
+                    ).first()
+                else:
+                    # Fallback for SQLite (which will lock the table)
+                    job = session.query(TaskQueue).filter(
+                        TaskQueue.status == "QUEUED"
+                    ).order_by(
+                        TaskQueue.created_at
+                    ).with_for_update().first()
+
+                
+                if job:
+                    job.status = "RUNNING"
+                    return job
+                return None
+        except Exception as e:
+            logger.error(f"Error getting next queued task: {e}")
+            return None
+
+    def delete_queue_job(self, job_id: int):
+        """Deletes a job from the TaskQueue by its ID."""
+        from .models import TaskQueue
+        try:
+            with self.session_scope() as session:
+                job = session.query(TaskQueue).filter(TaskQueue.id == job_id).first()
+                if job:
+                    session.delete(job)
+        except Exception as e:
+            logger.error(f"Error deleting queue job {job_id}: {e}")
+
+    def complete_task(self, workflow_id: str, task_id: str, result: Optional[Any] = None) -> bool:
+        """Marks a task as completed with optional result."""
+        @retry_on_lock_error(max_retries=3, delay=0.1)
+        def _complete_task_internal():
+            try:
+                with self.session_scope() as session:
+                    task = session.query(Task).filter(
+                        Task.workflow_id == workflow_id,
+                        Task.task_id == task_id
+                    ).with_for_update().first()
+                    
+                    if task:
+                        task.status = "completed"
+                        task.completed_at = datetime.now(timezone.utc)
+                        task.updated_at = datetime.now(timezone.utc)
+                        if result is not None:
+                            task.result_value = result
+                        logger.debug(f"Completed task {task_id} in {workflow_id}")
+                        return True
+                    return False
+            except Exception as e:
+                logger.error(f"Error completing task {task_id} in {workflow_id}: {e}")
+                raise
+        return _complete_task_internal()
+
+    def fail_task(self, workflow_id: str, task_id: str, error_message: str) -> bool:
+        """Marks a task as failed with error message."""
+        @retry_on_lock_error(max_retries=3, delay=0.1)
+        def _fail_task_internal():
+            try:
+                with self.session_scope() as session:
+                    task = session.query(Task).filter(
+                        Task.workflow_id == workflow_id,
+                        Task.task_id == task_id
+                    ).with_for_update().first()
+                    
+                    if task:
+                        task.status = "failed"
+                        task.error_message = error_message
+                        task.updated_at = datetime.now(timezone.utc)
+                        logger.debug(f"Failed task {task_id} in {workflow_id}: {error_message}")
+                        return True
+                    return False
+            except Exception as e:
+                logger.error(f"Error failing task {task_id} in {workflow_id}: {e}")
+                raise
+        return _fail_task_internal()
     def create_webhook(
         self,
         task_id: str,
