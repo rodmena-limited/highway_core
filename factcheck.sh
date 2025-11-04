@@ -38,7 +38,7 @@ run_python_workflow_test() {
     
     # Run the workflow
     echo "🚀 Running workflow..."
-    output=$(python cli.py "tests/data/$workflow_file" 2>&1)
+    output=$(python cli.py run "tests/data/$workflow_file" 2>&1)
     exit_code=$?
     
     # Handle expected failure case

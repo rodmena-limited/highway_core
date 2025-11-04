@@ -9,11 +9,13 @@ import os
 import sys
 import uuid
 from pathlib import Path
+import asyncio
 
 # Add the highway_core to the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from highway_core.engine.engine import run_workflow_from_yaml
+from highway_core.persistence.webhook_runner import run_webhook_runner
 
 
 def load_workflow_from_python(file_path):
@@ -53,135 +55,233 @@ def load_workflow_from_python(file_path):
         raise RuntimeError(f"Failed to load workflow from {file_path}: {e}")
 
 
+def run_webhooks_command(args):
+    """Run the webhook runner."""
+    print("Starting webhook runner...")
+    try:
+        asyncio.run(run_webhook_runner())
+    except KeyboardInterrupt:
+        print("\nWebhook runner stopped by user.")
+    except Exception as e:
+        print(f"❌ Error running webhook runner: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def webhook_status_command(args):
+    """Show status of webhook processing."""
+    from highway_core.config import settings
+    from highway_core.persistence.database import get_db_manager
+    
+    try:
+        db_manager = get_db_manager(engine_url=settings.DATABASE_URL)
+        
+        # Get counts for different webhook statuses
+        pending_count = len(db_manager.get_webhooks_by_status(["pending"]))
+        sending_count = len(db_manager.get_webhooks_by_status(["sending"]))
+        retry_scheduled_count = len(db_manager.get_webhooks_by_status(["retry_scheduled"]))
+        sent_count = len(db_manager.get_webhooks_by_status(["sent"]))
+        failed_count = len(db_manager.get_webhooks_by_status(["failed"]))
+        
+        print("📊 Webhook Status:")
+        print(f"  📥 Pending: {pending_count}")
+        print(f"  🚀 Sending: {sending_count}")
+        print(f"  🔄 Retry Scheduled: {retry_scheduled_count}")
+        print(f"  ✅ Sent: {sent_count}")
+        print(f"  ❌ Failed: {failed_count}")
+        
+        db_manager.close()
+        
+    except Exception as e:
+        print(f"❌ Error retrieving webhook status: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def webhook_cleanup_command(args):
+    """Clean up old completed webhooks."""
+    from highway_core.config import settings
+    from highway_core.persistence.database import get_db_manager
+    
+    try:
+        db_manager = get_db_manager(engine_url=settings.DATABASE_URL)
+        
+        deleted_count = db_manager.cleanup_completed_webhooks(days_old=args.days_old)
+        
+        print(f"🧹 Cleaned up {deleted_count} completed webhooks older than {args.days_old} days")
+        
+        db_manager.close()
+        
+    except Exception as e:
+        print(f"❌ Error cleaning up webhooks: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Run Highway Core workflows from YAML files or highway_dsl Python files"
+        description="Highway Core - Run workflows from YAML files or highway_dsl Python files"
     )
-    parser.add_argument(
+    
+    # Create subparsers for different commands
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+    
+    # Main workflow command
+    workflow_parser = subparsers.add_parser("run", help="Run a workflow from YAML or Python file")
+    workflow_parser.add_argument(
         "workflow_path", help="Path to the workflow file (YAML or Python)"
     )
-    parser.add_argument(
+    workflow_parser.add_argument(
         "--run-id",
         help="Unique ID for this workflow run (default: auto-generated UUID)",
     )
-    parser.add_argument(
+    workflow_parser.add_argument(
         "--verbose", "-v", action="store_true", help="Enable verbose logging"
     )
-
+    
+    # Webhook commands
+    webhook_parser = subparsers.add_parser("webhooks", help="Webhook management commands")
+    webhook_subparsers = webhook_parser.add_subparsers(dest="webhook_cmd", help="Webhook commands")
+    
+    webhook_run_parser = webhook_subparsers.add_parser("run", help="Run the webhook runner")
+    webhook_run_parser.add_argument(
+        "--batch-size", type=int, default=100, help="Number of webhooks to process in each batch (default: 100)"
+    )
+    webhook_run_parser.add_argument(
+        "--concurrency", type=int, default=20, help="Number of concurrent webhook requests (default: 20)"
+    )
+    
+    webhook_status_parser = webhook_subparsers.add_parser("status", help="Show webhook processing status")
+    
+    webhook_cleanup_parser = webhook_subparsers.add_parser("cleanup", help="Clean up old completed webhooks")
+    webhook_cleanup_parser.add_argument(
+        "--days-old", type=int, default=30, help="Clean webhooks older than this many days (default: 30)"
+    )
+    
     args = parser.parse_args()
 
-    # Validate workflow path
-    workflow_path = Path(args.workflow_path)
-    if not workflow_path.exists():
-        print(
-            f"Error: Workflow file '{workflow_path}' does not exist.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    if not workflow_path.is_file():
-        print(f"Error: '{workflow_path}' is not a file.", file=sys.stderr)
-        sys.exit(1)
-
-    # Generate a run ID if not provided
-    run_id = args.run_id or f"cli-run-{str(uuid.uuid4())}"
-
-    print(f"Running workflow from: {workflow_path}")
-    print(f"Run ID: {run_id}")
-    print("-" * 50)
-
-    try:
-        # Determine file type and load workflow
-        if workflow_path.suffix.lower() in [".yaml", ".yml"]:
-            # Run YAML workflow
-            result = run_workflow_from_yaml(
-                yaml_path=str(workflow_path), workflow_run_id=run_id
-            )
-        elif workflow_path.suffix.lower() == ".py":
-            # Load and run highway_dsl Python workflow
-            workflow = load_workflow_from_python(str(workflow_path))
-
-            # Convert to YAML and run
-            yaml_content = workflow.to_yaml()
-
-            # Create a temporary YAML file
-            import tempfile
-
-            with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".yaml", delete=False
-            ) as temp_file:
-                temp_file.write(yaml_content)
-                temp_file_path = temp_file.name
-
-            try:
-                result = run_workflow_from_yaml(
-                    yaml_path=temp_file_path, workflow_run_id=run_id
-                )
-            finally:
-                # Clean up temporary file
-                os.unlink(temp_file_path)
+    # Handle command if one was provided
+    if args.command == "webhooks":
+        if args.webhook_cmd == "run":
+            run_webhooks_command(args)
+        elif args.webhook_cmd == "status":
+            webhook_status_command(args)
+        elif args.webhook_cmd == "cleanup":
+            webhook_cleanup_command(args)
         else:
+            webhook_parser.print_help()
+    elif args.command == "run":
+        # Validate workflow path
+        workflow_path = Path(args.workflow_path)
+        if not workflow_path.exists():
             print(
-                f"Error: Unsupported file format '{workflow_path.suffix}'",
+                f"Error: Workflow file '{workflow_path}' does not exist.",
                 file=sys.stderr,
             )
             sys.exit(1)
 
+        if not workflow_path.is_file():
+            print(f"Error: '{workflow_path}' is not a file.", file=sys.stderr)
+            sys.exit(1)
+
+        # Generate a run ID if not provided
+        run_id = args.run_id or f"cli-run-{str(uuid.uuid4())}"
+
+        print(f"Running workflow from: {workflow_path}")
+        print(f"Run ID: {run_id}")
         print("-" * 50)
 
-        # Check workflow status and report properly
-        if result["status"] == "completed":
-            print("✅ Workflow completed successfully!")
-        elif result["status"] == "failed":
-            print("❌ Workflow failed!")
-            if result.get("error"):
-                print(f"Error: {result['error']}")
-            sys.exit(1)
-        else:
-            print(f"⚠️  Workflow finished with status: {result['status']}")
-            if result.get("error"):
-                print(f"Error: {result['error']}")
-
-        # Get detailed task status from database
         try:
-            from highway_core.config import settings
-            from highway_core.persistence.database import get_db_manager
-            
-            db_manager = get_db_manager(engine_url=settings.DATABASE_URL)
+            # Determine file type and load workflow
+            if workflow_path.suffix.lower() in [".yaml", ".yml"]:
+                # Run YAML workflow
+                result = run_workflow_from_yaml(
+                    yaml_path=str(workflow_path), workflow_run_id=run_id
+                )
+            elif workflow_path.suffix.lower() == ".py":
+                # Load and run highway_dsl Python workflow
+                workflow = load_workflow_from_python(str(workflow_path))
 
-            # Get all tasks for this workflow
-            tasks = db_manager.get_tasks_by_workflow(result["workflow_id"])
+                # Convert to YAML and run
+                yaml_content = workflow.to_yaml()
 
-            if tasks:
-                print("\n📋 Task Summary:")
-                completed_tasks = [
-                    task for task in tasks if task.get("status") == "completed"
-                ]
-                failed_tasks = [
-                    task for task in tasks if task.get("status") == "failed"
-                ]
+                # Create a temporary YAML file
+                import tempfile
 
-                print(f"  ✅ Completed: {len(completed_tasks)}")
-                print(f"  ❌ Failed: {len(failed_tasks)}")
-                print(f"  📊 Total: {len(tasks)}")
+                with tempfile.NamedTemporaryFile(
+                    mode="w", suffix=".yaml", delete=False
+                ) as temp_file:
+                    temp_file.write(yaml_content)
+                    temp_file_path = temp_file.name
 
-                if failed_tasks:
-                    print("\n❌ Failed Tasks:")
-                    for task in failed_tasks:
-                        print(
-                            f"  - {task['task_id']}: {task.get('error_message', 'Unknown error')}"
-                        )
+                try:
+                    result = run_workflow_from_yaml(
+                        yaml_path=temp_file_path, workflow_run_id=run_id
+                    )
+                finally:
+                    # Clean up temporary file
+                    os.unlink(temp_file_path)
+            else:
+                print(
+                    f"Error: Unsupported file format '{workflow_path.suffix}'",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
 
-            db_manager.close()
+            print("-" * 50)
 
-        except ImportError as e:
-            print(f"\n⚠️  Could not import required modules for detailed task information: {e}")
+            # Check workflow status and report properly
+            if result["status"] == "completed":
+                print("✅ Workflow completed successfully!")
+            elif result["status"] == "failed":
+                print("❌ Workflow failed!")
+                if result.get("error"):
+                    print(f"Error: {result['error']}")
+                sys.exit(1)
+            else:
+                print(f"⚠️  Workflow finished with status: {result['status']}")
+                if result.get("error"):
+                    print(f"Error: {result['error']}")
+
+            # Get detailed task status from database
+            try:
+                from highway_core.config import settings
+                from highway_core.persistence.database import get_db_manager
+                
+                db_manager = get_db_manager(engine_url=settings.DATABASE_URL)
+
+                # Get all tasks for this workflow
+                tasks = db_manager.get_tasks_by_workflow(result["workflow_id"])
+
+                if tasks:
+                    print("\n📋 Task Summary:")
+                    completed_tasks = [
+                        task for task in tasks if task.get("status") == "completed"
+                    ]
+                    failed_tasks = [
+                        task for task in tasks if task.get("status") == "failed"
+                    ]
+
+                    print(f"  ✅ Completed: {len(completed_tasks)}")
+                    print(f"  ❌ Failed: {len(failed_tasks)}")
+                    print(f"  📊 Total: {len(tasks)}")
+
+                    if failed_tasks:
+                        print("\n❌ Failed Tasks:")
+                        for task in failed_tasks:
+                            print(
+                                f"  - {task['task_id']}: {task.get('error_message', 'Unknown error')}"
+                            )
+
+                db_manager.close()
+
+            except ImportError as e:
+                print(f"\n⚠️  Could not import required modules for detailed task information: {e}")
+            except Exception as e:
+                print(f"\n⚠️  Could not retrieve detailed task information: {e}")
+
         except Exception as e:
-            print(f"\n⚠️  Could not retrieve detailed task information: {e}")
-
-    except Exception as e:
-        print(f"❌ Error running workflow: {e}", file=sys.stderr)
-        sys.exit(1)
+            print(f"❌ Error running workflow: {e}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        parser.print_help()
 
 
 if __name__ == "__main__":

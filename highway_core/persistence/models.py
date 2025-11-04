@@ -46,6 +46,11 @@ class Workflow(Base):  # type: ignore
     updated_at = Column(
         DateTime, default=utc_now, onupdate=utc_now
     )  # Added for compatibility
+    # Enterprise fields
+    priority = Column(String(20), default="normal")  # low, normal, high, critical
+    tags_json = Column(Text)  # JSON string for tags
+    parent_workflow_id = Column(String, ForeignKey("workflows.workflow_id"))  # For nested workflows
+    timeout_seconds = Column(Integer, default=3600)  # Workflow timeout
 
     # Relationship
     tasks = relationship(
@@ -54,6 +59,17 @@ class Workflow(Base):  # type: ignore
     memory_entries = relationship(
         "WorkflowMemory"
     )  # Removed back_populates to avoid join issues
+    child_workflows = relationship("Workflow", remote_side="Workflow.workflow_id")
+
+    @property
+    def tags(self):
+        if self.tags_json:
+            return json.loads(self.tags_json)
+        return []
+
+    @tags.setter
+    def tags(self, value):
+        self.tags_json = json.dumps(value)
 
     @property
     def variables(self):
@@ -107,6 +123,14 @@ class Task(Base):  # type: ignore
     error_message = Column(Text)
     result_value_json = Column(Text)
 
+    # Enterprise fields
+    priority = Column(String(20), default="normal")  # low, normal, high, critical
+    tags_json = Column(Text)  # JSON string for tags
+    timeout_seconds = Column(Integer, default=300)  # Task timeout
+    max_retries = Column(Integer, default=3)  # Max retries for this task
+    retry_delay_seconds = Column(Integer, default=5)  # Delay between retries
+    result_type = Column(String(50), default="unknown")  # success, partial, failed
+
     # Relationship
     workflow = relationship("Workflow", back_populates="tasks")
     # Removed relationship to avoid join condition issues since there's no proper FK
@@ -122,6 +146,16 @@ class Task(Base):  # type: ignore
         foreign_keys="TaskDependency.depends_on_task_id",
         cascade="all, delete-orphan",
     )
+
+    @property
+    def tags(self):
+        if self.tags_json:
+            return json.loads(self.tags_json)
+        return []
+
+    @tags.setter
+    def tags(self, value):
+        self.tags_json = json.dumps(value)
 
     @property
     def command(self):
@@ -278,6 +312,9 @@ class WorkflowResult(Base):  # type: ignore
     result_key = Column(String(255), nullable=False)
     result_value_json = Column(Text)
     created_at = Column(DateTime, default=utc_now)
+    # Enterprise fields
+    result_type = Column(String(50), default="success")  # success, partial, failed
+    error_details_json = Column(Text)  # JSON string for detailed error information
 
     # Ensure unique result keys per task/workflow combination
     __table_args__ = (
@@ -288,6 +325,16 @@ class WorkflowResult(Base):  # type: ignore
             name="uix_workflow_task_result_unique",
         ),
     )
+
+    @property
+    def error_details(self):
+        if self.error_details_json:
+            return json.loads(self.error_details_json)
+        return {}
+
+    @error_details.setter
+    def error_details(self, value):
+        self.error_details_json = json.dumps(value)
 
     @property
     def result_value(self):
@@ -371,3 +418,138 @@ Index("idx_tasks_workflow_id", Task.workflow_id)
 Index("idx_tasks_workflow_status", Task.workflow_id, Task.status)
 Index("idx_tasks_status", Task.status)
 Index("idx_workflow_results_workflow", WorkflowResult.workflow_id)
+
+
+class Webhook(Base):  # type: ignore
+    """
+    Webhook model for tracking webhook events and their execution status
+    """
+    __tablename__ = "webhooks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    task_id = Column(String, nullable=False)  # References tasks table (task_id)
+    execution_id = Column(String, nullable=False)  # References task_executions table
+    workflow_id = Column(String, ForeignKey("workflows.workflow_id"), nullable=False)
+    url = Column(String, nullable=False)  # Webhook endpoint URL
+    method = Column(String(10), default="POST")  # HTTP method (GET, POST, PUT, PATCH, DELETE)
+    headers_json = Column(Text)  # JSON string for additional headers
+    payload_json = Column(Text)  # JSON payload to send
+    webhook_type = Column(String(50), nullable=False)  # on_start, on_complete, on_fail, on_retry, on_custom
+    status = Column(String(50), default="pending")  # pending, sending, sent, failed, retry_scheduled, cancelled
+    retry_count = Column(Integer, default=0)
+    max_retries = Column(Integer, default=3)
+    next_retry_at = Column(DateTime)  # When to retry next
+    response_status = Column(Integer)  # HTTP response status code
+    response_headers_json = Column(Text)  # JSON string for response headers
+    response_body = Column(Text)  # Response body from webhook
+    rate_limit_requests = Column(Integer, default=10)  # Max requests per time window
+    rate_limit_window = Column(Integer, default=60)  # Time window in seconds
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
+
+    # Ensure unique combination of task_id, execution_id, workflow_id, and webhook_type
+    __table_args__ = (
+        UniqueConstraint(
+            "execution_id", "task_id", "workflow_id", "webhook_type",
+            name="uix_webhook_task_execution_type"
+        ),
+        Index("idx_webhooks_workflow", "workflow_id"),
+        Index("idx_webhooks_status", "status"),
+        Index("idx_webhooks_next_retry", "next_retry_at"),
+        Index("idx_webhooks_type", "webhook_type"),
+    )
+
+    @property
+    def headers(self):
+        if self.headers_json:
+            return json.loads(self.headers_json)
+        return {}
+
+    @headers.setter
+    def headers(self, value):
+        self.headers_json = json.dumps(value)
+
+    @property
+    def payload(self):
+        if self.payload_json:
+            return json.loads(self.payload_json)
+        return {}
+
+    @payload.setter
+    def payload(self, value):
+        self.payload_json = json.dumps(value)
+
+    @property
+    def response_headers(self):
+        if self.response_headers_json:
+            return json.loads(self.response_headers_json)
+        return {}
+
+    @response_headers.setter
+    def response_headers(self, value):
+        self.response_headers_json = json.dumps(value)
+
+
+class AdminTask(Base):  # type: ignore
+    """
+    AdminTask model for managing administrative operations like cleanup, cancellation, etc.
+    """
+    __tablename__ = "admin_tasks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    task_type = Column(String(100), nullable=False)  # cleanup_old_workflows, cancel_workflow, etc.
+    target_id = Column(String, nullable=False)  # workflow_id or task_id
+    status = Column(String(50), default="pending")  # pending, running, completed, failed
+    parameters_json = Column(Text)  # JSON string for configurable parameters
+    created_at = Column(DateTime, default=utc_now)
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime)
+    error_message = Column(Text)
+
+    # Indexes for performance
+    __table_args__ = (
+        Index("idx_admin_tasks_type", "task_type"),
+        Index("idx_admin_tasks_status", "status"),
+        Index("idx_admin_tasks_target", "target_id"),
+    )
+
+    @property
+    def parameters(self):
+        if self.parameters_json:
+            return json.loads(self.parameters_json)
+        return {}
+
+    @parameters.setter
+    def parameters(self, value):
+        self.parameters_json = json.dumps(value)
+
+
+class WorkflowTemplate(Base):  # type: ignore
+    """
+    WorkflowTemplate model for reusable workflow definitions
+    """
+    __tablename__ = "workflow_templates"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text)
+    workflow_definition_json = Column(Text, nullable=False)  # JSON string of workflow definition
+    created_by = Column(String(255))
+    created_at = Column(DateTime, default=utc_now)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_workflow_templates_name", "name"),
+        Index("idx_workflow_templates_created_by", "created_by"),
+    )
+
+    @property
+    def workflow_definition(self):
+        if self.workflow_definition_json:
+            return json.loads(self.workflow_definition_json)
+        return {}
+
+    @workflow_definition.setter
+    def workflow_definition(self, value):
+        self.workflow_definition_json = json.dumps(value)
