@@ -20,7 +20,7 @@ if dotenv_path.exists():
 
 class Settings:
     # Database settings
-    raw_db_url = os.getenv("DATABASE_URL", "sqlite:///~/.highway/highway.sqlite3")
+    raw_db_url = os.getenv("DATABASE_URL", "sqlite:///~/.highway.sqlite3")
     DATABASE_URL: str = raw_db_url.replace("~", os.path.expanduser("~"))
 
     # Redis settings

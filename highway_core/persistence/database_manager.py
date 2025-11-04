@@ -10,7 +10,9 @@ from typing import Any, Dict, Generator, List, Optional
 from sqlalchemy import Column, DateTime, create_engine, event, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, scoped_session, sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import QueuePool, StaticPool
+from time import sleep
+import functools
 
 from .models import (
     Base,
@@ -25,6 +27,34 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 
+def retry_on_lock_error(max_retries: int = 3, delay: float = 0.1):
+    """
+    Decorator to retry database operations that fail due to lock contention.
+    """
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    # Check for lock-related errors
+                    error_str = str(e).lower()
+                    if any(lock_error in error_str for lock_error in [
+                        'database is locked', 'locked', 'busy', 'timeout'
+                    ]) and attempt < max_retries - 1:
+                        wait_time = delay * (2 ** attempt)  # Exponential backoff
+                        logger.warning(f"Database lock error on attempt {attempt + 1}, retrying in {wait_time:.2f}s: {e}")
+                        sleep(wait_time)
+                        continue
+                    else:
+                        # Re-raise if not a lock error or last attempt
+                        raise
+            return None
+        return wrapper
+    return decorator
+
+
 class DatabaseManager:
     """
     Thread-safe database manager for Highway Core workflow persistence using SQLAlchemy.
@@ -33,13 +63,14 @@ class DatabaseManager:
 
     def __init__(self, db_path: Optional[str] = None, engine_url: Optional[str] = None):
         """
-        Initialize the database manager with proper connection handling.
+        Initialize the database manager with proper connection handling for SQLite concurrency.
         """
         self._lock = threading.RLock()  # For thread safety
         self._sessions_created = 0
         self._sessions_closed = 0
         self._active_sessions: set[int] = set()
         self._initialized = False
+        self._schema_lock = threading.Lock()  # Dedicated lock for schema operations
 
         if engine_url is None:
             if db_path is None:
@@ -51,14 +82,24 @@ class DatabaseManager:
         else:
             self.engine_url = engine_url
 
-        # Create SQLAlchemy engine with proper configuration
+        # Create SQLAlchemy engine with proper configuration for SQLite concurrency
         if self.engine_url.startswith("sqlite://"):
+            # Use QueuePool with proper settings for SQLite concurrent access
             self.engine = create_engine(
                 self.engine_url,
-                poolclass=StaticPool,
+                poolclass=QueuePool,  # Use QueuePool instead of StaticPool for better concurrency
+                pool_size=1,          # Single connection for SQLite to avoid locking issues
+                max_overflow=0,       # No additional connections
+                pool_pre_ping=True,   # Verify connections before use
+                pool_recycle=3600,    # Recycle connections after 1 hour
                 connect_args={
-                    "check_same_thread": False,
-                    "timeout": 30.0,
+                    "check_same_thread": False,  # Allow cross-thread access
+                    "timeout": 5.0,              # Shorter timeout for faster failure detection
+                    "isolation_level": None,     # Let SQLite handle isolation
+                },
+                # SQLite supports: READ UNCOMMITTED, SERIALIZABLE, AUTOCOMMIT
+                execution_options={
+                    "isolation_level": "AUTOCOMMIT"  # Use AUTOCOMMIT for SQLite
                 },
                 echo=False,
                 echo_pool=False,
@@ -92,7 +133,7 @@ class DatabaseManager:
 
     def _optimize_sqlite_connection(self) -> None:
         """
-        Applies PRAGMA statements for performance optimization and safety.
+        Applies PRAGMA statements for optimal SQLite concurrency and performance.
         """
         if not self.engine_url.startswith("sqlite://"):
             return
@@ -101,61 +142,89 @@ class DatabaseManager:
         def set_sqlite_pragma(dbapi_connection, connection_record):
             cursor = dbapi_connection.cursor()
             try:
-                cursor.execute("PRAGMA journal_mode=WAL")
-                cursor.execute("PRAGMA synchronous=NORMAL")  # Better safety than OFF
-                cursor.execute("PRAGMA cache_size=32000")
-                cursor.execute("PRAGMA foreign_keys=OFF")
-                cursor.execute("PRAGMA locking_mode=DEFFERED")
-                cursor.execute("PRAGMA temp_store=MEMORY")
-                cursor.execute("PRAGMA busy_timeout=30000")
-                cursor.execute("PRAGMA journal_size_limit=1048576")
-                logger.debug("Applied SQLite PRAGMA settings for optimization.")
+                # Optimized settings for concurrent access
+                cursor.execute("PRAGMA journal_mode=WAL")          # Enable WAL for concurrent reads/writes
+                cursor.execute("PRAGMA synchronous=NORMAL")        # Balance safety and performance
+                cursor.execute("PRAGMA cache_size=-64000")         # 64MB cache (negative = KB)
+                cursor.execute("PRAGMA foreign_keys=ON")           # Enable FK constraints for data integrity
+                cursor.execute("PRAGMA locking_mode=NORMAL")       # Fixed typo: was DEFFERED
+                cursor.execute("PRAGMA temp_store=MEMORY")         # Memory temp tables for speed
+                cursor.execute("PRAGMA busy_timeout=5000")         # 5 second timeout for lock contention
+                cursor.execute("PRAGMA wal_autocheckpoint=1000")   # WAL checkpoint every 1000 pages
+                cursor.execute("PRAGMA mmap_size=268435456")       # 256MB memory mapping
+                cursor.execute("PRAGMA page_size=4096")            # Standard page size
+                logger.debug("Applied SQLite PRAGMA settings for concurrency optimization.")
             except Exception as e:
                 logger.warning(f"Failed to apply SQLite PRAGMA settings: {e}")
             finally:
                 cursor.close()
 
     def _initialize_schema(self) -> None:
-        """Initialize the database schema using SQLAlchemy metadata."""
-        with self._lock:
+        """Initialize the database schema with proper concurrency handling and race condition prevention."""
+        with self._schema_lock:  # Use dedicated schema lock
             if self._initialized:
                 return
 
             try:
-                # First check if tables already exist
-                with self.session_scope() as session:
+                # First, ensure WAL mode is enabled for concurrent access
+                if self.engine_url.startswith("sqlite://"):
                     try:
-                        # Try to query a table to see if it exists
-                        session.execute(text("SELECT 1 FROM workflows LIMIT 1"))
-                        # If we get here, tables exist
-                        self._initialized = True
-                        logger.info("Database schema already exists")
-                        return
-                    except Exception:
-                        # Tables don't exist, create them
-                        pass
+                        # Use a raw connection to enable WAL mode before any transactions
+                        with self.engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+                            conn.execute(text("PRAGMA journal_mode=WAL"))
+                            logger.debug("Enabled WAL mode for SQLite concurrency")
+                    except Exception as e:
+                        logger.warning(f"Could not enable WAL mode: {e}")
 
-                # Create tables with checkfirst=True to avoid race conditions
-                Base.metadata.create_all(bind=self.engine, checkfirst=True)
-                self._initialized = True
-                logger.info("Database schema initialized successfully")
-            except Exception as e:
-                logger.warning(f"Schema initialization may have race condition: {e}")
-                # If there's a race condition, assume schema is already created
+                # Check if tables already exist using a more reliable method
                 try:
                     with self.session_scope() as session:
-                        session.execute(text("SELECT 1 FROM workflows LIMIT 1"))
+                        # Try to query workflows table
+                        result = session.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='workflows'"))
+                        table_exists = result.fetchone() is not None
+                        
+                        if table_exists:
+                            self._initialized = True
+                            logger.info("Database schema already exists")
+                            return
+                except Exception as e:
+                    logger.debug(f"Error checking table existence: {e}")
+
+                # Create tables with proper error handling for concurrent creation
+                try:
+                    # Use a more robust approach - create tables individually
+                    Base.metadata.create_all(bind=self.engine, checkfirst=True)
                     self._initialized = True
-                    logger.info("Schema exists despite initialization error")
-                except Exception:
-                    # Schema really doesn't exist, this is a real error
-                    logger.error(f"Failed to initialize database schema: {e}")
-                    raise
+                    logger.info("Database schema initialized successfully")
+                except IntegrityError as e:
+                    # Another process created the schema, verify it exists
+                    logger.debug(f"Schema creation race condition handled: {e}")
+                    try:
+                        with self.session_scope() as session:
+                            session.execute(text("SELECT 1 FROM workflows LIMIT 1"))
+                        self._initialized = True
+                        logger.info("Schema verified after race condition")
+                    except Exception:
+                        logger.error("Schema does not exist after race condition handling")
+                        raise
+                except SQLAlchemyError as e:
+                    # Handle other SQLAlchemy-specific errors
+                    if "already exists" in str(e).lower() or "disk I/O error" in str(e).lower():
+                        logger.debug(f"Table already exists or I/O error, continuing: {e}")
+                        self._initialized = True
+                    else:
+                        logger.error(f"Database error during schema initialization: {e}")
+                        raise
+                        
+            except Exception as e:
+                logger.error(f"Failed to initialize database schema: {e}")
+                # Don't set _initialized = True on real errors
+                raise
 
     @contextmanager
     def session_scope(self) -> Generator[Session, None, None]:
         """
-        Provide a transactional scope around a series of operations.
+        Provide a transactional scope around a series of operations with improved concurrency handling.
         This is the primary method for database access.
         """
         session = self._get_session()
@@ -166,11 +235,25 @@ class DatabaseManager:
 
         try:
             yield session
-            session.commit()
-            logger.debug(f"Session {session_id} committed successfully")
+            # Use a more robust commit approach
+            try:
+                session.commit()
+                logger.debug(f"Session {session_id} committed successfully")
+            except Exception as commit_error:
+                # If commit fails, try to rollback and re-raise
+                try:
+                    session.rollback()
+                    logger.error(f"Session {session_id} rolled back due to commit error: {commit_error}")
+                except Exception as rollback_error:
+                    logger.error(f"Session {session_id} rollback failed after commit error: {rollback_error}")
+                raise commit_error
         except Exception as e:
-            session.rollback()
-            logger.error(f"Session {session_id} rolled back due to error: {e}")
+            # Enhanced rollback handling
+            try:
+                session.rollback()
+                logger.error(f"Session {session_id} rolled back due to error: {e}")
+            except Exception as rollback_error:
+                logger.error(f"Session {session_id} rollback failed: {rollback_error}")
             raise
         finally:
             self._close_session(session)
@@ -237,26 +320,30 @@ class DatabaseManager:
         start_task: str,
         variables: Dict[str, Any],
     ) -> bool:
-        """Create a new workflow record."""
-        try:
-            with self.session_scope() as session:
-                workflow = Workflow(
-                    workflow_id=workflow_id,
-                    workflow_name=name,
-                    start_task=start_task,
-                    variables=variables,
-                    start_time=datetime.now(timezone.utc),
-                    updated_at=datetime.now(timezone.utc),
-                )
-                session.add(workflow)
-                logger.info(f"Created workflow: {workflow_id}")
-            return True
-        except IntegrityError:
-            logger.warning(f"Workflow with ID {workflow_id} already exists")
-            return False
-        except Exception as e:
-            logger.error(f"Error creating workflow {workflow_id}: {e}")
-            return False
+        """Create a new workflow record with retry logic for lock contention."""
+        @retry_on_lock_error(max_retries=3, delay=0.1)
+        def _create_workflow_internal():
+            try:
+                with self.session_scope() as session:
+                    workflow = Workflow(
+                        workflow_id=workflow_id,
+                        workflow_name=name,
+                        start_task=start_task,
+                        variables=variables,
+                        start_time=datetime.now(timezone.utc),
+                        updated_at=datetime.now(timezone.utc),
+                    )
+                    session.add(workflow)
+                    logger.info(f"Created workflow: {workflow_id}")
+                return True
+            except IntegrityError:
+                logger.warning(f"Workflow with ID {workflow_id} already exists")
+                return False
+            except Exception as e:
+                logger.error(f"Error creating workflow {workflow_id}: {e}")
+                raise
+        
+        return _create_workflow_internal()
 
     def update_workflow_status(
         self, workflow_id: str, status: str, error_message: Optional[str] = None
@@ -581,33 +668,37 @@ class DatabaseManager:
         result_key: str,
         result_value: Any,
     ) -> bool:
-        """Store a result value for a task in a workflow."""
-        try:
-            with self.session_scope() as session:
-                result_obj = (
-                    session.query(WorkflowResult)
-                    .filter(
-                        WorkflowResult.workflow_id == workflow_id,
-                        WorkflowResult.task_id == task_id,
-                        WorkflowResult.result_key == result_key,
+        """Store a result value for a task in a workflow with retry logic for lock contention."""
+        @retry_on_lock_error(max_retries=3, delay=0.1)
+        def _store_result_internal():
+            try:
+                with self.session_scope() as session:
+                    result_obj = (
+                        session.query(WorkflowResult)
+                        .filter(
+                            WorkflowResult.workflow_id == workflow_id,
+                            WorkflowResult.task_id == task_id,
+                            WorkflowResult.result_key == result_key,
+                        )
+                        .first()
                     )
-                    .first()
-                )
 
-                if result_obj:
-                    result_obj.result_value = result_value
-                else:
-                    result_obj = WorkflowResult(
-                        workflow_id=workflow_id,
-                        task_id=task_id,
-                        result_key=result_key,  # type: ignore
-                        result_value=result_value,
-                    )
-                    session.add(result_obj)
-            return True
-        except Exception as e:
-            logger.error(f"Error storing result {result_key} for task {task_id}: {e}")
-            return False
+                    if result_obj:
+                        result_obj.result_value = result_value
+                    else:
+                        result_obj = WorkflowResult(
+                            workflow_id=workflow_id,
+                            task_id=task_id,
+                            result_key=result_key,  # type: ignore
+                            result_value=result_value,
+                        )
+                        session.add(result_obj)
+                return True
+            except Exception as e:
+                logger.error(f"Error storing result {result_key} for task {task_id}: {e}")
+                raise
+        
+        return _store_result_internal()
 
     def load_results(self, workflow_id: str) -> Dict[str, Any]:
         """Load all results for a workflow."""

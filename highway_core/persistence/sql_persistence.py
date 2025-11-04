@@ -98,6 +98,9 @@ class SQLPersistence(PersistenceManager):
             # Store the result in workflow results
             self.db_manager.store_result(workflow_id, task_id, task_result_key, result)
 
+        # Mark the task as completed in the database
+        self.db_manager.update_task_status(task_id, "completed")
+
     def fail_task(self, workflow_id: str, task_id: str, error_message: str) -> None:
         """Record task failure with error details"""
         self.db_manager.update_task_status(
