@@ -25,11 +25,12 @@ class Settings:
     USE_PG_FOR_TESTS: bool = os.getenv("USE_PG", "false").lower() in ("true", "1")
 
     # --- Database settings ---
-    POSTGRES_USER: Optional[str] = os.getenv("POSTGRES_USER")
-    POSTGRES_PASSWORD: Optional[str] = os.getenv("POSTGRES_PASSWORD")
-    POSTGRES_HOST: Optional[str] = os.getenv("POSTGRES_HOST")
-    POSTGRES_PORT: Optional[str] = os.getenv("POSTGRES_PORT")
-    POSTGRES_DB: Optional[str] = os.getenv("POSTGRES_DB")
+    # Support both POSTGRES_* and DB_* naming conventions
+    POSTGRES_USER: Optional[str] = os.getenv("POSTGRES_USER") or os.getenv("DB_USER")
+    POSTGRES_PASSWORD: Optional[str] = os.getenv("POSTGRES_PASSWORD") or os.getenv("DB_PASSWORD")
+    POSTGRES_HOST: Optional[str] = os.getenv("POSTGRES_HOST") or os.getenv("DB_HOST")
+    POSTGRES_PORT: Optional[str] = os.getenv("POSTGRES_PORT") or os.getenv("DB_PORT")
+    POSTGRES_DB: Optional[str] = os.getenv("POSTGRES_DB") or os.getenv("DB_NAME")
 
     # Check if all PG variables are set
     use_postgres = all(

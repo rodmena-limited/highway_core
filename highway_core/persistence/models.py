@@ -418,9 +418,9 @@ class TaskDependency(Base):  # type: ignore
 
 # Create indexes that were in the original schema
 Index("idx_workflows_status", Workflow.status)
-Index("idx_tasks_workflow_id", Task.workflow_id)
-Index("idx_tasks_workflow_status", Task.workflow_id, Task.status)
-Index("idx_tasks_status", Task.status)
+# Index("idx_tasks_workflow_id", Task.workflow_id)  # Duplicate - already defined in Task.__table_args__
+# Index("idx_tasks_workflow_status", Task.workflow_id, Task.status)  # Duplicate - already defined in Task.__table_args__
+# Index("idx_tasks_status", Task.status)  # Duplicate - already defined in Task.__table_args__
 Index("idx_workflow_results_workflow", WorkflowResult.workflow_id)
 
 
