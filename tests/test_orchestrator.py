@@ -48,6 +48,9 @@ def test_orchestrator_initialization():
     # Remove assertion about executor as it's not a public attribute
     assert orchestrator.bulkhead_manager is not None
 
+    # Cleanup
+    persistence_manager.close()
+
 
 def test_run_method():
     """Test the run method with a simple workflow."""
@@ -86,6 +89,9 @@ def test_run_method():
 
     # Verify that the workflow completed by checking if tasks are marked as completed
     assert "start_task" in orchestrator.completed_tasks
+
+    # Cleanup
+    persistence_manager.close()
 
 
 def test_run_method_with_missing_task():
@@ -126,6 +132,9 @@ def test_run_method_with_missing_task():
 
     # Run the workflow
     orchestrator.run()
+
+    # Cleanup
+    persistence_manager.close()
 
 
 def test_run_method_with_invalid_operator_type():
@@ -181,6 +190,9 @@ def test_run_method_with_invalid_operator_type():
 
     # Restore the handler
     orchestrator.handler_map["task"] = original_handler
+
+    # Cleanup
+    persistence_manager.close()
 
 
 if __name__ == "__main__":

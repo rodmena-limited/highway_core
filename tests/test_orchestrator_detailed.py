@@ -48,6 +48,9 @@ def test_orchestrator_initialization():
     assert "foreach" in orchestrator.handler_map
     assert "while" in orchestrator.handler_map
 
+    # Cleanup
+    persistence_manager.close()
+
 
 def test_orchestrator_run_method():
     """Test the orchestrator's run method with a simple workflow"""
@@ -77,6 +80,9 @@ def test_orchestrator_run_method():
     # Check that the task was executed by checking the state
     # We can't easily test this without a more complex setup, but at least run it
     # to make sure it doesn't crash
+
+    # Cleanup
+    persistence_manager.close()
 
 
 def test_orchestrator_with_condition_task():
@@ -123,6 +129,9 @@ def test_orchestrator_with_condition_task():
     # Run the workflow
     orchestrator.run()
 
+    # Cleanup
+    persistence_manager.close()
+
 
 def test_orchestrator_with_wait_task():
     """Test orchestrator with a wait task"""
@@ -157,6 +166,9 @@ def test_orchestrator_with_wait_task():
 
     # Run the workflow
     orchestrator.run()
+
+    # Cleanup
+    persistence_manager.close()
 
 
 def test_orchestrator_with_parallel_task():
@@ -201,3 +213,6 @@ def test_orchestrator_with_parallel_task():
 
     # Run the workflow
     orchestrator.run()
+
+    # Cleanup
+    persistence_manager.close()

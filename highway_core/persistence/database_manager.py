@@ -1,3 +1,4 @@
+import functools
 import json
 import logging
 import os
@@ -5,14 +6,13 @@ import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from time import sleep
 from typing import Any, Dict, Generator, List, Optional
 
 from sqlalchemy import Column, DateTime, create_engine, event, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, scoped_session, sessionmaker
 from sqlalchemy.pool import QueuePool, StaticPool
-from time import sleep
-import functools
 
 from .models import (
     Base,
@@ -31,6 +31,7 @@ def retry_on_lock_error(max_retries: int = 3, delay: float = 0.1):
     """
     Decorator to retry database operations that fail due to lock contention.
     """
+
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
@@ -40,18 +41,31 @@ def retry_on_lock_error(max_retries: int = 3, delay: float = 0.1):
                 except Exception as e:
                     # Check for lock-related errors
                     error_str = str(e).lower()
-                    if any(lock_error in error_str for lock_error in [
-                        'database is locked', 'locked', 'busy', 'timeout'
-                    ]) and attempt < max_retries - 1:
-                        wait_time = delay * (2 ** attempt)  # Exponential backoff
-                        logger.warning(f"Database lock error on attempt {attempt + 1}, retrying in {wait_time:.2f}s: {e}")
+                    if (
+                        any(
+                            lock_error in error_str
+                            for lock_error in [
+                                "database is locked",
+                                "locked",
+                                "busy",
+                                "timeout",
+                            ]
+                        )
+                        and attempt < max_retries - 1
+                    ):
+                        wait_time = delay * (2**attempt)  # Exponential backoff
+                        logger.warning(
+                            f"Database lock error on attempt {attempt + 1}, retrying in {wait_time:.2f}s: {e}"
+                        )
                         sleep(wait_time)
                         continue
                     else:
                         # Re-raise if not a lock error or last attempt
                         raise
             return None
+
         return wrapper
+
     return decorator
 
 
@@ -88,14 +102,14 @@ class DatabaseManager:
             self.engine = create_engine(
                 self.engine_url,
                 poolclass=QueuePool,  # Use QueuePool instead of StaticPool for better concurrency
-                pool_size=1,          # Single connection for SQLite to avoid locking issues
-                max_overflow=0,       # No additional connections
-                pool_pre_ping=True,   # Verify connections before use
-                pool_recycle=3600,    # Recycle connections after 1 hour
+                pool_size=1,  # Single connection for SQLite to avoid locking issues
+                max_overflow=0,  # No additional connections
+                pool_pre_ping=True,  # Verify connections before use
+                pool_recycle=3600,  # Recycle connections after 1 hour
                 connect_args={
                     "check_same_thread": False,  # Allow cross-thread access
-                    "timeout": 5.0,              # Shorter timeout for faster failure detection
-                    "isolation_level": None,     # Let SQLite handle isolation
+                    "timeout": 5.0,  # Shorter timeout for faster failure detection
+                    "isolation_level": None,  # Let SQLite handle isolation
                 },
                 # SQLite supports: READ UNCOMMITTED, SERIALIZABLE, AUTOCOMMIT
                 execution_options={
@@ -143,17 +157,31 @@ class DatabaseManager:
             cursor = dbapi_connection.cursor()
             try:
                 # Optimized settings for concurrent access
-                cursor.execute("PRAGMA journal_mode=WAL")          # Enable WAL for concurrent reads/writes
-                cursor.execute("PRAGMA synchronous=NORMAL")        # Balance safety and performance
-                cursor.execute("PRAGMA cache_size=-64000")         # 64MB cache (negative = KB)
-                cursor.execute("PRAGMA foreign_keys=ON")           # Enable FK constraints for data integrity
-                cursor.execute("PRAGMA locking_mode=NORMAL")       # Fixed typo: was DEFFERED
-                cursor.execute("PRAGMA temp_store=MEMORY")         # Memory temp tables for speed
-                cursor.execute("PRAGMA busy_timeout=5000")         # 5 second timeout for lock contention
-                cursor.execute("PRAGMA wal_autocheckpoint=1000")   # WAL checkpoint every 1000 pages
-                cursor.execute("PRAGMA mmap_size=268435456")       # 256MB memory mapping
-                cursor.execute("PRAGMA page_size=4096")            # Standard page size
-                logger.debug("Applied SQLite PRAGMA settings for concurrency optimization.")
+                cursor.execute(
+                    "PRAGMA journal_mode=WAL"
+                )  # Enable WAL for concurrent reads/writes
+                cursor.execute(
+                    "PRAGMA synchronous=NORMAL"
+                )  # Balance safety and performance
+                cursor.execute("PRAGMA cache_size=-64000")  # 64MB cache (negative = KB)
+                cursor.execute(
+                    "PRAGMA foreign_keys=ON"
+                )  # Enable FK constraints for data integrity
+                cursor.execute("PRAGMA locking_mode=NORMAL")  # Fixed typo: was DEFFERED
+                cursor.execute(
+                    "PRAGMA temp_store=MEMORY"
+                )  # Memory temp tables for speed
+                cursor.execute(
+                    "PRAGMA busy_timeout=5000"
+                )  # 5 second timeout for lock contention
+                cursor.execute(
+                    "PRAGMA wal_autocheckpoint=1000"
+                )  # WAL checkpoint every 1000 pages
+                cursor.execute("PRAGMA mmap_size=268435456")  # 256MB memory mapping
+                cursor.execute("PRAGMA page_size=4096")  # Standard page size
+                logger.debug(
+                    "Applied SQLite PRAGMA settings for concurrency optimization."
+                )
             except Exception as e:
                 logger.warning(f"Failed to apply SQLite PRAGMA settings: {e}")
             finally:
@@ -170,7 +198,9 @@ class DatabaseManager:
                 if self.engine_url.startswith("sqlite://"):
                     try:
                         # Use a raw connection to enable WAL mode before any transactions
-                        with self.engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+                        with self.engine.connect().execution_options(
+                            isolation_level="AUTOCOMMIT"
+                        ) as conn:
                             conn.execute(text("PRAGMA journal_mode=WAL"))
                             logger.debug("Enabled WAL mode for SQLite concurrency")
                     except Exception as e:
@@ -180,9 +210,13 @@ class DatabaseManager:
                 try:
                     with self.session_scope() as session:
                         # Try to query workflows table
-                        result = session.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='workflows'"))
+                        result = session.execute(
+                            text(
+                                "SELECT name FROM sqlite_master WHERE type='table' AND name='workflows'"
+                            )
+                        )
                         table_exists = result.fetchone() is not None
-                        
+
                         if table_exists:
                             self._initialized = True
                             logger.info("Database schema already exists")
@@ -205,17 +239,26 @@ class DatabaseManager:
                         self._initialized = True
                         logger.info("Schema verified after race condition")
                     except Exception:
-                        logger.error("Schema does not exist after race condition handling")
+                        logger.error(
+                            "Schema does not exist after race condition handling"
+                        )
                         raise
                 except SQLAlchemyError as e:
                     # Handle other SQLAlchemy-specific errors
-                    if "already exists" in str(e).lower() or "disk I/O error" in str(e).lower():
-                        logger.debug(f"Table already exists or I/O error, continuing: {e}")
+                    if (
+                        "already exists" in str(e).lower()
+                        or "disk I/O error" in str(e).lower()
+                    ):
+                        logger.debug(
+                            f"Table already exists or I/O error, continuing: {e}"
+                        )
                         self._initialized = True
                     else:
-                        logger.error(f"Database error during schema initialization: {e}")
+                        logger.error(
+                            f"Database error during schema initialization: {e}"
+                        )
                         raise
-                        
+
             except Exception as e:
                 logger.error(f"Failed to initialize database schema: {e}")
                 # Don't set _initialized = True on real errors
@@ -243,9 +286,13 @@ class DatabaseManager:
                 # If commit fails, try to rollback and re-raise
                 try:
                     session.rollback()
-                    logger.error(f"Session {session_id} rolled back due to commit error: {commit_error}")
+                    logger.error(
+                        f"Session {session_id} rolled back due to commit error: {commit_error}"
+                    )
                 except Exception as rollback_error:
-                    logger.error(f"Session {session_id} rollback failed after commit error: {rollback_error}")
+                    logger.error(
+                        f"Session {session_id} rollback failed after commit error: {rollback_error}"
+                    )
                 raise commit_error
         except Exception as e:
             # Enhanced rollback handling
@@ -321,6 +368,7 @@ class DatabaseManager:
         variables: Dict[str, Any],
     ) -> bool:
         """Create a new workflow record with retry logic for lock contention."""
+
         @retry_on_lock_error(max_retries=3, delay=0.1)
         def _create_workflow_internal():
             try:
@@ -342,7 +390,7 @@ class DatabaseManager:
             except Exception as e:
                 logger.error(f"Error creating workflow {workflow_id}: {e}")
                 raise
-        
+
         return _create_workflow_internal()
 
     def update_workflow_status(
@@ -669,6 +717,7 @@ class DatabaseManager:
         result_value: Any,
     ) -> bool:
         """Store a result value for a task in a workflow with retry logic for lock contention."""
+
         @retry_on_lock_error(max_retries=3, delay=0.1)
         def _store_result_internal():
             try:
@@ -695,9 +744,11 @@ class DatabaseManager:
                         session.add(result_obj)
                 return True
             except Exception as e:
-                logger.error(f"Error storing result {result_key} for task {task_id}: {e}")
+                logger.error(
+                    f"Error storing result {result_key} for task {task_id}: {e}"
+                )
                 raise
-        
+
         return _store_result_internal()
 
     def load_results(self, workflow_id: str) -> Dict[str, Any]:

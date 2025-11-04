@@ -53,10 +53,12 @@ def main():
 
     try:
         # Run the workflow and get status information
-        result = run_workflow_from_yaml(yaml_path=str(workflow_path), workflow_run_id=run_id)
-        
+        result = run_workflow_from_yaml(
+            yaml_path=str(workflow_path), workflow_run_id=run_id
+        )
+
         print("-" * 50)
-        
+
         # Check workflow status and report properly
         if result["status"] == "completed":
             print("✅ Workflow completed successfully!")
@@ -72,29 +74,36 @@ def main():
 
         # Get detailed task status from database
         try:
-            from highway_core.persistence.database_manager import DatabaseManager
             from highway_core.config import settings
+            from highway_core.persistence.database_manager import DatabaseManager
+
             db_manager = DatabaseManager(engine_url=settings.DATABASE_URL)
-            
+
             # Get all tasks for this workflow
             tasks = db_manager.get_tasks_by_workflow(result["workflow_id"])
-            
+
             if tasks:
                 print("\n📋 Task Summary:")
-                completed_tasks = [task for task in tasks if task.get("status") == "completed"]
-                failed_tasks = [task for task in tasks if task.get("status") == "failed"]
-                
+                completed_tasks = [
+                    task for task in tasks if task.get("status") == "completed"
+                ]
+                failed_tasks = [
+                    task for task in tasks if task.get("status") == "failed"
+                ]
+
                 print(f"  ✅ Completed: {len(completed_tasks)}")
                 print(f"  ❌ Failed: {len(failed_tasks)}")
                 print(f"  📊 Total: {len(tasks)}")
-                
+
                 if failed_tasks:
                     print("\n❌ Failed Tasks:")
                     for task in failed_tasks:
-                        print(f"  - {task['task_id']}: {task.get('error_message', 'Unknown error')}")
-            
+                        print(
+                            f"  - {task['task_id']}: {task.get('error_message', 'Unknown error')}"
+                        )
+
             db_manager.close()
-            
+
         except Exception as e:
             print(f"\n⚠️  Could not retrieve detailed task information: {e}")
 

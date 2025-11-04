@@ -97,9 +97,15 @@ def run_workflow_from_yaml(
         try:
             orchestrator.run()
             # Get final workflow status
-            workflow_data = persistence.sql_persistence.db_manager.load_workflow(workflow_run_id)
+            workflow_data = persistence.sql_persistence.db_manager.load_workflow(
+                workflow_run_id
+            )
             return {
-                "status": workflow_data.get("status", "completed") if workflow_data else "completed",
+                "status": (
+                    workflow_data.get("status", "completed")
+                    if workflow_data
+                    else "completed"
+                ),
                 "workflow_id": workflow_run_id,
                 "error": workflow_data.get("error_message") if workflow_data else None,
             }
@@ -116,11 +122,17 @@ def run_workflow_from_yaml(
         # Wait for the result of the workflow execution
         future.result()
         logger.info("Engine: Workflow %s completed successfully.", workflow_model.name)
-        
+
         # Get final workflow status
-        workflow_data = persistence.sql_persistence.db_manager.load_workflow(workflow_run_id)
+        workflow_data = persistence.sql_persistence.db_manager.load_workflow(
+            workflow_run_id
+        )
         return {
-            "status": workflow_data.get("status", "completed") if workflow_data else "completed",
+            "status": (
+                workflow_data.get("status", "completed")
+                if workflow_data
+                else "completed"
+            ),
             "workflow_id": workflow_run_id,
             "error": workflow_data.get("error_message") if workflow_data else None,
         }
@@ -129,11 +141,17 @@ def run_workflow_from_yaml(
             "Engine: Workflow %s failed with error: %s", workflow_model.name, e
         )
         # Get final workflow status even on failure
-        workflow_data = persistence.sql_persistence.db_manager.load_workflow(workflow_run_id)
+        workflow_data = persistence.sql_persistence.db_manager.load_workflow(
+            workflow_run_id
+        )
         return {
-            "status": workflow_data.get("status", "failed") if workflow_data else "failed",
+            "status": (
+                workflow_data.get("status", "failed") if workflow_data else "failed"
+            ),
             "workflow_id": workflow_run_id,
-            "error": workflow_data.get("error_message", str(e)) if workflow_data else str(e),
+            "error": (
+                workflow_data.get("error_message", str(e)) if workflow_data else str(e)
+            ),
         }
     finally:
         bulkhead_manager.shutdown_all()

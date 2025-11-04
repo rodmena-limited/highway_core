@@ -98,12 +98,23 @@ class Orchestrator:
         }
 
         # Only add Docker executor if not running inside Docker AND Docker usage is not disabled
+        # Only add Docker executor if not running inside Docker AND Docker usage is not disabled
         if not is_running_in_docker() and not settings.NO_DOCKER_USE:
-            self.executors["docker"] = DockerExecutor()
-            logger.info(
-                "Orchestrator: Initialized executors for: %s",
-                list(self.executors.keys()),
-            )
+            try:
+                self.executors["docker"] = DockerExecutor()
+                logger.info(
+                    "Orchestrator: Initialized executors for: %s",
+                    list(self.executors.keys()),
+                )
+            except Exception as e:
+                logger.warning(
+                    "Orchestrator: Failed to initialize Docker executor: %s. Continuing with Python executor only.",
+                    e,
+                )
+                logger.info(
+                    "Orchestrator: Initialized executors for: %s",
+                    list(self.executors.keys()),
+                )
         else:
             if settings.NO_DOCKER_USE:
                 logger.info(

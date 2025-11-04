@@ -28,10 +28,10 @@ class SQLPersistence(PersistenceManager):
                      If None, uses ~/.highway.sqlite3 for production and tests/data/highway.sqlite3 for tests
             is_test: Whether this is running in test mode
         """
-        if is_test:
+        if is_test or db_path is not None:
+            # When db_path is provided or is_test=True, use the provided database URL
+            # This ensures proper executor initialization in test environments
             self.db_manager = DatabaseManager(engine_url=settings.DATABASE_URL)
-        elif db_path is not None:
-            self.db_manager = DatabaseManager(db_path)
         else:
             # Use default production database
             self.db_manager = DatabaseManager()

@@ -17,7 +17,9 @@ logger = logging.getLogger(__name__)
 class HybridPersistenceManager(PersistenceManager):
     def __init__(self, db_path: Optional[str] = None, is_test: bool = False):
         # Initialize SQL persistence
-        self.sql_persistence = SQLPersistence(db_path=db_path, is_test=is_test)
+        self.sql_persistence = SQLPersistence(
+            db_path=db_path, is_test=is_test or db_path is not None
+        )
 
         # Initialize Redis connection
         self.redis_client = None
