@@ -10,6 +10,7 @@ from highway_core.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
     from highway_core.engine.executors.base import BaseExecutor
+    from highway_core.engine.orchestrator import Orchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ def _run_sub_workflow(
     available_executors: Optional[
         Dict[str, "BaseExecutor"]
     ] = None,  # Available executors for sub-tasks
+    orchestrator: Optional["Orchestrator"] = None,  # Pass orchestrator for proper error handling
 ) -> None:
     """
     Runs a sub-workflow (like a loop body) to completion.
@@ -65,17 +67,39 @@ def _run_sub_workflow(
 
                 handler_func = sub_handler_map.get(task_clone.operator_type)
                 if handler_func:
-                    # Note: sub-workflows don't get the orchestrator
+                    # Attempt to start the task in the main workflow's persistence
+                    # This might fail if the task is also being tracked by the main workflow, which is fine
+                    task_started = False
+                    if orchestrator and hasattr(orchestrator, 'persistence'):
+                        try:
+                            task_started = orchestrator.persistence.start_task(orchestrator.run_id, task_clone)
+                        except Exception:
+                            # If starting the task fails (e.g., due to duplicate key), 
+                            # we'll still execute the task but won't track it again in this context
+                            task_started = True  # Treat as started to continue execution
+
                     handler_func(
                         task=task_clone,
                         state=state,
-                        orchestrator=None,
+                        orchestrator=orchestrator,  # Pass the orchestrator for proper error handling
                         registry=registry,  # type: ignore
                         bulkhead_manager=bulkhead_manager,  # type: ignore
                         executor=selected_sub_executor,
                         resource_manager=None,  # Pass None for resource manager in sub-workflows
                         workflow_run_id="",  # Pass empty string for workflow_run_id in sub-workflows
-                    )  # Pass None for orchestrator
+                    )
+
+                    # After successful execution, mark as complete in main workflow persistence if needed
+                    if task_started and orchestrator and hasattr(orchestrator, 'persistence'):
+                        try:
+                            actual_result = None
+                            if isinstance(task_clone, TaskOperatorModel) and task_clone.result_key:
+                                actual_result = state.get_result(task_clone.result_key)
+                            orchestrator.persistence.complete_task(orchestrator.run_id, task_clone.task_id, actual_result)
+                        except Exception as e:
+                            # If completion fails (e.g., due to duplicate key), that's fine
+                            # The task may have already been completed by the main workflow
+                            logger.debug("Sub-workflow: Could not complete task '%s' in persistence: %s", task_clone.task_id, str(e))
             else:
                 logger.warning(
                     "_run_sub_workflow: Skipping unsupported operator type '%s' for task '%s'",

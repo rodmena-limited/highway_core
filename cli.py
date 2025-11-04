@@ -1,26 +1,59 @@
 #!/usr/bin/env python3
 """
-Highway Core CLI - Run workflows from YAML files
+Highway Core CLI - Run workflows from YAML files or highway_dsl Python files
 """
 
 import argparse
-
-# Add the highway_core to the path
+import importlib.util
 import os
 import sys
 import uuid
 from pathlib import Path
 
+# Add the highway_core to the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from highway_core.engine.engine import run_workflow_from_yaml
 
 
+def load_workflow_from_python(file_path):
+    """Load a workflow from a highway_dsl Python file."""
+    try:
+        # Load the module
+        spec = importlib.util.spec_from_file_location("workflow_module", file_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        
+        # Find and call the workflow function (skip WorkflowBuilder class)
+        for attr_name in dir(module):
+            if attr_name == 'WorkflowBuilder':
+                continue  # Skip the WorkflowBuilder class
+                
+            attr = getattr(module, attr_name)
+            if callable(attr) and hasattr(attr, '__name__') and 'workflow' in attr.__name__.lower():
+                return attr()
+        
+        # If no specific function found, try common names
+        if hasattr(module, 'demonstrate_failing_workflow'):
+            return module.demonstrate_failing_workflow()
+        elif hasattr(module, 'demonstrate_workflow'):
+            return module.demonstrate_workflow()
+        elif hasattr(module, 'create_workflow'):
+            return module.create_workflow()
+        elif hasattr(module, 'workflow'):
+            return module.workflow()
+        
+        raise ValueError(f"No workflow function found in {file_path}")
+        
+    except Exception as e:
+        raise RuntimeError(f"Failed to load workflow from {file_path}: {e}")
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Run Highway Core workflows from YAML files"
+        description="Run Highway Core workflows from YAML files or highway_dsl Python files"
     )
-    parser.add_argument("workflow_path", help="Path to the workflow YAML file")
+    parser.add_argument("workflow_path", help="Path to the workflow file (YAML or Python)")
     parser.add_argument(
         "--run-id",
         help="Unique ID for this workflow run (default: auto-generated UUID)",
@@ -52,10 +85,35 @@ def main():
     print("-" * 50)
 
     try:
-        # Run the workflow and get status information
-        result = run_workflow_from_yaml(
-            yaml_path=str(workflow_path), workflow_run_id=run_id
-        )
+        # Determine file type and load workflow
+        if workflow_path.suffix.lower() in ['.yaml', '.yml']:
+            # Run YAML workflow
+            result = run_workflow_from_yaml(
+                yaml_path=str(workflow_path), workflow_run_id=run_id
+            )
+        elif workflow_path.suffix.lower() == '.py':
+            # Load and run highway_dsl Python workflow
+            workflow = load_workflow_from_python(str(workflow_path))
+            
+            # Convert to YAML and run
+            yaml_content = workflow.to_yaml()
+            
+            # Create a temporary YAML file
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as temp_file:
+                temp_file.write(yaml_content)
+                temp_file_path = temp_file.name
+            
+            try:
+                result = run_workflow_from_yaml(
+                    yaml_path=temp_file_path, workflow_run_id=run_id
+                )
+            finally:
+                # Clean up temporary file
+                os.unlink(temp_file_path)
+        else:
+            print(f"Error: Unsupported file format '{workflow_path.suffix}'", file=sys.stderr)
+            sys.exit(1)
 
         print("-" * 50)
 

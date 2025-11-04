@@ -1,29 +1,29 @@
-name: "Failing Workflow Test"
-start_task: "set_multiplier"
-
-variables:
-  base: 100
-
+description: ''
+name: Failing Workflow Test
+start_task: set_multiplier
 tasks:
-  # Set the multiplier in memory
-  set_multiplier:
-    task_id: "set_multiplier"
-    operator_type: "task"
-    runtime: "python"
-    function: "tools.memory.set"
-    args:
-      - "multiplier"
-      - 7
-    dependencies: []
-    result_key: "set_ok"
-
-  # This task will fail - using a non-existent function
   failing_task:
-    task_id: "failing_task"
-    operator_type: "task"
-    runtime: "python"
-    function: "non.existent.function"
     args: []
     dependencies:
-      - "set_multiplier"
-    result_key: "fail_result"
+    - set_multiplier
+    function: non.existent.function
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    result_key: fail_result
+    task_id: failing_task
+  set_multiplier:
+    args:
+    - multiplier
+    - 7
+    dependencies: []
+    function: tools.memory.set
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    result_key: set_ok
+    task_id: set_multiplier
+variables:
+  base: 100
+version: 1.0.0
+

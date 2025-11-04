@@ -1,30 +1,40 @@
+description: ''
 name: tier_4_persistence_test
-version: 1.0.0
-variables:
-  run_id: "persistent-run-123" # A static ID for testing
-  
 start_task: log_start
-
 tasks:
-  log_start:
-    task_id: log_start
-    operator_type: task
-    function: tools.log.info
-    args: ["(Run: {{variables.run_id}}) - Step 1: Logging start..."]
-    dependencies: []
-    result_key: "step1"
-
-  step_2:
-    task_id: step_2
-    operator_type: task
-    function: tools.memory.set
-    args: ["final_step", "Step 2 was here"]
-    dependencies: ["log_start"]
-    result_key: "step2"
-
   log_end:
-    task_id: log_end
-    operator_type: task
+    args:
+    - '(Run: {{variables.run_id}}) - Step 3: Workflow finished.'
+    dependencies:
+    - step_2
     function: tools.log.info
-    args: ["(Run: {{variables.run_id}}) - Step 3: Workflow finished."]
-    dependencies: ["step_2"]
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    task_id: log_end
+  log_start:
+    args:
+    - '(Run: {{variables.run_id}}) - Step 1: Logging start...'
+    dependencies: []
+    function: tools.log.info
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    result_key: step1
+    task_id: log_start
+  step_2:
+    args:
+    - final_step
+    - Step 2 was here
+    dependencies:
+    - log_start
+    function: tools.memory.set
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    result_key: step2
+    task_id: step_2
+variables:
+  run_id: persistent-run-123
+version: 1.0.0
+

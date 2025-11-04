@@ -44,8 +44,17 @@ def execute(
 
     logger.info("ForEachHandler: Starting parallel processing of %s items.", len(items))
 
+    # Get the original loop body task IDs to mark them as conceptually completed later
+    loop_body_task_ids = [t.task_id for t in task.loop_body]
+
     sub_graph_tasks = {t.task_id: t for t in task.loop_body}
-    sub_graph = {t.task_id: set(t.dependencies) for t in task.loop_body}
+    # Remove dependency on the parent foreach task from loop body tasks
+    # This is necessary to avoid circular dependencies when executing the sub-workflow
+    sub_graph = {}
+    for t in task.loop_body:
+        # Create a copy of dependencies but exclude the parent foreach task
+        filtered_deps = [dep for dep in t.dependencies if dep != task.task_id]
+        sub_graph[t.task_id] = set(filtered_deps)
 
     # Use the orchestrator's main executor
     futures = []
@@ -72,6 +81,14 @@ def execute(
         except Exception as e:
             logger.error("ForEachHandler: Sub-workflow failed: %s", e)
             raise  # Propagate failure
+
+    # Mark all loop body tasks as conceptually completed so the main orchestrator
+    # doesn't try to execute them again
+    for task_id in loop_body_task_ids:
+        if hasattr(orchestrator, 'completed_tasks'):
+            # Add to completed tasks so the main orchestrator will know these are done
+            orchestrator.completed_tasks.add(task_id)
+            logger.info("ForEachHandler: Marked loop body task '%s' as conceptually completed", task_id)
 
     logger.info("ForEachHandler: All %s items processed.", len(items))
     return []  # This operator adds no new tasks to the main graph

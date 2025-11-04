@@ -40,8 +40,17 @@ def execute(
     until the loop is complete.
     """
 
+    # Get the original loop body task IDs to mark them as conceptually completed later
+    loop_body_task_ids = [t.task_id for t in task.loop_body]
+
     loop_body_tasks = {t.task_id: t for t in task.loop_body}
-    loop_graph = {t.task_id: set(t.dependencies) for t in task.loop_body}
+    # Remove dependency on the parent while loop task from loop body tasks
+    # This is necessary to avoid circular dependencies when executing the sub-workflow
+    loop_graph = {}
+    for t in task.loop_body:
+        # Create a copy of dependencies but exclude the parent while loop task
+        filtered_deps = [dep for dep in t.dependencies if dep != task.task_id]
+        loop_graph[t.task_id] = set(filtered_deps)
 
     iteration = 1
     while True:
@@ -79,6 +88,7 @@ def execute(
                 bulkhead_manager=bulkhead_manager,  # type: ignore
                 executor=executor,  # Pass the executor to the sub-workflow
                 available_executors=orchestrator.executors,  # Pass available executors from orchestrator
+                orchestrator=orchestrator,  # Pass the orchestrator for proper error handling
             )
             # Merge relevant changes back to the main state
             state.memory.update(iteration_state.memory)
@@ -88,6 +98,14 @@ def execute(
             raise  # Propagate failure to the main orchestrator
 
         iteration += 1
+
+    # Mark all loop body tasks as conceptually completed so the main orchestrator
+    # doesn't try to execute them again
+    for task_id in loop_body_task_ids:
+        if hasattr(orchestrator, 'completed_tasks'):
+            # Add to completed tasks so the main orchestrator will know these are done
+            orchestrator.completed_tasks.add(task_id)
+            logger.info("WhileHandler: Marked loop body task '%s' as conceptually completed", task_id)
 
     # The loop is finished, return no new tasks
     return []

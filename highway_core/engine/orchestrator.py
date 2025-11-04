@@ -222,6 +222,17 @@ class Orchestrator:
                         futures: Dict[Future[str], str] = {}
                         # Submit each task with more specific error handling
                         for task_id in tasks_to_execute:
+                            # Check if this task was conceptually completed as part of a loop body
+                            # This can happen when loop body tasks were executed in sub-workflows
+                            # but their dependencies just became satisfied in the main workflow
+                            if task_id in self.completed_tasks:
+                                logger.info(
+                                    "Orchestrator: Task %s already completed as part of loop body, marking as done.",
+                                    task_id,
+                                )
+                                self.sorter.done(task_id)
+                                continue
+
                             try:
                                 future = self.executor_pool.submit(
                                     self._execute_task, task_id

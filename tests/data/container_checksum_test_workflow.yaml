@@ -1,116 +1,113 @@
-name: "Tricky Checksum Validator"
-start_task: "set_multiplier" # This is the root task with no dependencies
-
+description: ''
+name: Tricky Checksum Validator
+start_task: set_multiplier
+tasks:
+  aggregate_alpha:
+    args:
+    - python3
+    - -c
+    - print(int(float('{{ results.alpha_p1 }}'.strip())) + int(float('{{ results.alpha_p2
+      }}'.strip())))
+    dependencies:
+    - calc_alpha_part1
+    - calc_alpha_part2
+    function: tools.command.run
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    result_key: alpha_final
+    task_id: aggregate_alpha
+  aggregate_beta:
+    args:
+    - python3
+    - -c
+    - print(int(float('{{ results.beta_p1 }}'.strip())) + 1)
+    dependencies:
+    - calc_beta_part1
+    function: tools.command.run
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    result_key: beta_final
+    task_id: aggregate_beta
+  calc_alpha_part1:
+    args:
+    - docker
+    - run
+    - --rm
+    - alpine:latest
+    - /bin/sh
+    - -c
+    - echo $(({{ variables.base }} * 2))
+    dependencies:
+    - set_multiplier
+    function: tools.command.run
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    result_key: alpha_p1
+    task_id: calc_alpha_part1
+  calc_alpha_part2:
+    args:
+    - docker
+    - run
+    - --rm
+    - busybox:latest
+    - /bin/sh
+    - -c
+    - echo $(({{ memory.multiplier }} * 3))
+    dependencies:
+    - set_multiplier
+    function: tools.command.run
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    result_key: alpha_p2
+    task_id: calc_alpha_part2
+  calc_beta_part1:
+    args:
+    - docker
+    - run
+    - --rm
+    - alpine:latest
+    - /bin/sh
+    - -c
+    - echo $(({{ variables.base }} / 4))
+    dependencies:
+    - set_multiplier
+    function: tools.command.run
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    result_key: beta_p1
+    task_id: calc_beta_part1
+  final_calculation:
+    args:
+    - python3
+    - -c
+    - print(int(float('{{ results.alpha_final }}'.strip())) * int(float('{{ results.beta_final
+      }}'.strip())))
+    dependencies:
+    - aggregate_alpha
+    - aggregate_beta
+    function: tools.command.run
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    result_key: the_final_number
+    task_id: final_calculation
+  set_multiplier:
+    args:
+    - multiplier
+    - 7
+    dependencies: []
+    function: tools.memory.set
+    kwargs: {}
+    metadata: {}
+    operator_type: task
+    result_key: set_ok
+    task_id: set_multiplier
 variables:
   base: 100
+version: 1.0.0
 
-tasks:
-  # 1. (Python) Set the multiplier in memory. This is the root dependency.
-  set_multiplier:
-    task_id: "set_multiplier"
-    operator_type: "task"
-    runtime: "python"
-    function: "tools.memory.set"
-    args:
-      - "multiplier"
-      - 7 # This is our secret multiplier
-    dependencies: []
-    result_key: "set_ok"
-
-  # --- ALPHA BRANCH (Parallel) ---
-
-  # 2. (Docker) Calculate (Base * 2). Depends on multiplier being set.
-  calc_alpha_part1:
-    task_id: "calc_alpha_part1"
-    operator_type: "task"
-    runtime: "docker"
-    image: "alpine:latest"
-    command:
-      - "/bin/sh"
-      - "-c"
-      - "echo $(({{ variables.base }} * 2))" # Should output 200
-    dependencies:
-      - "set_multiplier"
-    result_key: "alpha_p1" # state.results.alpha_p1 = "200\n"
-
-  # 3. (Docker) Calculate (Multiplier * 3). Depends on multiplier being set.
-  calc_alpha_part2:
-    task_id: "calc_alpha_part2"
-    operator_type: "task"
-    runtime: "docker"
-    image: "busybox:latest" # Use a different image
-    command:
-      - "/bin/sh"
-      - "-c"
-      - "echo $(({{ memory.multiplier }} * 3))" # Should output 21
-    dependencies:
-      - "set_multiplier"
-    result_key: "alpha_p2" # state.results.alpha_p2 = "21\n"
-
-  # --- BETA BRANCH (Parallel) ---
-
-  # 4. (Docker) Calculate (Base / 4). Depends on multiplier being set.
-  calc_beta_part1:
-    task_id: "calc_beta_part1"
-    operator_type: "task"
-    runtime: "docker"
-    image: "alpine:latest"
-    command:
-      - "/bin/sh"
-      - "-c"
-      - "echo $(({{ variables.base }} / 4))" # Should output 25
-    dependencies:
-      - "set_multiplier"
-    result_key: "beta_p1" # state.results.beta_p1 = "25\n"
-
-  # --- AGGREGATION (FAN-IN) ---
-
-  # 5. (Python) Aggregate the Alpha branch.
-  #    Depends on BOTH alpha parts finishing.
-  aggregate_alpha:
-    task_id: "aggregate_alpha"
-    operator_type: "task"
-    runtime: "python"
-    function: "command.run"
-    args:
-      # Use python to safely cast and add the results, stripping newlines
-      - "python3"
-      - "-c"
-      - "print(int(float('{{ results.alpha_p1 }}'.strip())) + int(float('{{ results.alpha_p2 }}'.strip())))"
-    dependencies:
-      - "calc_alpha_part1"
-      - "calc_alpha_part2"
-    result_key: "alpha_final" # state.results.alpha_final = "221\n"
-
-  # 6. (Python) Aggregate the Beta branch.
-  #    Depends on the single beta part finishing.
-  aggregate_beta:
-    task_id: "aggregate_beta"
-    operator_type: "task"
-    runtime: "python"
-    function: "command.run"
-    args:
-      - "python3"
-      - "-c"
-      - "print(int(float('{{ results.beta_p1 }}'.strip())) + 1)"
-    dependencies:
-      - "calc_beta_part1"
-    result_key: "beta_final" # state.results.beta_final = "26\n"
-
-  # --- FINAL CALCULATION ---
-
-  # 7. (Python) Multiply the two branch results.
-  #    Depends on BOTH aggregators finishing.
-  final_calculation:
-    task_id: "final_calculation"
-    operator_type: "task"
-    runtime: "python"
-    function: "command.run"
-    args:
-      - "python3"
-      - "-c"
-      - "print(int(float('{{ results.alpha_final }}'.strip())) * int(float('{{ results.beta_final }}'.strip())))"
-    dependencies:
-      - "aggregate_alpha"
-      - "aggregate_beta"
-    result_key: "the_final_number" # state.results.the_final_number = "5746\n"
