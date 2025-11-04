@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 from highway_core.persistence.database import get_db_manager
 from highway_core.persistence.webhook_runner import WebhookRunner
+from highway_core.persistence.models import Webhook
 
 
 class TestWebhookFunctionality:
@@ -18,6 +19,10 @@ class TestWebhookFunctionality:
         import os
         self.temp_db_path = tempfile.mktemp(suffix='.db')
         self.db_manager = get_db_manager(db_path=self.temp_db_path)
+        # Clean up any existing webhooks before each test
+        with self.db_manager.session_scope() as session:
+            session.query(Webhook).delete()
+            session.commit()
 
     def teardown_method(self):
         """Clean up after tests."""

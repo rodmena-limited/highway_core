@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 
 from highway_core.persistence.sql_persistence_manager import SQLPersistenceManager
 from highway_core.engine.state import WorkflowState
+from highway_core.persistence.models import Workflow, Task, WorkflowResult, WorkflowMemory
 
 
 class TestSQLPersistenceIntegration:
@@ -20,6 +21,14 @@ class TestSQLPersistenceIntegration:
         """Create a SQL persistence manager for testing."""
         # Use the test database configured in conftest.py
         manager = SQLPersistenceManager(is_test=True)
+        # Clean up any existing data before each test
+        with manager.sql_persistence.db_manager.session_scope() as session:
+            # Delete in correct order to respect foreign key constraints
+            session.query(WorkflowResult).delete()
+            session.query(WorkflowMemory).delete()
+            session.query(Task).delete()
+            session.query(Workflow).delete()
+            session.commit()
         yield manager
         manager.close()
 

@@ -18,8 +18,8 @@ if os.environ.get("USE_PG", "false").lower() in ("true", "1"):
     TEST_DB_PATH_URL = settings.DATABASE_URL
 else:
     print("CONCURRENT_TEST: Defaulting to isolated SQLite.")
-    db_file_path = f"/tmp/highway_test_{os.getpid()}.sqlite3"
-    TEST_DB_PATH_URL = f"sqlite:///{db_file_path}"
+    # Use the same database path as conftest.py for consistency
+    TEST_DB_PATH_URL = "sqlite:////tmp/highway_test.sqlite3"
     os.environ["DATABASE_URL"] = TEST_DB_PATH_URL
 
 # Now import highway_core modules

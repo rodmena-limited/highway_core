@@ -60,6 +60,7 @@ def execute(
     except Exception as e:
         logger.error(f"TaskHandler: Error executing task {task.task_id}: {e}")
         success = False
+        error_msg = str(e)
         raise
     finally:
         # 3. Trigger webhooks if appropriate (after task execution regardless of success/failure)
@@ -68,7 +69,7 @@ def execute(
             workflow_run_id=workflow_run_id,
             event_type="completed" if success else "failed",
             result=result,
-            error_message=str(e) if not success else None
+            error_message=error_msg if not success else None
         )
 
     return []  # Return an empty list of new tasks

@@ -53,9 +53,10 @@ class Settings:
 
     # --- Test Environment Override ---
     # If we are in 'test' mode AND we are NOT explicitly told to use PG,
-    # then we force the test SQLite DB.
+    # then we use the DATABASE_URL set by conftest.py (which should be /tmp/highway_test.sqlite3)
     if ENV == "test" and not USE_PG_FOR_TESTS:
-        DATABASE_URL = "sqlite:///tests/test_db.sqlite3"
+        # Use the DATABASE_URL already set by conftest.py, don't override it
+        pass
 
     # Docker settings for tests
     NO_DOCKER_USE: bool = os.getenv("NO_DOCKER_USE", "false").lower() in (
@@ -68,7 +69,7 @@ class Settings:
 settings = Settings()
 
 # In test environment, if USE_PG is true, we let the PG URL stand.
-# If USE_PG is false, we set the default test DB path.
+# If USE_PG is false, we use the DATABASE_URL set by conftest.py
 if ENV == "test":
     if settings.USE_PG_FOR_TESTS:
         if not settings.use_postgres:
@@ -76,10 +77,10 @@ if ENV == "test":
             print(
                 "WARNING: USE_PG=true but PostgreSQL env vars not set. Falling back to SQLite."
             )
-            settings.DATABASE_URL = "sqlite:///tests/test_db.sqlite3"
+            # Don't override DATABASE_URL, let conftest.py handle it
         else:
             # Using PG for tests, print a clear message
             print(f"TESTING with POSTGRES: {settings.POSTGRES_HOST}")
     else:
-        # Default test environment: use the temp SQLite DB
-        settings.DATABASE_URL = "sqlite:///tests/test_db.sqlite3"
+        # Default test environment: use the DATABASE_URL set by conftest.py
+        pass
