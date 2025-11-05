@@ -3,7 +3,7 @@ import time
 import json
 from typing import Dict, Any
 
-from highway_core.persistence.database import get_db_manager
+from highway_core.persistence.database import get_db_manager, TaskQueue, Task
 from highway_core.engine.orchestrator import Orchestrator
 from highway_core.engine.models import WorkflowModel, AnyOperatorModel
 from highway_core.persistence.sql_persistence_manager import SQLPersistenceManager
@@ -12,7 +12,7 @@ from highway_core.tools.registry import ToolRegistry
 logger = logging.getLogger("HighwayWorker")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
-def model_to_dict(model) -> Dict[str, Any]:
+def model_to_dict(model: Task) -> Dict[str, Any]:
     """Converts an SQLAlchemy model instance to a dict, handling JSON fields."""
     task_dict = {c.name: getattr(model, c.name) for c in model.__table__.columns}
     
@@ -44,7 +44,7 @@ class Worker:
         finally:
             self.db_manager.close_all_connections()
 
-    def execute_task_from_job(self, job):
+    def execute_task_from_job(self, job: TaskQueue):
         task_db = None
         orchestrator_context = None
         try:
