@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from highway_core.engine.state import WorkflowState
     from highway_core.tools.bulkhead import BulkheadManager
     from highway_core.tools.registry import ToolRegistry
+    from highway_core.engine.orchestrator import Orchestrator  # <-- ADD THIS
 
 logger = logging.getLogger(__name__)
 
