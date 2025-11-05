@@ -10,6 +10,7 @@ from highway_core.engine.models import AnyOperatorModel
 # We must use the highway_dsl library to load the workflow
 try:
     from highway_dsl import Workflow
+    from cli import load_workflow_from_python
 except ImportError:
     print("Error: highway_dsl library not found. Please install 'highway-dsl'.")
     exit(1)
@@ -31,9 +32,6 @@ def start_workflow(workflow_name: str):
     logger.info(f"Received request to start durable workflow: {workflow_name}")
     
     # 1. Find the workflow file (assume it's in tests/data for now)
-    from cli import load_workflow_from_python # Reuse the CLI's loader
-    
-    # This is a hack for testing. In prod, you'd have a workflow registry.
     workflow_path = os.path.join(
         os.path.dirname(__file__), 
         '..', '..', 'tests', 'data', f"{workflow_name}.py"

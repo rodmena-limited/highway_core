@@ -1024,6 +1024,19 @@ class DatabaseManager:
             # 2. Create all Task objects
             for task_data in tasks:
                 dependencies = task_data.get("dependencies", [])
+                
+                # Handle operator-specific fields
+                args = task_data.get("args", [])
+                kwargs = task_data.get("kwargs", {})
+                
+                # For condition operators, store condition-specific fields in kwargs
+                if task_data["operator_type"] == "condition":
+                    kwargs = {
+                        "condition": task_data.get("condition"),
+                        "if_true": task_data.get("if_true"),
+                        "if_false": task_data.get("if_false")
+                    }
+                
                 task = Task(
                     task_id=task_data["task_id"],
                     workflow_id=workflow_id,
@@ -1032,8 +1045,8 @@ class DatabaseManager:
                     function=task_data.get("function"),
                     image=task_data.get("image"),
                     command=task_data.get("command"),
-                    args=task_data.get("args", []),
-                    kwargs=task_data.get("kwargs", {}),
+                    args=args,
+                    kwargs=kwargs,
                     result_key=task_data.get("result_key"),
                     dependencies_list=dependencies,
                     status="PENDING", # All tasks start as PENDING

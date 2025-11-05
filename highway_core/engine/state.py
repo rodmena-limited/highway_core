@@ -78,6 +78,7 @@ class WorkflowState(BaseModel):
         - results.key -> self.results['key']
         - memory.key -> self.memory['key']
         - item -> self.loop_context['item']
+        - key.property -> self.results['key']['property'] (for backward compatibility)
         """
         path = path.strip()
 
@@ -174,10 +175,42 @@ class WorkflowState(BaseModel):
 
         else:
             # For backward compatibility or other cases
-            logger.warning(
-                "State: Warning - path must start with 'variables.', 'results.', 'memory.', or be 'item': %s",
-                path,
-            )
+            # Try to find the value in results with nested properties
+            if "." in path:
+                parts = path.split(".")
+                # Try as results.key.property
+                result_key = parts[0]
+                if result_key in self.results:
+                    current_val = self.results[result_key]
+                    # Traverse remaining nested path
+                    for part in parts[1:]:
+                        if isinstance(current_val, dict):
+                            current_val = current_val.get(part)
+                            if current_val is None:
+                                logger.warning(
+                                    "State: Warning - could not find nested path: %s",
+                                    path,
+                                )
+                                return None
+                        else:
+                            logger.error(
+                                "State: Error - Cannot access property '%s' on non-dict value.",
+                                part,
+                            )
+                            return None
+                    return current_val
+            
+            # If not found, try as a simple result key
+            if path in self.results:
+                return self.results[path]
+            
+            # If not found, try as a variable
+            if path in self.variables:
+                return self.variables[path]
+            
+            # For backward compatibility, also try without the warning
+            # This allows the condition handler to try different prefixes
+            return None
 
     def resolve_templating(self, input_data: Any) -> Any:
         """

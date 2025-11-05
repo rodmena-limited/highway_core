@@ -16,6 +16,8 @@ class SQLPersistenceManager(PersistenceManager):
         self.sql_persistence = SQLPersistence(
             db_path=db_path, is_test=is_test or db_path is not None
         )
+        # Expose the db_manager for human tools
+        self.db_manager = self.sql_persistence.db_manager
 
     def start_workflow(
         self, workflow_id: str, workflow_name: str, variables: Dict[str, Any]

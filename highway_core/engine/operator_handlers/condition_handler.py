@@ -38,6 +38,16 @@ def execute(
     # 1. Resolve and evaluate the condition
     resolved_condition_value = state.resolve_templating(task.condition)
     resolved_condition_str = str(resolved_condition_value)
+    
+    # DEBUG: Log the resolved condition
+    logger.info("DEBUG: ConditionHandler: Resolved condition to '%s'", resolved_condition_str)
+    
+    # Fix: If the resolved condition still contains template syntax, try to resolve it manually
+    if "{{" in resolved_condition_str and "}}" in resolved_condition_str:
+        # Manual template resolution for condition evaluation
+        resolved_condition_str = _resolve_condition_manually(resolved_condition_str, state)
+        logger.info("DEBUG: ConditionHandler: After manual resolution: '%s'", resolved_condition_str)
+    
     result = eval_condition(resolved_condition_str)
     logger.info(
         "ConditionHandler: Resolved to '%s'. Result: %s",
@@ -74,6 +84,59 @@ def execute(
             orchestrator.completed_tasks.add(skipped_task_id)
 
 
+def _resolve_condition_manually(condition_str: str, state: WorkflowState) -> str:
+    """
+    Manually resolve template variables in condition strings.
+    Handles both {{results.approval.status}} and {{approval.status}} formats.
+    """
+    import re
+    
+    # Regex to find template variables
+    template_regex = re.compile(r'\{\{([^}]+)\}\}')
+    
+    def replacer(match):
+        path = match.group(1).strip()
+        logger.info(f"DEBUG: Resolving path '{path}' from condition")
+        
+        # Try different path formats in order of preference
+        value = None
+        
+        # 1. Try the path as-is (for explicit paths like results.approval.status)
+        value = state.get_value_from_path(path)
+        logger.info(f"DEBUG: Direct path '{path}' -> {value}")
+        
+        # 2. If not found and path doesn't start with a namespace, try results. prefix
+        if value is None and not path.startswith(('variables.', 'results.', 'memory.')):
+            results_path = f"results.{path}"
+            value = state.get_value_from_path(results_path)
+            logger.info(f"DEBUG: Results path '{results_path}' -> {value}")
+        
+        # 3. If still not found, try variables. prefix
+        if value is None and not path.startswith(('variables.', 'results.', 'memory.')):
+            variables_path = f"variables.{path}"
+            value = state.get_value_from_path(variables_path)
+            logger.info(f"DEBUG: Variables path '{variables_path}' -> {value}")
+        
+        if value is not None:
+            # For string values, wrap in quotes for proper condition evaluation
+            if isinstance(value, str):
+                result = f"'{value}'"
+                logger.info(f"DEBUG: Found value '{value}', returning '{result}'")
+                return result
+            else:
+                result = str(value)
+                logger.info(f"DEBUG: Found value {value}, returning {result}")
+                return result
+        else:
+            # If not found, return the original template
+            logger.info(f"DEBUG: Value not found for '{path}', returning original template")
+            return match.group(0)
+    
+    result = template_regex.sub(replacer, condition_str)
+    logger.info(f"DEBUG: Final resolved condition: '{result}'")
+    return result
+
+
 def eval_condition(condition_str: str) -> bool:
     """
     Safely evaluate a condition string using AST.
@@ -102,6 +165,19 @@ def _eval_node(node: ast.AST) -> Any:
     # older versions used ast.Num, ast.Str, ast.NameConstant which are removed in Python 3.14+)
     if isinstance(node, ast.Constant):  # Python 3.8+
         return node.value
+    
+    # Handle Name nodes (variable names like True, False, None, or other identifiers)
+    elif isinstance(node, ast.Name):
+        if node.id == "True":
+            return True
+        elif node.id == "False":
+            return False
+        elif node.id == "None":
+            return None
+        else:
+            # For other names, treat them as string literals (for backward compatibility)
+            return node.id
+    
     # The following are removed in Python 3.14+ and covered by ast.Constant
     # elif isinstance(node, ast.Num):  # Python < 3.8 compatibility - deprecated & removed
     #     return node.n
