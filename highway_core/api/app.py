@@ -60,10 +60,18 @@ def start_workflow(workflow_name: str):
             tasks=tasks_list
         )
         
+        logger.info(f"🚀 WORKFLOW CREATED: '{workflow_dsl.name}' (ID: {workflow_id})")
+        logger.info(f"📋 Total tasks: {len(tasks_list)}")
+        logger.info(f"🎯 Starting task: {workflow_dsl.start_task}")
+        logger.info(f"📊 Workflow will be picked up by scheduler shortly")
+        
         return jsonify({
-            "message": "Durable workflow created",
+            "message": f"Durable workflow '{workflow_dsl.name}' created successfully",
             "workflow_id": workflow_id,
-            "status": "PENDING"
+            "workflow_name": workflow_dsl.name,
+            "total_tasks": len(tasks_list),
+            "status": "PENDING",
+            "next_steps": "Monitor status with /workflow/status/{workflow_id} or wait for scheduler pickup"
         }), 202
         
     except Exception as e:
@@ -97,17 +105,21 @@ def resume_workflow():
             db_manager.store_result(
                 task.workflow_id, task.task_id, task.result_key, result_data
             )
+            logger.info(f"Stored human decision '{decision}' for result key '{task.result_key}' in workflow {task.workflow_id}")
         
         # 2. Mark the human task as COMPLETED
         db_manager.update_task_status_by_workflow(task.workflow_id, task.task_id, "completed")
         
-        logger.info(f"Resumed task {task.task_id} for workflow {task.workflow_id} with decision: {decision}")
+        logger.info(f"🎯 WORKFLOW EVENT: Human task '{task.task_id}' in workflow '{task.workflow_id}' was {decision} with token '{token}'")
+        logger.info(f"📋 Next steps: Workflow will proceed to evaluate condition and execute appropriate branches")
         
         return jsonify({
-            "message": "Workflow task resumed",
+            "message": f"Workflow task resumed with decision: {decision}",
             "workflow_id": task.workflow_id,
             "task_id": task.task_id,
-            "status": "COMPLETED"
+            "decision": decision,
+            "status": "COMPLETED",
+            "next_steps": "Workflow will proceed to condition evaluation and branch execution"
         }), 200
 
     except Exception as e:
@@ -119,28 +131,123 @@ def get_workflow_status(workflow_id: str):
     """
     Gets the status of a workflow and all its tasks.
     """
+    logger.info(f"📊 Status request for workflow: {workflow_id}")
+    
     workflow = db_manager.load_workflow(workflow_id)
     if not workflow:
+        logger.warning(f"❌ Workflow not found: {workflow_id}")
         return jsonify({"error": "Workflow not found"}), 404
         
     tasks = db_manager.get_tasks_by_workflow(workflow_id)
+    
+    # Find any tasks waiting for events
+    waiting_tasks = []
+    for t in tasks:
+        if t.status == 'WAITING_FOR_EVENT':
+            waiting_tasks.append({
+                "task_id": t.task_id,
+                "event_token": t.event_token if t.event_token else 'No token generated',
+                "result_key": t.result_key if t.result_key else 'No result key',
+                "description": "This task is waiting for human input or external event"
+            })
+    
     tasks_status = [
         {
-            "task_id": t['task_id'], 
-            "status": t['status'], 
-            "error": t.get('error_message')
+            "task_id": t.task_id, 
+            "status": t.status, 
+            "error": t.error_message if t.error_message else None,
+            "event_token": t.event_token if t.status == 'WAITING_FOR_EVENT' else None
         } for t in tasks
     ]
     
-    return jsonify({
+    response = {
         "workflow_id": workflow_id,
         "workflow_name": workflow['name'],
         "workflow_status": workflow['status'],
-        "tasks": tasks_status
-    }), 200
+        "tasks": tasks_status,
+        "summary": {
+            "total_tasks": len(tasks),
+            "completed_tasks": len([t for t in tasks if t.status == 'completed']),
+            "waiting_for_event": len(waiting_tasks),
+            "pending_tasks": len([t for t in tasks if t.status == 'PENDING']),
+            "failed_tasks": len([t for t in tasks if t.status == 'failed'])
+        }
+    }
+    
+    # Add special information for workflows waiting for events
+    if waiting_tasks:
+        response["waiting_for_input"] = {
+            "message": "🎯 Workflow is waiting for human input!",
+            "tasks_waiting": waiting_tasks,
+            "instructions": "Use the event_token with /workflow/resume endpoint to provide input"
+        }
+        logger.info(f"🎯 Workflow {workflow_id} has {len(waiting_tasks)} task(s) waiting for human input")
+        for task in waiting_tasks:
+            logger.info(f"📋 Task '{task['task_id']}' waiting with token: {task['event_token']}")
+    else:
+        logger.info(f"📊 Workflow {workflow_id} status: {workflow['status']} - {len([t for t in tasks if t['status'] == 'completed'])}/{len(tasks)} tasks completed")
+    
+    return jsonify(response), 200
 
-def run_server():
-    app.run(debug=True, port=5000, host='0.0.0.0')
+@app.route("/workflows", methods=["GET"])
+def list_workflows():
+    """
+    Lists all workflows with their basic status information.
+    """
+    logger.info("📋 Listing all workflows")
+    
+    try:
+        # Use existing method to get workflows by different statuses
+        pending_workflows = db_manager.get_workflows_by_status("PENDING", mode="DURABLE")
+        running_workflows = db_manager.get_workflows_by_status("RUNNING", mode="DURABLE")
+        completed_workflows = db_manager.get_workflows_by_status("completed", mode="DURABLE")
+        failed_workflows = db_manager.get_workflows_by_status("failed", mode="DURABLE")
+        
+        workflows = pending_workflows + running_workflows + completed_workflows + failed_workflows
+        logger.info(f"📋 Found {len(workflows)} workflows")
+        workflow_list = []
+        
+        for wf in workflows:
+            tasks = db_manager.get_tasks_by_workflow(wf.workflow_id)
+            waiting_tasks = [t for t in tasks if t.status == 'WAITING_FOR_EVENT']
+            
+            workflow_info = {
+                "workflow_id": wf.workflow_id,
+                "workflow_name": wf.workflow_name,
+                "status": wf.status,
+                "created_at": wf.start_time.isoformat() if wf.start_time else None,
+                "updated_at": wf.updated_at.isoformat() if wf.updated_at else None,
+                "total_tasks": len(tasks),
+                "completed_tasks": len([t for t in tasks if t.status == 'completed']),
+                "waiting_for_input": len(waiting_tasks),
+                "has_waiting_tasks": len(waiting_tasks) > 0
+            }
+            
+            # Add waiting task tokens if any
+            if waiting_tasks:
+                workflow_info["waiting_tasks"] = [{
+                    "task_id": t.task_id,
+                    "event_token": t.event_token if t.event_token else 'No token'
+                } for t in waiting_tasks]
+            
+            workflow_list.append(workflow_info)
+        
+        logger.info(f"📊 Found {len(workflow_list)} workflows")
+        return jsonify({
+            "workflows": workflow_list,
+            "total_count": len(workflow_list),
+            "summary": {
+                "running": len([w for w in workflow_list if w['status'] == 'RUNNING']),
+                "completed": len([w for w in workflow_list if w['status'] == 'completed']),
+                "pending": len([w for w in workflow_list if w['status'] == 'PENDING']),
+                "failed": len([w for w in workflow_list if w['status'] == 'failed']),
+                "waiting_for_input": len([w for w in workflow_list if w['has_waiting_tasks']])
+            }
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"❌ Error listing workflows: {e}", exc_info=True)
+        return jsonify({"error": f"Failed to list workflows: {str(e)}"}), 500
 
 if __name__ == "__main__":
     run_server()

@@ -29,11 +29,11 @@ def execute(
     """
     Delegates execution of a TaskOperator to a provided executor.
     """
-    logger.info("TaskHandler: Delegating task %s", task.task_id)
+    logger.info("🎯 TASK: Delegating task '%s' with function '%s'", task.task_id, task.function)
 
     if not executor:
         logger.error(
-            "TaskHandler: Error - No executor provided for task %s",
+            "🎯 TASK: Error - No executor provided for task '%s'",
             task.task_id,
         )
         raise ValueError(f"TaskHandler received no executor for task: {task.task_id}")
@@ -44,6 +44,7 @@ def execute(
     try:
         # 1. The Orchestrator has already selected the correct executor.
         #    We just call it and pass all dependencies.
+        logger.info("🎯 TASK: Calling executor for task '%s'", task.task_id)
         result = executor.execute(
             task=task,
             state=state,
@@ -53,18 +54,22 @@ def execute(
             orchestrator=orchestrator,  # <-- PASS THIS
             workflow_run_id=workflow_run_id,  # <-- PASS THIS
         )
+        logger.info("🎯 TASK: Executor completed successfully for task '%s'", task.task_id)
 
         # 2. Save the result (this logic stays in the handler)
         if task.result_key:
+            logger.info("🎯 TASK: Saving result with key '%s' for task '%s'", task.result_key, task.task_id)
             state.set_result(task.result_key, result)
+            logger.info("🎯 TASK: Result saved successfully for task '%s'", task.task_id)
 
     except Exception as e:
-        logger.error(f"TaskHandler: Error executing task {task.task_id}: {e}")
+        logger.error("🎯 TASK: Error executing task '%s': %s", task.task_id, e, exc_info=True)
         success = False
         error_msg = str(e)
         raise
     finally:
         # 3. Trigger webhooks if appropriate (after task execution regardless of success/failure)
+        logger.info("🎯 TASK: Triggering webhooks for task '%s' (success: %s)", task.task_id, success)
         _trigger_webhooks_for_task_event(
             task_id=task.task_id,
             workflow_run_id=workflow_run_id,

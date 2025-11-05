@@ -31,22 +31,26 @@ def execute(
     - In 'LOCAL' mode, updates the in-memory sorter.
     - In 'DURABLE' mode, updates the skipped task's status in the DB.
     """
-    logger.info("ConditionHandler: Evaluating '%s'", task.condition)
+    logger.info("🎯 CONDITION: Evaluating '%s'", task.condition)
     
     workflow_mode = getattr(orchestrator.workflow, 'mode', 'LOCAL')
 
     # 1. Resolve and evaluate the condition
-    resolved_condition_value = state.resolve_templating(task.condition)
-    resolved_condition_str = str(resolved_condition_value)
-    
-    # DEBUG: Log the resolved condition
-    logger.info("DEBUG: ConditionHandler: Resolved condition to '%s'", resolved_condition_str)
-    
-    # Fix: If the resolved condition still contains template syntax, try to resolve it manually
-    if "{{" in resolved_condition_str and "}}" in resolved_condition_str:
-        # Manual template resolution for condition evaluation
-        resolved_condition_str = _resolve_condition_manually(resolved_condition_str, state)
-        logger.info("DEBUG: ConditionHandler: After manual resolution: '%s'", resolved_condition_str)
+    try:
+        resolved_condition_value = state.resolve_templating(task.condition)
+        resolved_condition_str = str(resolved_condition_value)
+        
+        # DEBUG: Log the resolved condition
+        logger.info("🎯 CONDITION: Resolved condition to '%s'", resolved_condition_str)
+        
+        # Fix: If the resolved condition still contains template syntax, try to resolve it manually
+        if "{{" in resolved_condition_str and "}}" in resolved_condition_str:
+            # Manual template resolution for condition evaluation
+            resolved_condition_str = _resolve_condition_manually(resolved_condition_str, state)
+            logger.info("🎯 CONDITION: After manual resolution: '%s'", resolved_condition_str)
+    except Exception as e:
+        logger.error("🎯 CONDITION: Error resolving condition '%s': %s", task.condition, e, exc_info=True)
+        raise
     
     result = eval_condition(resolved_condition_str)
     logger.info(
@@ -59,10 +63,12 @@ def execute(
     skipped_task_id: Optional[str] = None
     if result:
         skipped_task_id = task.if_false
-        logger.info("ConditionHandler: Taking 'if_true' path to '%s'", task.if_true)
+        logger.info("🎯 CONDITION: Taking 'if_true' path to '%s'", task.if_true)
+        logger.info("🎯 CONDITION: Skipping 'if_false' path '%s'", task.if_false)
     else:
         skipped_task_id = task.if_true
-        logger.info("ConditionHandler: Taking 'if_false' path to '%s'", task.if_false)
+        logger.info("🎯 CONDITION: Taking 'if_false' path to '%s'", task.if_false)
+        logger.info("🎯 CONDITION: Skipping 'if_true' path '%s'", task.if_true)
 
     # 3. Mark the skipped branch as completed
     if skipped_task_id:

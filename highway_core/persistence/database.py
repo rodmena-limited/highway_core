@@ -1074,6 +1074,11 @@ class DatabaseManager:
                 Workflow.mode == mode
             ).all()
 
+    def get_all_workflows(self, mode: str = "DURABLE") -> List[Workflow]:
+        """Gets all workflows with optional mode filter."""
+        with self.session_scope() as session:
+            return session.query(Workflow).filter(Workflow.mode == mode).all()
+
     def get_task_by_id(self, workflow_id: str, task_id: str) -> Optional[Task]:
         """Gets a single task object by its ID."""
         with self.session_scope() as session:

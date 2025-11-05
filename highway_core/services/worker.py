@@ -57,6 +57,9 @@ class Worker:
             if not task_db:
                 raise Exception(f"Task {job.task_id} not found.")
             
+            logger.info(f"🚀 WORKER: Executing task '{job.task_id}' for workflow '{workflow_db['name']}' ({job.workflow_id})")
+            logger.info(f"📋 Task type: {task_db.operator_type if task_db.operator_type else 'task'}")
+            
             # 2. Update status to RUNNING
             self.db_manager.update_task_status_by_workflow(job.workflow_id, job.task_id, "running")
             
@@ -208,24 +211,35 @@ class Worker:
             # 6. Mark as COMPLETED (if not durably paused)
             task_final_status = self.db_manager.get_task_by_id(job.workflow_id, job.task_id).status
             if task_final_status == "running":
-                logger.info(f"Task {job.task_id} handler finished. Marking COMPLETED.")
+                logger.info(f"✅ WORKER: Task '{job.task_id}' completed successfully for workflow {job.workflow_id}")
+                
+                # Special logging for event-waiting tasks
+                if task_model.operator_type == "wait" and hasattr(task_model, 'wait_for') and task_model.wait_for == "HUMAN_INPUT":
+                    logger.info(f"🎯 WORKER: Human input task '{job.task_id}' completed - result stored with key: {task_model.result_key if task_model.result_key else 'no key'}")
+                
                 # We need to get the result from the state
                 result_to_save = None
                 if task_model.result_key:
                     result_to_save = orchestrator_context.state.get_result(task_model.result_key)
                 self.db_manager.complete_task(job.workflow_id, job.task_id, result_to_save)
             else:
-                logger.info(f"Task {job.task_id} handler finished with durable status: {task_final_status}")
+                logger.info(f"⏸️ WORKER: Task '{job.task_id}' handler finished with durable status: {task_final_status} (workflow: {job.workflow_id})")
+                
+                # Special logging for tasks that are waiting for events
+                if task_final_status == "WAITING_FOR_EVENT":
+                    token = task_db.event_token if task_db else "No token"
+                    logger.info(f"⏳ WORKER: Task '{job.task_id}' now WAITING_FOR_EVENT with token: {token}")
+                    logger.info(f"📋 To resume: curl -X GET 'http://127.0.0.1:5000/workflow/resume?token={token}&decision=YOUR_DECISION'")
 
         except Exception as e:
-            logger.error(f"Error executing task {job.task_id}: {e}", exc_info=True)
+            logger.error(f"❌ WORKER: Error executing task '{job.task_id}' in workflow {job.workflow_id}: {e}", exc_info=True)
             if task_db:
                 self.db_manager.fail_task(job.workflow_id, job.task_id, str(e))
         finally:
             if orchestrator_context:
                 orchestrator_context.close()
             self.db_manager.delete_queue_job(job.id)
-            logger.info(f"Finished job {job.id} for task {job.task_id}")
+            logger.info(f"🏁 WORKER: Finished job {job.id} for task '{job.task_id}' in workflow {job.workflow_id}")
 
 if __name__ == "__main__":
     w = Worker()

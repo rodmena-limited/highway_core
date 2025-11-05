@@ -47,8 +47,18 @@ class Scheduler:
                 pending_tasks = self.db_manager.get_tasks_by_status(wf.workflow_id, "PENDING")
                 for task in pending_tasks:
                     if self.db_manager.are_task_dependencies_met(wf.workflow_id, task.task_id):
-                        logger.info(f"Dependencies met for task {task.task_id}. Enqueuing.")
+                        logger.info(f"🎯 SCHEDULER: Dependencies met for task '{task.task_id}'. Enqueuing for workflow {wf.workflow_id}")
                         self.db_manager.enqueue_task(wf.workflow_id, task.task_id)
+                        
+                    # Special logging for tasks waiting for events
+                    waiting_tasks = self.db_manager.get_tasks_by_status(wf.workflow_id, "WAITING_FOR_EVENT")
+                    for waiting_task in waiting_tasks:
+                        if waiting_task.event_token:
+                            logger.info(f"⏳ SCHEDULER: Task '{waiting_task.task_id}' waiting for event with token: {waiting_task.event_token}")
+                            logger.info(f"📋 To resume: curl -X GET 'http://127.0.0.1:5000/workflow/resume?token={waiting_task.event_token}&decision=YOUR_DECISION'")
+                        else:
+                            logger.info(f"⏳ SCHEDULER: Task '{waiting_task.task_id}' waiting for event (no token)")
+                            
         except Exception as e:
             logger.error(f"Scheduler error in poll_for_runnable_tasks: {e}", exc_info=True)
 
